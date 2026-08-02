@@ -11,6 +11,7 @@ from .config import ConfigStore
 from .errors import UserVisibleError
 from .i18n import text as message
 from .models import MigrationResult
+from .repository import ARCHIVE_DIRECTORY
 
 
 def _digest(path: Path) -> str:
@@ -118,11 +119,13 @@ class StorageManager:
             for item in root.iterdir():
                 if item.is_file() and not item.is_symlink() and item.suffix.lower() == ".md":
                     managed.append((item, Path(item.name)))
-            archive = root / "归档"
+            archive = root / ARCHIVE_DIRECTORY
             if archive.is_dir() and not archive.is_symlink():
                 for item in archive.rglob("*"):
                     if item.is_file() and not item.is_symlink():
-                        managed.append((item, Path("归档") / item.relative_to(archive)))
+                        managed.append(
+                            (item, Path(ARCHIVE_DIRECTORY) / item.relative_to(archive))
+                        )
         return sorted(managed, key=lambda pair: str(pair[1]).casefold())
 
     @staticmethod

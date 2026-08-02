@@ -10,7 +10,7 @@ def test_migrate_verifies_switches_and_recycles_only_managed_files(tmp_path: Pat
     source.mkdir()
     (source / "记录.md").write_text("正文", encoding="utf-8")
     (source / "不要移动.txt").write_text("保留", encoding="utf-8")
-    archive = source / "归档"
+    archive = source / "Archive"
     archive.mkdir()
     (archive / "旧记录.md").write_text("旧正文", encoding="utf-8")
 
@@ -27,7 +27,7 @@ def test_migrate_verifies_switches_and_recycles_only_managed_files(tmp_path: Pat
     assert result.recycled_count == 2
     assert config.config.save_dir == str(target.resolve())
     assert (target / "记录.md").read_text(encoding="utf-8") == "正文"
-    assert (target / "归档" / "旧记录.md").read_text(encoding="utf-8") == "旧正文"
+    assert (target / "Archive" / "旧记录.md").read_text(encoding="utf-8") == "旧正文"
     assert (source / "不要移动.txt").exists()
     assert set(recycled) == {source / "记录.md", archive / "旧记录.md"}
 

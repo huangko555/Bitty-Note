@@ -54,7 +54,7 @@ def test_save_preserves_bom_and_crlf(tmp_path: Path) -> None:
 def test_archive_never_overwrites_existing_file(tmp_path: Path) -> None:
     repository = NotesRepository(tmp_path)
     note = repository.create_note("记录")
-    archive = tmp_path / "归档"
+    archive = tmp_path / "Archive"
     archive.mkdir()
     (archive / note.name).write_text("旧内容", encoding="utf-8")
 
@@ -90,5 +90,32 @@ def test_list_restore_and_delete_archived_notes(tmp_path: Path) -> None:
 
     repository.delete_archived_note(restored_name, fake_trash)
 
-    assert recycled == [tmp_path / "归档" / restored_name]
+    assert recycled == [tmp_path / "Archive" / restored_name]
     assert repository.list_archived_notes() == []
+
+
+def test_legacy_archive_directory_is_renamed(tmp_path: Path) -> None:
+    legacy_archive = tmp_path / "归档"
+    legacy_archive.mkdir()
+    (legacy_archive / "旧记录.md").write_text("旧正文", encoding="utf-8")
+
+    repository = NotesRepository(tmp_path)
+
+    assert not legacy_archive.exists()
+    assert (tmp_path / "Archive" / "旧记录.md").read_text(encoding="utf-8") == "旧正文"
+    assert [note.name for note in repository.list_archived_notes()] == ["旧记录.md"]
+
+
+def test_legacy_archive_is_merged_without_overwriting(tmp_path: Path) -> None:
+    archive = tmp_path / "Archive"
+    legacy_archive = tmp_path / "归档"
+    archive.mkdir()
+    legacy_archive.mkdir()
+    (archive / "记录.md").write_text("新目录", encoding="utf-8")
+    (legacy_archive / "记录.md").write_text("旧目录", encoding="utf-8")
+
+    NotesRepository(tmp_path)
+
+    assert not legacy_archive.exists()
+    assert (archive / "记录.md").read_text(encoding="utf-8") == "新目录"
+    assert (archive / "记录 (2).md").read_text(encoding="utf-8") == "旧目录"

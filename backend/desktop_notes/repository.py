@@ -26,6 +26,8 @@ _RESERVED_NAMES = {
     *(f"COM{number}" for number in range(1, 10)),
     *(f"LPT{number}" for number in range(1, 10)),
 }
+ARCHIVE_DIRECTORY = "Archive"
+_LEGACY_ARCHIVE_DIRECTORY = "归档"
 
 
 def content_revision(data: bytes) -> str:
@@ -72,6 +74,7 @@ class NotesRepository:
         self.root = root.resolve()
         self._lock = threading.RLock()
         self.root.mkdir(parents=True, exist_ok=True)
+        self._migrate_legacy_archive_directory()
 
     def list_notes(self) -> list[NoteSummary]:
         notes: list[NoteSummary] = []
@@ -97,7 +100,7 @@ class NotesRepository:
         return sorted(notes, key=lambda note: (-note.modified_ms, note.name.casefold()))
 
     def list_archived_notes(self) -> list[NoteSummary]:
-        archive_dir = self.root / "归档"
+        archive_dir = self.root / ARCHIVE_DIRECTORY
         if not archive_dir.is_dir() or archive_dir.is_symlink():
             return []
         notes: list[NoteSummary] = []
@@ -213,7 +216,7 @@ class NotesRepository:
                 raise UserVisibleError(message(
                     f'The note “{name}” no longer exists.', f"记录“{name}”已经不存在。"
                 ))
-            archive_dir = self.root / "归档"
+            archive_dir = self.root / ARCHIVE_DIRECTORY
             try:
                 archive_dir.mkdir(exist_ok=True)
                 target = self._unique_path(archive_dir, source.name)
@@ -287,7 +290,7 @@ class NotesRepository:
             raise UserVisibleError(message(
                 "The archived note filename is invalid.", "归档记录文件名无效"
             ))
-        archive_dir = self.root / "归档"
+        archive_dir = self.root / ARCHIVE_DIRECTORY
         if archive_dir.is_symlink():
             raise UserVisibleError(message("The archive folder is invalid.", "归档目录无效"))
         candidate = archive_dir / name
@@ -297,6 +300,28 @@ class NotesRepository:
                 "归档记录路径超出归档目录",
             ))
         return candidate
+
+    def _migrate_legacy_archive_directory(self) -> None:
+        legacy = self.root / _LEGACY_ARCHIVE_DIRECTORY
+        archive = self.root / ARCHIVE_DIRECTORY
+        if not legacy.is_dir() or legacy.is_symlink():
+            return
+        try:
+            if not archive.exists():
+                os.replace(legacy, archive)
+                return
+            if not archive.is_dir() or archive.is_symlink():
+                raise OSError(f"{archive} is not a valid directory")
+            for entry in os.scandir(legacy):
+                source = Path(entry.path)
+                target = self._unique_path(archive, entry.name)
+                os.replace(source, target)
+            legacy.rmdir()
+        except OSError as error:
+            raise UserVisibleError(message(
+                f"Couldn't migrate the legacy archive folder: {error}",
+                f"无法迁移旧归档目录：{error}",
+            )) from error
 
     def _safe_filename(self, requested_name: str) -> str:
         value = requested_name.strip()

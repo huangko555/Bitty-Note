@@ -39,7 +39,7 @@ Save directly as a local Markdown file
 Edit, archive, move, or open it in another tool
 ```
 
-For new users, notes are stored in `Documents/Bitty-Note` by default. Archived notes live in its `归档` subfolder. Bitty-Note does not maintain a separate content database; changing the storage folder moves active and archived notes together.
+For new users, notes are stored in `Documents/Bitty-Note` by default. Archived notes live in its `Archive` subfolder. Bitty-Note does not maintain a separate content database; changing the storage folder moves active and archived notes together.
 
 ## Download and Run
 

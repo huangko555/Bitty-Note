@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+from desktop_notes.bridge import WindowStateSaver
+from desktop_notes.config import ConfigStore
 from desktop_notes.main import _normalize_window_after_show
 
 
@@ -43,3 +47,24 @@ def test_initial_size_is_normalized_before_state_tracking_starts() -> None:
     assert window.resize_calls == [(350, 630)]
     assert window.events.moved.handlers == [saver.schedule]
     assert window.events.resized.handlers == [saver.schedule]
+
+
+def test_default_and_resized_window_dimensions_are_persisted(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.json"
+    store = ConfigStore(config_path, tmp_path / "Bitty-Note")
+    assert (store.config.window_width, store.config.window_height) == (350, 630)
+
+    window = type(
+        "Window",
+        (),
+        {"x": 120, "y": 80, "width": 428, "height": 712},
+    )()
+    WindowStateSaver(window, store).flush()
+
+    restored = ConfigStore(config_path, tmp_path / "Bitty-Note").config
+    assert (
+        restored.window_x,
+        restored.window_y,
+        restored.window_width,
+        restored.window_height,
+    ) == (120, 80, 428, 712)
