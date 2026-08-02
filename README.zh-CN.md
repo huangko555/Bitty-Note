@@ -56,3 +56,4 @@ Bitty-Note 自有源代码采用 [MIT License](./LICENSE) 发布。
 - [隐私政策](./PRIVACY.md)
 - [代码签名政策](./CODE_SIGNING_POLICY.md)
 - [第三方版权与许可说明](./THIRD_PARTY_NOTICES.md)
+- [版本更新记录](./CHANGELOG.md)

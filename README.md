@@ -56,3 +56,4 @@ Bitty-Note's own source code is released under the [MIT License](./LICENSE).
 - [Privacy Policy](./PRIVACY.md)
 - [Code signing policy](./CODE_SIGNING_POLICY.md)
 - [Third-party notices](./THIRD_PARTY_NOTICES.md)
+- [Changelog](./CHANGELOG.md)

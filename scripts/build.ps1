@@ -26,6 +26,7 @@ if ($LASTEXITCODE -ne 0) { throw "构建 Windows 应用失败，退出码：$LAS
 $releaseDirectory = Join-Path $projectRoot 'dist\Bitty-Note'
 $releaseDocuments = @(
     'LICENSE',
+    'CHANGELOG.md',
     'PRIVACY.md',
     'CODE_SIGNING_POLICY.md',
     'THIRD_PARTY_NOTICES.md'
