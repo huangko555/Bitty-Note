@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$defaultExe = Join-Path $projectRoot 'dist\小记一下\小记一下.exe'
+$defaultExe = Join-Path $projectRoot 'dist\Bitty-Note\Bitty-Note.exe'
 $exePath = if ($ExecutablePath) { $ExecutablePath } else { $defaultExe }
 if (-not (Test-Path -LiteralPath $exePath -PathType Leaf)) {
     throw "Packaged executable was not found: $exePath"

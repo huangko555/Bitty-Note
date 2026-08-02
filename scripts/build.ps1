@@ -23,4 +23,15 @@ if ($LASTEXITCODE -ne 0) { throw "生成应用图标失败，退出码：$LASTEX
 & '.\.venv\Scripts\python.exe' -m PyInstaller --noconfirm --clean bitty.spec
 if ($LASTEXITCODE -ne 0) { throw "构建 Windows 应用失败，退出码：$LASTEXITCODE" }
 
-Write-Host 'Build completed: dist\小记一下\小记一下.exe'
+$releaseDirectory = Join-Path $projectRoot 'dist\Bitty-Note'
+$releaseDocuments = @(
+    'LICENSE',
+    'PRIVACY.md',
+    'CODE_SIGNING_POLICY.md',
+    'THIRD_PARTY_NOTICES.md'
+)
+foreach ($document in $releaseDocuments) {
+    Copy-Item -LiteralPath (Join-Path $projectRoot $document) -Destination $releaseDirectory
+}
+
+Write-Host 'Build completed: dist\Bitty-Note\Bitty-Note.exe'

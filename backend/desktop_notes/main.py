@@ -8,9 +8,11 @@ import threading
 from pathlib import Path
 
 import webview
+import velopack
 
 from .bridge import DesktopBridge, WindowStateSaver
 from .config import ConfigStore
+from .i18n import set_language
 from .platform_windows import documents_directory, local_config_path, set_autostart
 
 
@@ -56,15 +58,31 @@ def _single_instance() -> object | None:
     return handle
 
 
+def _normalize_window_after_show(
+    window: webview.Window,
+    state_saver: WindowStateSaver,
+    width: int,
+    height: int,
+) -> None:
+    # WinForms applies the frameless style after its initial size. Resizing once
+    # after the native window is shown prevents the removed frame dimensions
+    # from being subtracted again on every restart.
+    window.resize(width, height)
+    window.events.moved += state_saver.schedule
+    window.events.resized += state_saver.schedule
+
+
 def main() -> None:
+    velopack.App().run()
     instance = _single_instance()
     if instance is None:
         return
 
     logging.basicConfig(level=logging.ERROR)
-    default_notes = documents_directory() / "小记一下"
+    default_notes = documents_directory() / "Bitty-Note"
     config_store = ConfigStore(local_config_path(), default_notes)
     config = config_store.config
+    set_language(config.language)
     if config.autostart:
         try:
             set_autostart(True)
@@ -80,11 +98,11 @@ def main() -> None:
 
     index = _resource_path("dist/web/index.html")
     if not index.is_file():
-        raise RuntimeError("前端资源不存在，请先运行 npm run build。")
+        raise RuntimeError("Web assets are missing. Run npm run build first.")
 
     bridge = DesktopBridge(config_store)
     window = webview.create_window(
-        "小记一下",
+        "Bitty-Note",
         str(index),
         js_api=bridge,
         width=width,
@@ -100,8 +118,11 @@ def main() -> None:
     )
     bridge.attach_window(window)
     state_saver = WindowStateSaver(window, config_store)
-    window.events.moved += state_saver.schedule
-    window.events.resized += state_saver.schedule
+
+    def on_shown() -> None:
+        _normalize_window_after_show(window, state_saver, width, height)
+
+    window.events.shown += on_shown
     close_request_lock = threading.Lock()
     close_request_pending = False
 

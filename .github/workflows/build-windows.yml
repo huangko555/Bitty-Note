@@ -1,0 +1,65 @@
+name: Windows build
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Build and test application
+        shell: powershell
+        run: .\scripts\build.ps1
+
+      - name: Build Velopack portable release
+        shell: powershell
+        run: .\scripts\package-portable.ps1
+
+      - name: Create SHA-256 checksums
+        shell: powershell
+        run: |
+          Get-ChildItem -LiteralPath release\velopack -File |
+            Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLowerInvariant())  $(Split-Path -Leaf $_.Path)" } |
+            Set-Content -LiteralPath release\velopack\SHA256SUMS.txt -Encoding utf8
+
+      - name: Upload traceable build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Bitty-Note-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            dist/Bitty-Note/**
+            release/velopack/**

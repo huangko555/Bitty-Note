@@ -3,7 +3,10 @@ import type {
   MigrationResult,
   OpenedNote,
   SaveResult,
+  UpdateState,
 } from "./types";
+import type { AppLanguage } from "./types";
+import { t } from "./i18n";
 
 interface PythonApi {
   bootstrap(): Promise<BootstrapData>;
@@ -41,6 +44,10 @@ interface PythonApi {
   ): Promise<{ editor_font: BootstrapData["config"]["editor_font"]; editor_font_size: number }>;
   set_heading_divider(enabled: boolean): Promise<{ enabled: boolean }>;
   set_heading_list_highlight(enabled: boolean): Promise<{ enabled: boolean }>;
+  set_language(language: AppLanguage): Promise<{ language: AppLanguage }>;
+  check_update(force: boolean): Promise<UpdateState>;
+  install_update(): Promise<UpdateState>;
+  open_project_homepage(): Promise<void>;
   start_window_interaction(region: WindowInteractionRegion): Promise<void>;
   update_window_interaction(): Promise<void>;
   end_window_interaction(): Promise<void>;
@@ -90,6 +97,10 @@ export interface DesktopApi {
   ): Promise<void>;
   setHeadingDivider(enabled: boolean): Promise<void>;
   setHeadingListHighlight(enabled: boolean): Promise<void>;
+  setLanguage(language: AppLanguage): Promise<AppLanguage>;
+  checkUpdate(force?: boolean): Promise<UpdateState>;
+  installUpdate(): Promise<UpdateState>;
+  openProjectHomepage(): Promise<void>;
   startWindowInteraction(region: WindowInteractionRegion): Promise<void>;
   updateWindowInteraction(): Promise<void>;
   endWindowInteraction(): Promise<void>;
@@ -142,6 +153,10 @@ function desktopApi(raw: PythonApi): DesktopApi {
     setHeadingListHighlight: async (enabled) => {
       await raw.set_heading_list_highlight(enabled);
     },
+    setLanguage: async (language) => (await raw.set_language(language)).language,
+    checkUpdate: (force = false) => raw.check_update(force),
+    installUpdate: () => raw.install_update(),
+    openProjectHomepage: () => raw.open_project_homepage(),
     startWindowInteraction: (region) => raw.start_window_interaction(region),
     updateWindowInteraction: () => raw.update_window_interaction(),
     endWindowInteraction: () => raw.end_window_interaction(),
@@ -153,9 +168,10 @@ function desktopApi(raw: PythonApi): DesktopApi {
 function browserMock(): DesktopApi {
   let notes: OpenedNote[] = [];
   let archivedNotes: OpenedNote[] = [];
-  let saveDir = "浏览器预览（不会写入磁盘）";
+  let saveDir = "Browser preview (no files are written)";
   let autostart = true;
   let alwaysOnTop = false;
+  let language: AppLanguage = "en";
   const revision = () => `${Date.now()}-${Math.random()}`;
   const summary = (items: OpenedNote[]) =>
     items.map((note, index) => ({
@@ -177,20 +193,27 @@ function browserMock(): DesktopApi {
     bootstrap: async () => ({
       config: {
         save_dir: saveDir,
+        language,
         autostart,
         always_on_top: alwaysOnTop,
         window_x: null,
         window_y: null,
-        window_width: 420,
-        window_height: 640,
+        window_width: 350,
+        window_height: 630,
         last_note: null,
         editor_font: "DengXian",
         editor_font_size: 14,
         heading_divider: true,
         heading_list_highlight: true,
+        last_update_check_ms: null,
+        available_version: null,
+        pending_update_version: null,
       },
       notes: summary(notes),
       system_fonts: ["Microsoft YaHei", "DengXian", "SimSun", "KaiTi"],
+      app_version: "1.0.2",
+      update_state: { status: "unsupported", available_version: null },
+      update_result: null,
     }),
     listNotes: async () => summary(notes),
     listArchivedNotes: async () => summary(archivedNotes),
@@ -207,7 +230,7 @@ function browserMock(): DesktopApi {
     },
     openNote: async (name) => {
       const note = notes.find((item) => item.name === name);
-      if (!note) throw new Error(`记录“${name}”已经不存在。`);
+      if (!note) throw new Error(t("missingTitle"));
       return { ...note };
     },
     saveNote: async (note, content) => {
@@ -224,7 +247,7 @@ function browserMock(): DesktopApi {
     },
     archiveNote: async (name) => {
       const note = notes.find((item) => item.name === name);
-      if (!note) throw new Error(`记录“${name}”已经不存在`);
+      if (!note) throw new Error(t("missingTitle"));
       notes = notes.filter((item) => item.name !== name);
       let archivedName = note.name;
       let index = 2;
@@ -236,18 +259,18 @@ function browserMock(): DesktopApi {
     },
     restoreArchivedNote: async (name) => {
       const note = archivedNotes.find((item) => item.name === name);
-      if (!note) throw new Error(`归档记录“${name}”已经不存在`);
+      if (!note) throw new Error(t("missingTitle"));
       archivedNotes = archivedNotes.filter((item) => item.name !== name);
       const restoredName = uniqueName(note.name.replace(/\.md$/i, ""));
       notes.unshift({ ...note, name: restoredName });
     },
     deleteArchivedNote: async (name) => {
       if (!archivedNotes.some((item) => item.name === name)) {
-        throw new Error(`归档记录“${name}”已经不存在`);
+        throw new Error(t("missingTitle"));
       }
       archivedNotes = archivedNotes.filter((item) => item.name !== name);
     },
-    chooseDirectory: async () => "浏览器预览/新目录",
+    chooseDirectory: async () => "Browser preview/New folder",
     openDirectory: async () => {},
     migrateDirectory: async (path) => {
       saveDir = path;
@@ -265,6 +288,15 @@ function browserMock(): DesktopApi {
     setEditorPreferences: async () => {},
     setHeadingDivider: async () => {},
     setHeadingListHighlight: async () => {},
+    setLanguage: async (nextLanguage) => {
+      language = nextLanguage;
+      return language;
+    },
+    checkUpdate: async () => ({ status: "unsupported", available_version: null }),
+    installUpdate: async () => ({ status: "unsupported", available_version: null }),
+    openProjectHomepage: async () => {
+      window.open("https://github.com/huangko555/Bitty-Note", "_blank", "noopener");
+    },
     startWindowInteraction: async () => {},
     updateWindowInteraction: async () => {},
     endWindowInteraction: async () => {},

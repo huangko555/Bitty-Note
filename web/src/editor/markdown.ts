@@ -8,6 +8,7 @@ import {
 import { MarkdownSerializer } from "prosemirror-markdown";
 
 import { noteSchema } from "./schema";
+import { t } from "../i18n";
 
 const EMPTY_LIST_PARAGRAPH_MARKER = "<!-- bitty-empty-line -->";
 const EMPTY_LIST_PARAGRAPH_SENTINEL = "BITTY_EMPTY_LIST_PARAGRAPH";
@@ -131,16 +132,16 @@ function supportedSyntax(markdown: string): string | null {
     EMPTY_LIST_PARAGRAPH_SENTINEL,
   );
   if (/^\s*\|?.+\|.+\n\s*\|?\s*:?-{3,}/m.test(markdown)) {
-    return "包含表格语法";
+    return t("markdownTable");
   }
 
   const tokens = inspector.parse(markdown, {});
   for (const token of tokens) {
-    if (!blockTokens.has(token.type)) return `包含不支持的 ${token.type} 结构`;
-    if (token.type === "heading_open" && token.tag !== "h1") return "包含二级或更低级标题";
+    if (!blockTokens.has(token.type)) return t("markdownUnsupportedBlock", { type: token.type });
+    if (token.type === "heading_open" && token.tag !== "h1") return t("markdownLowerHeading");
     if (token.type === "inline") {
       for (const child of token.children ?? []) {
-        if (!inlineTokens.has(child.type)) return `包含不支持的 ${child.type} 格式`;
+        if (!inlineTokens.has(child.type)) return t("markdownUnsupportedInline", { type: child.type });
       }
     }
   }

@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .config import ConfigStore
 from .errors import UserVisibleError
+from .i18n import text as message
 from .models import MigrationResult
 
 
@@ -43,9 +44,15 @@ class StorageManager:
         source = Path(self.config_store.config.save_dir).resolve()
         target = target_directory.resolve()
         if source == target:
-            raise UserVisibleError("新保存目录与当前目录相同")
+            raise UserVisibleError(message(
+                "The new storage folder is the same as the current folder.",
+                "新保存目录与当前目录相同",
+            ))
         if _is_relative_to(target, source) or _is_relative_to(source, target):
-            raise UserVisibleError("新旧保存目录不能互相包含")
+            raise UserVisibleError(message(
+                "The old and new storage folders cannot contain each other.",
+                "新旧保存目录不能互相包含",
+            ))
 
         sources = self._managed_files(source)
         target.mkdir(parents=True, exist_ok=True)
@@ -60,7 +67,10 @@ class StorageManager:
                 staged_file.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source_file, staged_file)
                 if _digest(source_file) != _digest(staged_file):
-                    raise UserVisibleError(f"迁移校验失败：{source_file.name}")
+                    raise UserVisibleError(message(
+                        f"Migration verification failed: {source_file.name}",
+                        f"迁移校验失败：{source_file.name}",
+                    ))
                 plans.append((source_file, staged_file, target / final_relative))
 
             for _, staged_file, final_file in plans:
@@ -72,7 +82,10 @@ class StorageManager:
                 self.config_store.update(save_dir=str(target))
             except OSError as error:
                 self._rollback(committed)
-                raise UserVisibleError(f"无法切换保存路径：{error}") from error
+                raise UserVisibleError(message(
+                    f"Couldn't change the storage folder: {error}",
+                    f"无法切换保存路径：{error}",
+                )) from error
 
             retained: list[str] = []
             recycled_count = 0
@@ -91,7 +104,10 @@ class StorageManager:
             raise
         except OSError as error:
             self._rollback(committed)
-            raise UserVisibleError(f"迁移保存目录失败：{error}") from error
+            raise UserVisibleError(message(
+                f"Couldn't migrate the storage folder: {error}",
+                f"迁移保存目录失败：{error}",
+            )) from error
         finally:
             shutil.rmtree(stage, ignore_errors=True)
 

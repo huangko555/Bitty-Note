@@ -16,11 +16,13 @@ import {
   type EditorController,
 } from "./editor/editor";
 import { createSelectionVisibilityCoordinator } from "./editor/selection-visibility";
+import { setLanguage, t } from "./i18n";
 import type {
   AppConfig,
   NoteSummary,
   OpenedNote,
   SaveResult,
+  UpdateState,
 } from "./types";
 import { prepareForWindowMinimize, syncPinButtons } from "./window-controls";
 
@@ -43,11 +45,12 @@ let deleteTimer: number | null = null;
 let editorPreferenceSave: Promise<void> = Promise.resolve();
 let systemFonts: string[] = [];
 let overlayScrollbarCleanup: (() => void) | null = null;
+let appVersion = "";
+let updateState: UpdateState = { status: "idle", available_version: null };
 
 const MIN_EDITOR_FONT_SIZE = 12;
 const MAX_EDITOR_FONT_SIZE = 22;
 const DEFAULT_EDITOR_FONT = "DengXian";
-const APP_VERSION = "1.0.2";
 
 function applyEditorAppearance(): void {
   const family = config.editor_font.trim() || DEFAULT_EDITOR_FONT;
@@ -86,7 +89,9 @@ type IconName =
   | "archive"
   | "back"
   | "bold"
+  | "check"
   | "heading"
+  | "github"
   | "italic"
   | "list"
   | "listChecks"
@@ -97,6 +102,7 @@ type IconName =
   | "settings"
   | "strikethrough"
   | "trash"
+  | "update"
   | "undo2"
   | "close";
 
@@ -105,7 +111,9 @@ function icon(name: IconName): string {
     archive: '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
     back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
     bold: '<path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8"/>',
+    check: '<path d="m5 12 4 4L19 6"/>',
     heading: '<path d="M6 12h12"/><path d="M6 20V4"/><path d="M18 20V4"/>',
+    github: '<path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3.3-.4 6.8-1.6 6.8-7A5.4 5.4 0 0 0 19.4 4 5 5 0 0 0 19.3.5S18 0 15 2a13.4 13.4 0 0 0-7 0C5-.1 3.7.5 3.7.5A5 5 0 0 0 3.6 4a5.4 5.4 0 0 0-1.4 3.7c0 5.4 3.5 6.5 6.8 7A4.8 4.8 0 0 0 8 18v4"/><path d="M8 19c-3 .9-3-1.5-4-2"/>',
     italic: '<line x1="19" x2="10" y1="4" y2="4"/><line x1="14" x2="5" y1="20" y2="20"/><line x1="15" x2="9" y1="4" y2="20"/>',
     list: '<path d="M3 5h.01"/><path d="M3 12h.01"/><path d="M3 19h.01"/><path d="M8 5h13"/><path d="M8 12h13"/><path d="M8 19h13"/>',
     listChecks: '<path d="M13 5h8"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/>',
@@ -116,6 +124,7 @@ function icon(name: IconName): string {
     settings: '<path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/>',
     strikethrough: '<path d="M16 4H9a3 3 0 0 0-2.83 4"/><path d="M14 12a4 4 0 0 1 0 8H6"/><line x1="4" x2="20" y1="12" y2="12"/>',
     trash: '<path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+    update: '<path d="M21 12a9 9 0 0 1-15.2 6.5L3 16"/><path d="M3 21v-5h5"/><path d="M3 12A9 9 0 0 1 18.2 5.5L21 8"/><path d="M21 3v5h-5"/>',
     undo2: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5A5.5 5.5 0 0 1 14.5 20H11"/>',
     close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   };
@@ -127,13 +136,13 @@ function titleBar(title: string, back: (() => void) | null): HTMLElement {
   bar.className = "title-bar";
   bar.innerHTML = `
     <div class="title-left">
-      ${back ? `<button class="window-button no-drag" data-action="back" aria-label="返回">${icon("back")}</button>` : '<span class="app-mark">Bitty</span>'}
+      ${back ? `<button class="window-button no-drag" data-action="back" aria-label="${t("back")}">${icon("back")}</button>` : '<span class="app-mark">Bitty</span>'}
     </div>
     <div class="window-title" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
     <div class="window-actions">
-      <button class="window-button no-drag ${config.always_on_top ? "is-active" : ""}" data-action="pin" aria-label="置顶" aria-pressed="${config.always_on_top}">${icon("pin")}</button>
-      <button class="window-button no-drag" data-action="minimize" aria-label="最小化">${icon("minimize")}</button>
-      <button class="window-button no-drag close-button" data-action="close" aria-label="关闭">${icon("close")}</button>
+      <button class="window-button no-drag ${config.always_on_top ? "is-active" : ""}" data-action="pin" aria-label="${t("pin")}" aria-pressed="${config.always_on_top}">${icon("pin")}</button>
+      <button class="window-button no-drag" data-action="minimize" aria-label="${t("minimize")}">${icon("minimize")}</button>
+      <button class="window-button no-drag close-button" data-action="close" aria-label="${t("close")}">${icon("close")}</button>
     </div>`;
   if (back) bar.querySelector('[data-action="back"]')?.addEventListener("click", back);
   bar.querySelector('[data-action="pin"]')?.addEventListener("click", async () => {
@@ -333,11 +342,7 @@ function showToast(message: string, kind: "info" | "warning" = "info"): void {
   document.querySelector(".toast")?.remove();
   const toast = document.createElement("div");
   toast.className = `toast ${kind}`;
-  toast.classList.toggle(
-    "above-editor-toolbar",
-    Boolean(document.querySelector(".note-page")),
-  );
-  toast.textContent = message;
+  toast.textContent = message.replace(/[。.!！?？;；]+$/u, "");
   document.body.append(toast);
   window.setTimeout(() => toast.remove(), 3200);
 }
@@ -345,7 +350,7 @@ function showToast(message: string, kind: "info" | "warning" = "info"): void {
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
-  return "发生了未知错误";
+  return t("unknownError");
 }
 
 function modal(options: {
@@ -387,9 +392,9 @@ function modal(options: {
 
 function showError(error: unknown): void {
   modal({
-    title: "操作没有完成",
+    title: t("operationFailed"),
     message: errorMessage(error),
-    actions: [{ label: "知道了", kind: "primary", run: () => {} }],
+    actions: [{ label: t("acknowledge"), kind: "primary", run: () => {} }],
   });
 }
 
@@ -416,18 +421,18 @@ async function renderHome(): Promise<void> {
   main.className = "home-page";
   main.innerHTML = `
     <div class="home-heading">
-      <h1 class="home-title">小记一下</h1>
+      <h1 class="home-title">${t("homeTitle")}</h1>
       <div class="home-actions">
-        <button class="icon-button" data-action="show-archive" aria-label="归档">${icon("archive")}</button>
-        <button class="icon-button" data-action="settings" aria-label="设置">${icon("settings")}</button>
+        <button class="icon-button" data-action="show-archive" aria-label="${t("archive")}">${icon("archive")}</button>
+        <button class="icon-button update-indicator ${updateState.status === "available" ? "has-update" : ""}" data-action="settings" aria-label="${t("settings")}">${icon("settings")}<span class="update-dot" aria-hidden="true"></span></button>
       </div>
     </div>
     <div class="note-list" aria-live="polite"></div>
-    <button class="create-button" data-action="create" aria-label="新建记录">${icon("plus")}</button>`;
+    <button class="create-button" data-action="create" aria-label="${t("createNote")}">${icon("plus")}</button>`;
   const list = main.querySelector<HTMLElement>(".note-list")!;
   if (notes.length === 0) {
     main.classList.add("is-empty");
-    list.innerHTML = '<div class="empty-state"><p>还没有记录</p></div>';
+    list.innerHTML = `<div class="empty-state"><p>${t("noNotes")}</p></div>`;
     const createArrow = document.createElement("div");
     createArrow.className = "empty-create-arrow";
     createArrow.setAttribute("aria-hidden", "true");
@@ -438,12 +443,12 @@ async function renderHome(): Promise<void> {
       const item = document.createElement("article");
       item.className = "note-card";
       item.innerHTML = `
-        <button class="note-open" aria-label="打开 ${escapeHtml(note.name)}">
+        <button class="note-open" aria-label="${escapeHtml(t("openNote", { name: note.name }))}">
           <strong>${escapeHtml(note.name.replace(/\.md$/i, ""))}</strong>
-          <span>${escapeHtml(note.preview || "空白记录")}</span>
+          <span>${escapeHtml(note.preview || t("emptyNote"))}</span>
         </button>
-        <button class="archive-button ${archiveCandidate === note.name ? "confirm" : ""}" aria-label="归档 ${escapeHtml(note.name)}">
-          ${archiveCandidate === note.name ? "确认" : icon("archive")}
+        <button class="archive-button ${archiveCandidate === note.name ? "confirm" : ""}" aria-label="${escapeHtml(t("archiveNote", { name: note.name }))}">
+          ${archiveCandidate === note.name ? icon("check") : icon("archive")}
         </button>`;
       item.querySelector(".note-open")?.addEventListener("click", () => openNote(note.name));
       item.querySelector(".archive-button")?.addEventListener("click", () => confirmArchive(note.name));
@@ -471,12 +476,12 @@ async function renderArchive(): Promise<void> {
   const main = document.createElement("main");
   main.className = "archive-page";
   main.innerHTML = `
-    <div class="archive-heading"><h1>归档</h1></div>
+    <div class="archive-heading"><h1>${t("archiveTitle")}</h1></div>
     <div class="note-list" aria-live="polite"></div>`;
   const list = main.querySelector<HTMLElement>(".note-list")!;
   if (archivedNotes.length === 0) {
     main.classList.add("is-empty");
-    list.innerHTML = '<div class="empty-state"><p>还没有归档记录</p></div>';
+    list.innerHTML = `<div class="empty-state"><p>${t("noArchivedNotes")}</p></div>`;
   } else {
     for (const note of archivedNotes) {
       const item = document.createElement("article");
@@ -484,12 +489,12 @@ async function renderArchive(): Promise<void> {
       item.innerHTML = `
         <div class="note-open archived-note-summary">
           <strong>${escapeHtml(note.name.replace(/\.md$/i, ""))}</strong>
-          <span>${escapeHtml(note.preview || "空白记录")}</span>
+          <span>${escapeHtml(note.preview || t("emptyNote"))}</span>
         </div>
         <div class="archived-note-actions">
-          <button class="archived-action restore-button" aria-label="还原 ${escapeHtml(note.name)}">${icon("undo2")}</button>
-          <button class="archived-action delete-button ${deleteCandidate === note.name ? "confirm" : ""}" aria-label="删除 ${escapeHtml(note.name)}">
-            ${deleteCandidate === note.name ? "确认" : icon("trash")}
+          <button class="archived-action restore-button" aria-label="${escapeHtml(t("restoreNote", { name: note.name }))}">${icon("undo2")}</button>
+          <button class="archived-action delete-button ${deleteCandidate === note.name ? "confirm" : ""}" aria-label="${escapeHtml(t("deleteNote", { name: note.name }))}">
+            ${deleteCandidate === note.name ? icon("check") : icon("trash")}
           </button>
         </div>`;
       item.querySelector(".restore-button")?.addEventListener("click", () => restoreArchivedNote(note.name));
@@ -550,9 +555,9 @@ function showCreateDialog(): void {
   backdrop.className = "modal-backdrop";
   backdrop.innerHTML = `
     <section class="modal-panel create-panel">
-      <h2>新建记录</h2>
-      <input type="text" maxlength="100" value="${escapeHtml(defaultName)}" aria-label="记录名称" />
-      <div class="modal-actions"><button class="button" data-action="cancel">取消</button><button class="button primary" data-action="confirm">新建</button></div>
+      <h2>${t("createNote")}</h2>
+      <input type="text" maxlength="100" value="${escapeHtml(defaultName)}" aria-label="${t("noteName")}" />
+      <div class="modal-actions"><button class="button" data-action="cancel">${t("cancel")}</button><button class="button primary" data-action="confirm">${t("create")}</button></div>
     </section>`;
   const input = backdrop.querySelector<HTMLInputElement>("input")!;
   const create = async () => {
@@ -617,7 +622,7 @@ async function showNote(note: OpenedNote): Promise<void> {
   const shell = pageShell(note.name, backToHome, true);
   const main = document.createElement("main");
   main.className = "note-page";
-  main.innerHTML = '<div class="editor-host"></div><div class="format-toolbar" aria-label="格式工具栏"></div>';
+  main.innerHTML = `<div class="editor-host"></div><div class="format-toolbar" aria-label="${t("formatToolbar")}"></div>`;
   const host = main.querySelector<HTMLElement>(".editor-host")!;
   const toolbar = main.querySelector<HTMLElement>(".format-toolbar")!;
   toolbar.addEventListener("mousedown", (event) => event.preventDefault());
@@ -651,14 +656,14 @@ async function showNote(note: OpenedNote): Promise<void> {
   window.setTimeout(() => editor?.focus(), 0);
 }
 
-const toolbarItems: { action: EditorAction; icon: IconName; title: string }[] = [
-  { action: "heading", icon: "heading", title: "一级标题" },
-  { action: "strong", icon: "bold", title: "粗体" },
-  { action: "em", icon: "italic", title: "斜体" },
-  { action: "strike", icon: "strikethrough", title: "删除线" },
-  { action: "bullet", icon: "list", title: "无序列表" },
-  { action: "ordered", icon: "listOrdered", title: "有序列表" },
-  { action: "task", icon: "listChecks", title: "勾选框" },
+const toolbarItems: { action: EditorAction; icon: IconName; title: Parameters<typeof t>[0] }[] = [
+  { action: "heading", icon: "heading", title: "heading" },
+  { action: "strong", icon: "bold", title: "bold" },
+  { action: "em", icon: "italic", title: "italic" },
+  { action: "strike", icon: "strikethrough", title: "strikethrough" },
+  { action: "bullet", icon: "list", title: "bulletList" },
+  { action: "ordered", icon: "listOrdered", title: "orderedList" },
+  { action: "task", icon: "listChecks", title: "taskList" },
 ];
 
 function renderToolbar(toolbar: HTMLElement): void {
@@ -672,8 +677,8 @@ function renderToolbar(toolbar: HTMLElement): void {
     const button = document.createElement("button");
     button.type = "button";
     button.dataset.action = item.action;
-    button.title = item.title;
-    button.setAttribute("aria-label", item.title);
+    button.title = t(item.title);
+    button.setAttribute("aria-label", t(item.title));
     button.innerHTML = icon(item.icon);
     button.addEventListener("mousedown", (event) => {
       event.preventDefault();
@@ -724,7 +729,10 @@ function updateFontSizeButtons(root: ParentNode = document): void {
       : config.editor_font_size >= MAX_EDITOR_FONT_SIZE;
     button.classList.toggle("is-disabled", unavailable);
     button.setAttribute("aria-disabled", String(unavailable));
-    button.title = `${direction < 0 ? "缩小" : "增大"}字号，当前 ${config.editor_font_size}px`;
+    button.title = t("fontSize", {
+      direction: t(direction < 0 ? "decrease" : "increase"),
+      size: config.editor_font_size,
+    });
     button.setAttribute("aria-label", button.title);
   });
 }
@@ -779,11 +787,11 @@ async function saveNow(force = false): Promise<boolean> {
 
 function showConflict(result: SaveResult): void {
   modal({
-    title: "文件已在其他位置修改",
-    message: "请选择保留外部版本，或使用当前记录覆盖它。",
+    title: t("conflictTitle"),
+    message: t("conflictMessage"),
     actions: [
       {
-        label: "重新加载外部版本",
+        label: t("reloadExternal"),
         run: async () => {
           if (!currentNote || result.external_content === null || result.revision === null) return;
           currentNote = {
@@ -796,9 +804,9 @@ function showConflict(result: SaveResult): void {
           await showNote(currentNote);
         },
       },
-      { label: "复制当前内容", run: copyCurrentContent },
+      { label: t("copyCurrent"), run: copyCurrentContent },
       {
-        label: "覆盖外部版本",
+        label: t("overwriteExternal"),
         kind: "danger",
         run: async () => {
           if (!currentNote || result.revision === null) return;
@@ -814,20 +822,20 @@ function showConflict(result: SaveResult): void {
 
 function showMissing(): void {
   modal({
-    title: "文件已经不存在",
-    message: "它可能已被其他程序删除、移动或重命名。",
+    title: t("missingTitle"),
+    message: t("missingMessage"),
     actions: [
       {
-        label: "返回主页",
+        label: t("returnHome"),
         run: async () => {
           dirty = false;
           locked = false;
           await renderHome();
         },
       },
-      { label: "复制当前内容", run: copyCurrentContent },
+      { label: t("copyCurrent"), run: copyCurrentContent },
       {
-        label: "重新创建",
+        label: t("recreate"),
         kind: "primary",
         run: async () => {
           if (!currentNote) return;
@@ -841,12 +849,12 @@ function showMissing(): void {
 
 function showSaveFailure(error: unknown): void {
   modal({
-    title: "保存失败",
-    message: `${errorMessage(error)} 当前内容仍保留在窗口中。`,
+    title: t("saveFailed"),
+    message: `${errorMessage(error)} ${t("contentKept")}`,
     actions: [
-      { label: "复制当前内容", run: copyCurrentContent },
+      { label: t("copyCurrent"), run: copyCurrentContent },
       {
-        label: "重试保存",
+        label: t("retrySave"),
         kind: "primary",
         run: async () => {
           locked = false;
@@ -860,7 +868,7 @@ function showSaveFailure(error: unknown): void {
 
 async function copyCurrentContent(): Promise<void> {
   await navigator.clipboard.writeText(currentContent);
-  showToast("当前内容已复制");
+  showToast(t("copied"));
 }
 
 async function backToHome(): Promise<void> {
@@ -882,6 +890,21 @@ declare global {
 
 window.desktopNotesRequestClose = () => void closeApplication();
 
+function updateButtonText(): string {
+  return updateState.status === "available" ? t("update") : t("checkUpdate");
+}
+
+async function refreshUpdateState(force = false): Promise<UpdateState> {
+  updateState = await api.checkUpdate(force);
+  document.querySelectorAll(".update-indicator").forEach((element) => {
+    element.classList.toggle("has-update", updateState.status === "available");
+  });
+  const updateButton = document.querySelector<HTMLElement>(".update-button");
+  updateButton?.setAttribute("aria-label", updateButtonText());
+  updateButton?.setAttribute("title", updateButtonText());
+  return updateState;
+}
+
 async function renderSettings(): Promise<void> {
   const fontOptions = Array.from(new Set([config.editor_font, ...systemFonts]))
     .filter(Boolean)
@@ -891,43 +914,60 @@ async function renderSettings(): Promise<void> {
   main.className = "settings-page";
   main.innerHTML = `
     <div class="settings-heading">
-      <div class="settings-title"><h1>设置</h1><span>v${APP_VERSION}</span></div>
-      <div class="settings-status" role="status" aria-live="polite"></div>
+      <div class="settings-title"><h1>${t("settingsTitle")}</h1><span>v${appVersion}</span></div>
+      <div class="settings-actions">
+        <button class="button compact-button update-button update-indicator ${updateState.status === "available" ? "has-update" : ""}" data-action="update" aria-label="${updateButtonText()}" title="${updateButtonText()}">${icon("update")}<span class="update-dot" aria-hidden="true"></span></button>
+        <button class="button compact-button github-button" data-action="github" aria-label="${t("openGithub")}" title="${t("openGithub")}">${icon("github")}</button>
+      </div>
     </div>
+    <section class="setting-card toggle-row language-row">
+      <label for="language-select">${t("language")}</label>
+      <select id="language-select" class="font-select language-select" aria-label="${t("chooseLanguage")}">
+        <option value="en" ${config.language === "en" ? "selected" : ""}>${t("english")}</option>
+        <option value="zh-CN" ${config.language === "zh-CN" ? "selected" : ""}>${t("simplifiedChinese")}</option>
+      </select>
+    </section>
     <section class="setting-card toggle-row">
-      <div><label for="autostart">开机自启动</label></div>
+      <div><label for="autostart">${t("autostart")}</label></div>
       <input id="autostart" type="checkbox" ${config.autostart ? "checked" : ""} />
     </section>
     <section class="setting-card">
-      <label>Markdown 保存路径</label>
-      <div class="path-row"><input type="text" readonly value="${escapeHtml(config.save_dir)}" /><button class="button" data-action="browse">切换</button><button class="button" data-action="open-directory">打开</button></div>
+      <label>${t("markdownPath")}</label>
+      <div class="path-row"><input type="text" readonly value="${escapeHtml(config.save_dir)}" /><button class="button" data-action="browse">${t("change")}</button><button class="button" data-action="open-directory">${t("open")}</button></div>
     </section>
     <section class="setting-card">
-      <label for="editor-font">编辑器字体</label>
+      <label for="editor-font">${t("editorFont")}</label>
       <select id="editor-font" class="font-select">
         ${fontOptions.map((font) => `<option value="${escapeHtml(font)}" ${font === config.editor_font ? "selected" : ""}>${escapeHtml(font)}</option>`).join("")}
       </select>
     </section>
     <section class="setting-card toggle-row">
-      <div><label for="heading-divider">标题分割线</label></div>
+      <div><label for="heading-divider">${t("headingDivider")}</label></div>
       <input id="heading-divider" type="checkbox" ${config.heading_divider ? "checked" : ""} />
     </section>
     <section class="setting-card toggle-row">
-      <div><label for="heading-list-highlight">标题、列表项高亮</label></div>
+      <div><label for="heading-list-highlight">${t("structureHighlight")}</label></div>
       <input id="heading-list-highlight" type="checkbox" ${config.heading_list_highlight ? "checked" : ""} />
     </section>`;
   const pathInput = main.querySelector<HTMLInputElement>('.path-row input')!;
   const browseButton = main.querySelector<HTMLButtonElement>('[data-action="browse"]')!;
   const openDirectoryButton = main.querySelector<HTMLButtonElement>('[data-action="open-directory"]')!;
-  const settingsStatus = main.querySelector<HTMLElement>(".settings-status")!;
-  let settingsStatusTimer: number | null = null;
+  const languageSelect = main.querySelector<HTMLSelectElement>("#language-select")!;
+  languageSelect.addEventListener("change", async () => {
+    const previousLanguage = config.language;
+    languageSelect.disabled = true;
+    try {
+      config.language = await api.setLanguage(languageSelect.value as typeof config.language);
+      setLanguage(config.language);
+      await renderSettings();
+    } catch (error) {
+      languageSelect.value = previousLanguage;
+      languageSelect.disabled = false;
+      showError(error);
+    }
+  });
   const showSettingsStatus = (message: string, kind: "info" | "warning" = "info") => {
-    if (settingsStatusTimer !== null) window.clearTimeout(settingsStatusTimer);
-    settingsStatus.textContent = message;
-    settingsStatus.className = `settings-status visible ${kind}`;
-    settingsStatusTimer = window.setTimeout(() => {
-      settingsStatus.className = "settings-status";
-    }, 3200);
+    showToast(message, kind);
   };
   main.querySelector('[data-action="browse"]')?.addEventListener("click", async () => {
     try {
@@ -939,15 +979,52 @@ async function renderSettings(): Promise<void> {
       config.save_dir = selected;
       pathInput.value = selected;
       if (migration.retained_files.length) {
-        showSettingsStatus("路径已切换，部分原文件未能移入回收站", "warning");
+        showSettingsStatus(t("pathChangedWarning"), "warning");
       } else {
-        showSettingsStatus("切换成功！文件已迁移");
+        showSettingsStatus(t("pathChanged"));
       }
     } catch (error) {
       showError(error);
     } finally {
       browseButton.disabled = false;
       openDirectoryButton.disabled = false;
+    }
+  });
+  const updateButton = main.querySelector<HTMLButtonElement>('[data-action="update"]')!;
+  updateButton.addEventListener("click", async () => {
+    updateButton.disabled = true;
+    try {
+      if (updateState.status === "available") {
+        updateButton.setAttribute("aria-label", t("downloadingUpdate"));
+        updateButton.setAttribute("title", t("downloadingUpdate"));
+        updateState = await api.installUpdate();
+        if (updateState.status !== "available") showSettingsStatus(t("upToDate"));
+        return;
+      }
+      updateButton.setAttribute("aria-label", t("checkingUpdate"));
+      updateButton.setAttribute("title", t("checkingUpdate"));
+      const state = await refreshUpdateState(true);
+      if (state.status === "available" && state.available_version) {
+        showSettingsStatus(t("updateAvailable", { version: state.available_version }));
+      } else if (state.status === "unsupported") {
+        showSettingsStatus(t("updateUnavailable"), "warning");
+      } else {
+        showSettingsStatus(t("upToDate"));
+      }
+    } catch (error) {
+      showSettingsStatus(t("updateFailed"), "warning");
+      void error;
+    } finally {
+      updateButton.setAttribute("aria-label", updateButtonText());
+      updateButton.setAttribute("title", updateButtonText());
+      updateButton.disabled = false;
+    }
+  });
+  main.querySelector('[data-action="github"]')?.addEventListener("click", async () => {
+    try {
+      await api.openProjectHomepage();
+    } catch (error) {
+      showError(error);
     }
   });
   main.querySelector('[data-action="open-directory"]')?.addEventListener("click", async () => {
@@ -1037,7 +1114,7 @@ async function checkExternalChange(): Promise<void> {
     if (disk.revision === currentNote.revision) return;
     if (!dirty) {
       await showNote(disk);
-      showToast("已重新加载外部修改");
+      showToast(t("externalReloaded"));
     } else {
       showConflict({
         status: "conflict",
@@ -1065,29 +1142,43 @@ async function syncAlwaysOnTop(): Promise<void> {
 }
 
 async function start(): Promise<void> {
-  app.innerHTML = '<div class="loading"><span>Bitty</span><p>正在打开…</p></div>';
+  app.innerHTML = `<div class="loading"><span>Bitty</span><p>${t("opening")}</p></div>`;
   api = await connectApi();
   const bootstrap = await api.bootstrap();
   config = bootstrap.config;
+  setLanguage(config.language);
   notes = bootstrap.notes;
   systemFonts = bootstrap.system_fonts;
+  appVersion = bootstrap.app_version;
+  updateState = bootstrap.update_state;
   applyEditorAppearance();
   await syncAlwaysOnTop();
   window.addEventListener("focus", () => {
     void checkExternalChange();
     void syncAlwaysOnTop();
   });
+  let restoredNote = false;
   if (config.last_note) {
     try {
       await showNote(await api.openNote(config.last_note));
-      return;
+      restoredNote = true;
     } catch {
       config.last_note = null;
     }
   }
-  await renderHome();
+  if (!restoredNote) await renderHome();
+  if (bootstrap.update_result) {
+    showToast(
+      bootstrap.update_result.status === "success"
+        ? t("updateSucceeded", { version: bootstrap.update_result.version })
+        : t("updateFailed"),
+      bootstrap.update_result.status === "success" ? "info" : "warning",
+    );
+  }
+  void refreshUpdateState(false).catch(() => {});
+  window.setInterval(() => void refreshUpdateState(false).catch(() => {}), 60 * 60 * 1000);
 }
 
 void start().catch((error) => {
-  app.innerHTML = `<div class="fatal-error"><h1>小记一下无法启动</h1><p>${escapeHtml(errorMessage(error))}</p></div>`;
+  app.innerHTML = `<div class="fatal-error"><h1>${t("startupFailed")}</h1><p>${escapeHtml(errorMessage(error))}</p></div>`;
 });

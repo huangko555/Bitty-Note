@@ -8,6 +8,8 @@ from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 from typing import Any
 
+from .i18n import SUPPORTED_LANGUAGES
+
 
 DEFAULT_EDITOR_FONT = "DengXian"
 DEFAULT_EDITOR_FONT_SIZE = 14
@@ -41,17 +43,21 @@ def validate_editor_preferences(editor_font: str, editor_font_size: int) -> None
 @dataclass(frozen=True)
 class AppConfig:
     save_dir: str
+    language: str = "en"
     autostart: bool = True
     always_on_top: bool = False
     window_x: int | None = None
     window_y: int | None = None
-    window_width: int = 420
-    window_height: int = 640
+    window_width: int = 350
+    window_height: int = 630
     last_note: str | None = None
     editor_font: str = DEFAULT_EDITOR_FONT
     editor_font_size: int = DEFAULT_EDITOR_FONT_SIZE
     heading_divider: bool = True
     heading_list_highlight: bool = True
+    last_update_check_ms: int | None = None
+    available_version: str | None = None
+    pending_update_version: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -90,6 +96,8 @@ class ConfigStore:
             allowed = {item.name for item in fields(AppConfig)}
             values = {key: value for key, value in raw.items() if key in allowed}
             values.setdefault("save_dir", str(self.default_save_dir))
+            if values.get("language", "en") not in SUPPORTED_LANGUAGES:
+                values["language"] = "en"
             editor_font = values.get("editor_font", DEFAULT_EDITOR_FONT)
             if isinstance(editor_font, str):
                 values["editor_font"] = LEGACY_EDITOR_FONTS.get(

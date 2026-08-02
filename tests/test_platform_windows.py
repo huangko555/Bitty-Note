@@ -22,7 +22,7 @@ def test_open_directory_uses_windows_shell(tmp_path: Path, monkeypatch: pytest.M
 def test_open_directory_rejects_missing_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(platform_windows.sys, "platform", "win32")
 
-    with pytest.raises(UserVisibleError, match="保存目录不存在"):
+    with pytest.raises(UserVisibleError, match="storage folder doesn't exist"):
         platform_windows.open_directory(tmp_path / "missing")
 
 

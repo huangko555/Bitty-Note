@@ -20,8 +20,21 @@ export interface SaveResult {
   newline: "\n" | "\r\n";
 }
 
+export type AppLanguage = "en" | "zh-CN";
+
+export interface UpdateState {
+  status: "idle" | "available" | "unsupported";
+  available_version: string | null;
+}
+
+export interface UpdateResult {
+  status: "success" | "failed";
+  version: string;
+}
+
 export interface AppConfig {
   save_dir: string;
+  language: AppLanguage;
   autostart: boolean;
   always_on_top: boolean;
   window_x: number | null;
@@ -33,12 +46,18 @@ export interface AppConfig {
   editor_font_size: number;
   heading_divider: boolean;
   heading_list_highlight: boolean;
+  last_update_check_ms: number | null;
+  available_version: string | null;
+  pending_update_version: string | null;
 }
 
 export interface BootstrapData {
   config: AppConfig;
   notes: NoteSummary[];
   system_fonts: string[];
+  app_version: string;
+  update_state: UpdateState;
+  update_result: UpdateResult | null;
 }
 
 export interface MigrationResult {

@@ -9,6 +9,7 @@ from pathlib import Path
 from send2trash import send2trash
 
 from .errors import UserVisibleError
+from .i18n import text as message
 
 _APP_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 _APP_RUN_NAME = "Bitty"
@@ -62,16 +63,22 @@ def send_file_to_trash(path: Path) -> None:
 
 def open_directory(path: Path) -> None:
     if sys.platform != "win32":
-        raise UserVisibleError("当前系统不支持打开文件夹。")
+        raise UserVisibleError(message(
+            "Opening folders isn't supported on this system.",
+            "当前系统不支持打开文件夹。",
+        ))
     directory = path.resolve()
     if not directory.is_dir():
-        raise UserVisibleError("保存目录不存在。")
+        raise UserVisibleError(message("The storage folder doesn't exist.", "保存目录不存在。"))
     import os
 
     try:
         os.startfile(str(directory))
     except OSError as error:
-        raise UserVisibleError(f"无法打开保存目录：{error}") from error
+        raise UserVisibleError(message(
+            f"Couldn't open the storage folder: {error}",
+            f"无法打开保存目录：{error}",
+        )) from error
 
 
 def set_window_topmost(window: object, enabled: bool) -> None:
@@ -83,7 +90,10 @@ def set_window_topmost(window: object, enabled: bool) -> None:
     native = getattr(window, "native", None)
     handle_object = getattr(native, "Handle", None)
     if handle_object is None:
-        raise UserVisibleError("窗口尚未准备完成，无法切换置顶状态。")
+        raise UserVisibleError(message(
+            "The window isn't ready to change its always-on-top state.",
+            "窗口尚未准备完成，无法切换置顶状态。",
+        ))
 
     handle = int(handle_object.ToInt64())
     set_window_position = ctypes.windll.user32.SetWindowPos
@@ -101,7 +111,10 @@ def set_window_topmost(window: object, enabled: bool) -> None:
     insert_after = ctypes.wintypes.HWND(-1 if enabled else -2)
     flags = 0x0001 | 0x0002 | 0x0010 | 0x4000  # NOSIZE | NOMOVE | NOACTIVATE | ASYNC
     if not set_window_position(handle, insert_after, 0, 0, 0, 0, flags):
-        raise UserVisibleError(f"切换窗口置顶状态失败：{ctypes.WinError()}")
+        raise UserVisibleError(message(
+            f"Couldn't change the always-on-top state: {ctypes.WinError()}",
+            f"切换窗口置顶状态失败：{ctypes.WinError()}",
+        ))
 
 
 def is_window_topmost(window: object) -> bool:
@@ -111,7 +124,10 @@ def is_window_topmost(window: object) -> bool:
     native = getattr(window, "native", None)
     handle_object = getattr(native, "Handle", None)
     if handle_object is None:
-        raise UserVisibleError("窗口尚未准备完成，无法读取置顶状态。")
+        raise UserVisibleError(message(
+            "The window isn't ready to read its always-on-top state.",
+            "窗口尚未准备完成，无法读取置顶状态。",
+        ))
 
     handle = int(handle_object.ToInt64())
     get_window_long = getattr(ctypes.windll.user32, "GetWindowLongPtrW", None)
@@ -124,20 +140,27 @@ def is_window_topmost(window: object) -> bool:
 
 def start_window_interaction(window: object, region: str) -> WindowInteraction:
     if sys.platform != "win32" or region not in _WINDOW_REGIONS:
-        raise UserVisibleError("当前系统不支持此窗口操作。")
+        raise UserVisibleError(message(
+            "This window action isn't supported on the current system.",
+            "当前系统不支持此窗口操作。",
+        ))
 
     native = getattr(window, "native", None)
     handle_object = getattr(native, "Handle", None)
     if handle_object is None:
-        raise UserVisibleError("窗口尚未准备完成。")
+        raise UserVisibleError(message("The window isn't ready yet.", "窗口尚未准备完成。"))
 
     handle = int(handle_object.ToInt64())
     cursor = ctypes.wintypes.POINT()
     rect = ctypes.wintypes.RECT()
     if not ctypes.windll.user32.GetCursorPos(ctypes.byref(cursor)):
-        raise UserVisibleError("无法读取鼠标位置。")
+        raise UserVisibleError(message(
+            "Couldn't read the pointer position.", "无法读取鼠标位置。"
+        ))
     if not ctypes.windll.user32.GetWindowRect(handle, ctypes.byref(rect)):
-        raise UserVisibleError("无法读取窗口位置。")
+        raise UserVisibleError(message(
+            "Couldn't read the window position.", "无法读取窗口位置。"
+        ))
     dpi = ctypes.windll.user32.GetDpiForWindow(handle) or 96
     return WindowInteraction(
         region=region,
@@ -204,7 +227,10 @@ def update_window_interaction(interaction: WindowInteraction) -> None:
 
 def set_autostart(enabled: bool) -> None:
     if sys.platform != "win32":
-        raise UserVisibleError("当前系统不支持开机自启设置。")
+        raise UserVisibleError(message(
+            "Launch at startup isn't supported on this system.",
+            "当前系统不支持开机自启设置。",
+        ))
     import winreg
 
     if getattr(sys, "frozen", False):
@@ -229,4 +255,7 @@ def set_autostart(enabled: bool) -> None:
                     except FileNotFoundError:
                         pass
     except OSError as error:
-        raise UserVisibleError(f"无法修改开机自启设置：{error}") from error
+        raise UserVisibleError(message(
+            f"Couldn't change the launch-at-startup setting: {error}",
+            f"无法修改开机自启设置：{error}",
+        )) from error

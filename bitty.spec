@@ -6,7 +6,6 @@ analysis = Analysis(
     binaries=[],
     datas=[
         ("dist/web", "dist/web"),
-        ("THIRD_PARTY_NOTICES.md", "."),
         ("web/src/assets/fonts/OFL-FuzzyBubbles.txt", "licenses"),
         ("web/src/assets/fonts/OFL-SarasaGothic.txt", "licenses"),
         ("web/src/assets/fonts/OFL-SmileySans.txt", "licenses"),
@@ -27,7 +26,7 @@ exe = EXE(
     analysis.scripts,
     [],
     exclude_binaries=True,
-    name="小记一下",
+    name="Bitty-Note",
     icon="assets/app-icon.ico",
     debug=False,
     bootloader_ignore_signals=False,
@@ -43,5 +42,5 @@ bundle = COLLECT(
     analysis.datas,
     strip=False,
     upx=False,
-    name="小记一下",
+    name="Bitty-Note",
 )

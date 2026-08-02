@@ -20,6 +20,7 @@ def test_existing_config_gets_editor_defaults(tmp_path: Path) -> None:
     assert config.editor_font_size == 14
     assert config.heading_divider is True
     assert config.heading_list_highlight is True
+    assert config.language == "en"
 
 
 def test_invalid_editor_preferences_do_not_discard_other_config(tmp_path: Path) -> None:
@@ -86,3 +87,22 @@ def test_legacy_font_id_is_migrated(tmp_path: Path) -> None:
     config = ConfigStore(config_path, tmp_path / "fallback").config
 
     assert config.editor_font == "KaiTi"
+
+
+def test_language_is_persisted(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.json"
+    store = ConfigStore(config_path, tmp_path / "notes")
+
+    store.update(language="zh-CN")
+
+    assert ConfigStore(config_path, tmp_path / "notes").config.language == "zh-CN"
+
+
+def test_invalid_language_falls_back_to_english(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps({"save_dir": str(tmp_path / "notes"), "language": "invalid"}),
+        encoding="utf-8",
+    )
+
+    assert ConfigStore(config_path, tmp_path / "fallback").config.language == "en"

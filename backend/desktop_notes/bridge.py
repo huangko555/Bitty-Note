@@ -6,9 +6,11 @@ from typing import Any
 
 import webview
 
+from . import __version__
 from .config import ConfigStore, validate_editor_preferences
 from .errors import UserVisibleError
 from .fonts import list_system_fonts
+from .i18n import set_language as set_backend_language, text
 from .platform_windows import (
     is_window_topmost,
     open_directory,
@@ -20,6 +22,7 @@ from .platform_windows import (
 )
 from .repository import NotesRepository
 from .storage import StorageManager
+from .updates import PROJECT_URL, UpdateService
 
 
 class DesktopBridge:
@@ -29,6 +32,7 @@ class DesktopBridge:
         self.config_store = config_store
         self._repository = NotesRepository(Path(config_store.config.save_dir))
         self._storage = StorageManager(config_store, send_file_to_trash)
+        self._updates = UpdateService(config_store)
         self._window: webview.Window | None = None
         self._window_interaction = None
         self._lock = threading.RLock()
@@ -39,11 +43,37 @@ class DesktopBridge:
 
     def bootstrap(self) -> dict[str, Any]:
         with self._lock:
+            update_result = self._updates.consume_result()
             return {
                 "config": self.config_store.config.to_dict(),
                 "notes": [note.to_dict() for note in self._repository.list_notes()],
                 "system_fonts": list_system_fonts(),
+                "app_version": __version__,
+                "update_state": self._updates.state(),
+                "update_result": update_result,
             }
+
+    def set_language(self, language: str) -> dict[str, str]:
+        normalized = set_backend_language(language)
+        self.config_store.update(language=normalized)
+        return {"language": normalized}
+
+    def check_update(self, force: bool = False) -> dict[str, str | None]:
+        return self._updates.check(force)
+
+    def install_update(self) -> dict[str, str | None]:
+        return self._updates.install()
+
+    def open_project_homepage(self) -> None:
+        import webbrowser
+
+        if not webbrowser.open(PROJECT_URL):
+            raise UserVisibleError(
+                text(
+                    "Couldn't open the GitHub project page.",
+                    "无法打开 GitHub 项目主页。",
+                )
+            )
 
     def list_notes(self) -> list[dict[str, Any]]:
         return [note.to_dict() for note in self._repository.list_notes()]
@@ -112,7 +142,9 @@ class DesktopBridge:
 
     def migrate_directory(self, path: str) -> dict[str, Any]:
         if not path.strip():
-            raise UserVisibleError("请选择新的保存目录")
+            raise UserVisibleError(
+                text("Choose a different storage folder.", "请选择新的保存目录")
+            )
         with self._lock:
             result = self._storage.migrate(Path(path))
             self._repository = NotesRepository(Path(self.config_store.config.save_dir))
@@ -192,7 +224,7 @@ class DesktopBridge:
 
     def _require_window(self) -> webview.Window:
         if self._window is None:
-            raise UserVisibleError("窗口尚未准备完成。")
+            raise UserVisibleError(text("The window isn't ready yet.", "窗口尚未准备完成。"))
         return self._window
 
 

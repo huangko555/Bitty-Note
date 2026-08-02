@@ -6,10 +6,12 @@ build-backend = "setuptools.build_meta"
 name = "bitty"
 version = "1.0.2"
 description = "A lightweight Markdown desktop note application"
+license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
   "pywebview==6.2.1",
   "Send2Trash==1.8.3",
+  "velopack==1.2.0",
 ]
 
 [project.optional-dependencies]

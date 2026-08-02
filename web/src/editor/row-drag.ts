@@ -5,6 +5,7 @@ import { Plugin, type EditorState, type Transaction } from "prosemirror-state";
 import { type EditorView } from "prosemirror-view";
 
 import { noteSchema } from "./schema";
+import { t } from "../i18n";
 
 export type RowDropSide = "before" | "after";
 
@@ -388,8 +389,8 @@ class RowDragHandleView {
     this.handle.type = "button";
     this.handle.tabIndex = -1;
     this.handle.className = "block-drag-handle";
-    this.handle.title = "拖动这一行";
-    this.handle.setAttribute("aria-label", "拖动这一行");
+    this.handle.title = t("dragRow");
+    this.handle.setAttribute("aria-label", t("dragRow"));
     this.handle.setAttribute("contenteditable", "false");
     this.handle.append(createLucideElement(GripVertical, {
       class: "lucide-icon",
