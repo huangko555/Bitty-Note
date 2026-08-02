@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bitty"
+version = "1.0.0"
+description = "A lightweight Markdown desktop note application"
+requires-python = ">=3.12"
+dependencies = [
+  "pywebview==6.2.1",
+  "Send2Trash==1.8.3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "Pillow==12.3.0",
+  "pytest==9.0.2",
+  "pyinstaller==6.21.0",
+]
+
+[project.scripts]
+bitty = "desktop_notes.main:main"
+
+[tool.setuptools]
+package-dir = {"" = "backend"}
+
+[tool.setuptools.packages.find]
+where = ["backend"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

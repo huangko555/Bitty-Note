@@ -1,0 +1,34 @@
+# Local project process files; never commit or upload.
+/项目过程文件/
+/项目过程文档/
+/本地字体源/
+
+# Local tools and generated outputs
+/.venv/
+/node_modules/
+/dist/
+/build/
+/release/
+/tmp/
+/.pytest_cache/
+/.vite/
+/.coverage
+/coverage/
+/htmlcov/
+*.egg-info/
+*.py[cod]
+__pycache__/
+*.log
+
+# Machine-specific configuration
+/.vscode/
+/.idea/
+/.env
+/.env.local
+/.env.*.local
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local application state
+/.desktop-notes-dev/
