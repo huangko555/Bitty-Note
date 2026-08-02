@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.1.1 — 2026-08-02
+
+### English
+
+- Fixed window-size persistence so the restored size matches the previous session.
+- Standardized the language selector typography without changing its compact layout.
+- Renamed the archive subfolder to `Archive` and automatically migrated the legacy `归档` folder without losing existing notes.
+
+### 简体中文
+
+- 修复窗口尺寸保持，使重启后的尺寸与上次使用时一致。
+- 统一语言选择器的字体样式，同时保持紧凑布局不变。
+- 将归档子目录改为 `Archive`，并自动迁移旧的 `归档` 文件夹，不丢失已有记录。
+
 ## v1.1.0 — 2026-08-02
 
 > This prerelease is unsigned and is published for SignPath Foundation review. Windows may display an unknown-publisher warning. Do not treat it as the final stable package.
