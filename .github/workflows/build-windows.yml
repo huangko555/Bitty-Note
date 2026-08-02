@@ -55,7 +55,7 @@ jobs:
             Set-Content -LiteralPath release\velopack\SHA256SUMS.txt -Encoding utf8
 
       - name: Upload traceable build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Bitty-Note-${{ github.sha }}
           if-no-files-found: error
