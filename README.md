@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/huangko555/Bitty-Note/releases/latest"><img src="https://img.shields.io/badge/下载-v1.0.1-ff6942" alt="下载 Bitty-Note v1.0.1"></a>
+  <a href="https://github.com/huangko555/Bitty-Note/releases/latest"><img src="https://img.shields.io/badge/下载-v1.0.2-ff6942" alt="下载 Bitty-Note v1.0.2"></a>
   <img src="https://img.shields.io/badge/平台-Windows_x64-111111" alt="平台 Windows x64">
   <img src="https://img.shields.io/badge/存储-Markdown-2f81f7" alt="存储格式 Markdown">
 </p>
@@ -43,7 +43,7 @@
 ## 安装与使用
 
 1. 从项目的 [Releases](https://github.com/huangko555/Bitty-Note/releases/latest) 页面下载 Windows x64 发布包。
-2. 解压 `Bitty-Note-v1.0.1-windows-x64.zip`。
+2. 解压 `Bitty-Note-v1.0.2-windows-x64.zip`。
 3. 运行文件夹中的 `小记一下.exe`。
 4. 点击首页右下角的 `+`，创建第一条记录。
 

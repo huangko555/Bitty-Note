@@ -123,6 +123,12 @@ body:hover *::-webkit-scrollbar-thumb:hover { background-color: rgb(73 71 65 / 5
 .quiet-title-bar .title-bar:hover .window-actions,
 .quiet-title-bar .title-bar:focus-within .title-left,
 .quiet-title-bar .title-bar:focus-within .window-actions { opacity: 1; pointer-events: auto; }
+.window-hover-suppressed .quiet-title-bar .title-bar:hover,
+.window-hover-suppressed .quiet-title-bar .title-bar:focus-within { border-bottom-color: transparent; }
+.window-hover-suppressed .quiet-title-bar .title-bar:hover .title-left,
+.window-hover-suppressed .quiet-title-bar .title-bar:hover .window-actions,
+.window-hover-suppressed .quiet-title-bar .title-bar:focus-within .title-left,
+.window-hover-suppressed .quiet-title-bar .title-bar:focus-within .window-actions { opacity: 0; pointer-events: none; }
 .window-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; font-size: 12px; color: var(--muted); }
 .app-mark { position: relative; top: 2px; margin-left: 5px; color: var(--ink); font-family: "Bitty Script", cursive; font-size: 17px; font-weight: 400; line-height: 1.2; }
 .window-button, .icon-button {
@@ -135,6 +141,7 @@ body:hover *::-webkit-scrollbar-thumb:hover { background-color: rgb(73 71 65 / 5
 .window-button.is-active:hover { color: white; background: color-mix(in srgb, var(--ink) 86%, white); }
 .window-button.is-active:active { color: white; background: color-mix(in srgb, var(--ink) 84%, black); }
 .window-button.close-button:hover { color: white; background: var(--danger); }
+.window-hover-suppressed .window-button:not(.is-active):hover { color: inherit; background: transparent; }
 .lucide-icon { display: block; width: 17px; height: 17px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .no-drag, button, input, textarea, .ProseMirror { -webkit-app-region: no-drag; }
 
@@ -201,24 +208,24 @@ h1 { margin: 0; font-size: 23px; font-weight: 500; letter-spacing: -.025em; }
 .overlay-scrollbar-thumb:hover { background-color: rgb(73 71 65 / 54%); }
 .ProseMirror { position: relative; z-index: 1; min-height: 100%; outline: none; color: var(--ink); caret-color: var(--ink); font-family: var(--editor-font-family); font-size: var(--editor-font-size); font-weight: 400; line-height: 1.55; text-rendering: optimizeLegibility; white-space: pre-wrap; overflow-wrap: break-word; cursor: text; tab-size: 4; }
 .ProseMirror ::selection { background-color: var(--accent-soft); }
-.ProseMirror p { min-height: 1.2em; margin: 0; }
+.ProseMirror p { min-height: 1.55em; margin: 0; }
 .heading-list-highlight-enabled { --editor-structure-color: var(--editor-blue); }
-.ProseMirror h1 { position: relative; min-height: 1.2em; margin: 0; color: var(--editor-structure-color); font-size: 1.28em; font-weight: 500; line-height: 1.55; }
+.ProseMirror h1 { position: relative; min-height: 1.55em; margin: 0; color: var(--editor-structure-color); font-size: 1.28em; font-weight: 500; line-height: 1.55; }
 .heading-divider-enabled .ProseMirror h1::after { content: ""; position: absolute; right: 0; bottom: .16em; left: 0; height: 1px; background: var(--line); pointer-events: none; }
 .ProseMirror ul, .ProseMirror ol { margin: 0; padding-left: 1.9em; list-style: none; }
-.ProseMirror li { position: relative; min-height: 1.5em; margin: 0; }
-.ProseMirror ul > li:not(.task-list-item)::before { content: ""; position: absolute; top: .775em; left: -1.15em; width: 5px; height: 5px; border-radius: 50%; background: var(--editor-structure-color); transform: translate(-50%, -50%); }
+.ProseMirror li { position: relative; min-height: 1.55em; margin: 0; }
+.ProseMirror ul > li:not(.task-list-item)::before { content: ""; position: absolute; top: .775em; left: -1.15em; width: 5px; height: 5px; border-radius: 50%; background: var(--editor-structure-color); transform: translate(-50%, calc(-50% - 1px)); }
 .ProseMirror ol { counter-reset: note-list var(--list-start, 0); }
 .ProseMirror ol > li { counter-increment: note-list; }
-.ProseMirror ol > li::before { content: counter(note-list) "."; position: absolute; top: 0; left: -1.15em; display: flex; align-items: center; justify-content: center; min-width: 2em; height: 1.55em; color: var(--editor-structure-color); font-weight: 400; font-variant-numeric: tabular-nums; white-space: nowrap; transform: translateX(-50%); }
+.ProseMirror ol > li::before { content: counter(note-list) "."; position: absolute; top: -1px; left: -1.15em; min-width: 2em; height: 1.55em; color: var(--editor-structure-color); font-weight: 400; font-variant-numeric: tabular-nums; line-height: 1.55; text-align: center; white-space: nowrap; transform: translateX(-50%); }
 .ProseMirror li > p { margin: 0; }
-.ProseMirror .raw-markdown-block { min-height: 1.5em; margin: 0; white-space: pre-wrap; }
+.ProseMirror .raw-markdown-block { min-height: 1.55em; margin: 0; white-space: pre-wrap; }
 .ProseMirror strong { color: var(--ink); font-weight: 700; }
 .ProseMirror em { font-style: italic; }
 .ProseMirror s { text-decoration: line-through; }
 .ProseMirror h1 * { color: inherit; }
 .ProseMirror .task-list-item { display: block; }
-.task-check { position: absolute; top: 0; left: -1.15em; display: flex; align-items: center; justify-content: center; width: 17px; height: 1.55em; transform: translateX(-50%); }
+.task-check { position: absolute; top: 0; left: -1.15em; display: flex; align-items: center; justify-content: center; width: 17px; height: 1.55em; transform: translate(-50%, -2px); }
 .task-check input { appearance: none; box-sizing: border-box; position: relative; width: 17px; height: 17px; margin: 0; padding: 0; border: 1.5px solid var(--line-strong); border-radius: 6px; background: var(--surface); cursor: pointer; }
 .task-check input:hover { border-color: var(--accent-deep); background: var(--accent-soft); }
 .task-check input:checked { border-color: var(--muted); background: var(--muted); }

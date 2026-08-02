@@ -22,7 +22,7 @@ import type {
   OpenedNote,
   SaveResult,
 } from "./types";
-import { syncPinButtons } from "./window-controls";
+import { prepareForWindowMinimize, syncPinButtons } from "./window-controls";
 
 const app = document.querySelector<HTMLElement>("#app")!;
 
@@ -47,7 +47,7 @@ let overlayScrollbarCleanup: (() => void) | null = null;
 const MIN_EDITOR_FONT_SIZE = 12;
 const MAX_EDITOR_FONT_SIZE = 22;
 const DEFAULT_EDITOR_FONT = "DengXian";
-const APP_VERSION = "1.0.1";
+const APP_VERSION = "1.0.2";
 
 function applyEditorAppearance(): void {
   const family = config.editor_font.trim() || DEFAULT_EDITOR_FONT;
@@ -147,7 +147,11 @@ function titleBar(title: string, back: (() => void) | null): HTMLElement {
       showError(error);
     }
   });
-  bar.querySelector('[data-action="minimize"]')?.addEventListener("click", () => api.minimizeWindow());
+  const minimizeButton = bar.querySelector<HTMLButtonElement>('[data-action="minimize"]');
+  minimizeButton?.addEventListener("click", () => {
+    prepareForWindowMinimize(minimizeButton);
+    void api.minimizeWindow();
+  });
   bar.querySelector('[data-action="close"]')?.addEventListener("click", () => {
     void closeApplication();
   });
