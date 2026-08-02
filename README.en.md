@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/huangko555/Bitty-Note/releases/latest"><img src="https://img.shields.io/badge/Download-v1.0.0-ff6942" alt="Download Bitty-Note v1.0.0"></a>
+  <a href="https://github.com/huangko555/Bitty-Note/releases/latest"><img src="https://img.shields.io/badge/Download-v1.0.1-ff6942" alt="Download Bitty-Note v1.0.1"></a>
   <img src="https://img.shields.io/badge/Platform-Windows_x64-111111" alt="Platform: Windows x64">
   <img src="https://img.shields.io/badge/Storage-Markdown-2f81f7" alt="Storage format: Markdown">
 </p>
@@ -43,7 +43,7 @@ For new users, notes are stored by default in the `小记一下` folder under th
 ## Install and Use
 
 1. Download the Windows x64 package from [Releases](https://github.com/huangko555/Bitty-Note/releases/latest).
-2. Extract `Bitty-Note-v1.0.0-windows-x64.zip`.
+2. Extract `Bitty-Note-v1.0.1-windows-x64.zip`.
 3. Run `小记一下.exe` from the extracted folder.
 4. Click the `+` button in the bottom-right corner of the home screen to create your first note.
 

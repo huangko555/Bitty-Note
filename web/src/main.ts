@@ -47,7 +47,7 @@ let overlayScrollbarCleanup: (() => void) | null = null;
 const MIN_EDITOR_FONT_SIZE = 12;
 const MAX_EDITOR_FONT_SIZE = 22;
 const DEFAULT_EDITOR_FONT = "DengXian";
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.0.1";
 
 function applyEditorAppearance(): void {
   const family = config.editor_font.trim() || DEFAULT_EDITOR_FONT;

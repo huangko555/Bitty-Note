@@ -2,6 +2,7 @@ import { AllSelection, EditorState, TextSelection } from "prosemirror-state";
 import { describe, expect, it } from "vitest";
 
 import {
+  createEditor,
   exitEmptyListItem,
   joinEmptyParagraphAfterList,
   sinkListItemAcrossTypes,
@@ -10,6 +11,29 @@ import {
 } from "./editor";
 import { parseMarkdown, serializeMarkdown } from "./markdown";
 import { noteSchema } from "./schema";
+
+describe("task checkbox rendering", () => {
+  it("removes the checked styling when a task is unchecked", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const { controller } = createEditor(host, "- [x] 待办\n", {
+      onChange: () => {},
+      onFocusChange: () => {},
+      onSelectionChange: () => {},
+    });
+
+    const checkbox = host.querySelector<HTMLInputElement>("[data-task-checkbox]")!;
+    expect(checkbox.checked).toBe(true);
+    expect(host.querySelector(".task-list-item")?.classList.contains("is-checked")).toBe(true);
+
+    checkbox.click();
+    expect(checkbox.checked).toBe(false);
+    expect(host.querySelector(".task-list-item")?.classList.contains("is-checked")).toBe(false);
+
+    controller.destroy();
+    host.remove();
+  });
+});
 
 function listState(text = ""): EditorState {
   const paragraph = noteSchema.nodes.paragraph.create(

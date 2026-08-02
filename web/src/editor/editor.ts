@@ -539,6 +539,25 @@ class RichEditor implements EditorController {
         if (transaction.selectionSet || transaction.docChanged) this.callbacks.onSelectionChange();
       },
       handleDOMEvents: {
+        change: (view, event) => {
+          const target = event.target;
+          if (
+            !(target instanceof HTMLInputElement)
+            || target.dataset.taskCheckbox !== "true"
+          ) {
+            return false;
+          }
+          const item = target.closest("li.task-list-item");
+          if (!item) return false;
+          const position = view.posAtDOM(item, 0) - 1;
+          const node = view.state.doc.nodeAt(position);
+          if (node?.type !== noteSchema.nodes.list_item) return false;
+          view.dispatch(view.state.tr.setNodeMarkup(position, undefined, {
+            ...node.attrs,
+            checked: target.checked,
+          }));
+          return true;
+        },
         focus: () => {
           this.callbacks.onFocusChange(true);
           return false;
@@ -547,23 +566,6 @@ class RichEditor implements EditorController {
           this.callbacks.onFocusChange(false);
           return false;
         },
-      },
-      handleClickOn: (view, position, node, _nodePosition, event) => {
-        const target = event.target as HTMLElement;
-        if (
-          node.type !== noteSchema.nodes.list_item ||
-          !(target instanceof HTMLInputElement) ||
-          target.dataset.taskCheckbox !== "true"
-        ) {
-          return false;
-        }
-        view.dispatch(
-          view.state.tr.setNodeMarkup(position, undefined, {
-            ...node.attrs,
-            checked: !node.attrs.checked,
-          }),
-        );
-        return true;
       },
       handlePaste: (view, event) => {
         const text = event.clipboardData?.getData("text/plain");
