@@ -1,23 +1,20 @@
 <p align="center">
-  <img src="./assets/app-icon.png" width="112" alt="小记一下应用图标">
-</p>
-
-<h1 align="center">Bitty-Note</h1>
-
-<p align="center">
-  <strong>小记一下（Bitty）</strong><br>
-  <sub>一个轻量、简单、直接使用 Markdown 文件保存内容的 Windows 桌面记录应用。</sub>
+  <img src="./assets/readme/hero.png" width="100%" alt="Bitty-Note：轻量、简单，内容直接保存为 Markdown 文件的 Windows 桌面记录应用">
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/版本-v1.0.0-ff6942" alt="版本 v1.0.0">
+  <strong>简体中文</strong> · <a href="./README.en.md">English</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/huangko555/Bitty-Note/releases/latest"><img src="https://img.shields.io/badge/下载-v1.0.0-ff6942" alt="下载 Bitty-Note v1.0.0"></a>
   <img src="https://img.shields.io/badge/平台-Windows_x64-111111" alt="平台 Windows x64">
   <img src="https://img.shields.io/badge/存储-Markdown-2f81f7" alt="存储格式 Markdown">
 </p>
 
-## 简单好用的桌面记录工具
+## 关于 Bitty-Note
 
-`Bitty-Note` 是一款轻量的 Windows 桌面记录应用。每条记录都会保存为本地 Markdown 文件，方便查看、备份和迁移。
+随手写下想法、清单和待办。每条记录都会保存为本地 Markdown 文件，方便查看、备份和迁移。
 
 ## 功能一览
 
