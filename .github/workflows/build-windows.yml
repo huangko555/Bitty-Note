@@ -39,15 +39,15 @@ jobs:
           dotnet-version: "8.0.x"
 
       - name: Build and test application
-        shell: powershell
+        shell: pwsh
         run: .\scripts\build.ps1
 
       - name: Build Velopack portable release
-        shell: powershell
+        shell: pwsh
         run: .\scripts\package-portable.ps1
 
       - name: Create SHA-256 checksums
-        shell: powershell
+        shell: pwsh
         run: |
           Get-ChildItem -LiteralPath release\velopack -File |
             Get-FileHash -Algorithm SHA256 |
