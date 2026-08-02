@@ -273,7 +273,11 @@ h1 { margin: 0; font-size: 23px; font-weight: 500; letter-spacing: -.025em; }
 .path-row input:focus, .create-panel input:focus, .font-select:focus { padding-inline: 10px; border-width: 2px; border-color: var(--ink); box-shadow: none; }
 .font-select { width: 100%; cursor: pointer; }
 .language-row { padding-block: 7px; }
-.language-row .font-select { width: 116px; flex: 0 0 116px; border-color: transparent; }
+.language-row .font-select {
+  width: 116px; flex: 0 0 116px; border-color: transparent;
+  font-family: inherit; font-size: 13px; line-height: normal;
+}
+.language-row .font-select option { font-family: inherit; font-size: 13px; }
 .language-row .font-select:hover,
 .language-row .font-select:focus,
 .language-row .font-select:open { padding-inline: 11px; border-width: 1px; border-color: transparent; outline: none; box-shadow: none; }
