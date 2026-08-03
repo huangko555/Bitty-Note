@@ -17,4 +17,7 @@ export function syncPinButtons(root: ParentNode, active: boolean): void {
     button.classList.toggle("is-active", active);
     button.setAttribute("aria-pressed", String(active));
   });
+  root.querySelectorAll<HTMLElement>(".title-pin-indicator").forEach((indicator) => {
+    indicator.hidden = !active;
+  });
 }

@@ -149,7 +149,10 @@ function titleBar(
     <div class="title-left">
       ${back ? `<button class="window-button no-drag${backUpdateClass}" data-action="back" aria-label="${t("back")}">${icon("back")}${backUpdateDot}</button>` : '<span class="app-mark">Bitty</span>'}
     </div>
-    <div class="window-title" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
+    <div class="window-title" title="${escapeHtml(title)}">
+      ${title ? `<span class="title-pin-indicator" aria-hidden="true"${config.always_on_top ? "" : " hidden"}>${icon("pin")}</span>` : ""}
+      <span class="window-title-text">${escapeHtml(title)}</span>
+    </div>
     <div class="window-actions">
       <button class="window-button no-drag ${config.always_on_top ? "is-active" : ""}" data-action="pin" aria-label="${t("pin")}" aria-pressed="${config.always_on_top}">${icon("pin")}</button>
       <button class="window-button no-drag" data-action="minimize" aria-label="${t("minimize")}">${icon("minimize")}</button>

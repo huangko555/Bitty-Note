@@ -33,4 +33,16 @@ describe("window controls", () => {
       expect(button.getAttribute("aria-pressed")).toBe("true");
     });
   });
+
+  it("synchronizes the title pin indicator", () => {
+    const root = document.createElement("div");
+    root.innerHTML = '<span class="title-pin-indicator" hidden></span>';
+    const indicator = root.querySelector<HTMLElement>(".title-pin-indicator")!;
+
+    syncPinButtons(root, true);
+    expect(indicator.hidden).toBe(false);
+
+    syncPinButtons(root, false);
+    expect(indicator.hidden).toBe(true);
+  });
 });

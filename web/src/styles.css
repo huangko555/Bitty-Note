@@ -129,7 +129,11 @@ body:hover *::-webkit-scrollbar-thumb:hover { background-color: rgb(73 71 65 / 5
 .window-hover-suppressed .quiet-title-bar .title-bar:hover .window-actions,
 .window-hover-suppressed .quiet-title-bar .title-bar:focus-within .title-left,
 .window-hover-suppressed .quiet-title-bar .title-bar:focus-within .window-actions { opacity: 0; pointer-events: none; }
-.window-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; font-size: 12px; color: var(--muted); }
+.window-title { min-width: 0; display: flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; text-align: center; font-size: 12px; color: var(--muted); }
+.window-title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.title-pin-indicator { display: inline-flex; flex: none; color: var(--ink); transform: translateY(1px); }
+.title-pin-indicator[hidden] { display: none; }
+.title-pin-indicator .lucide-icon { width: 14px; height: 14px; stroke-width: 1.2; }
 .app-mark { position: relative; top: 2px; margin-left: 5px; color: var(--ink); font-family: "Bitty Script", cursive; font-size: 17px; font-weight: 400; line-height: 1.2; }
 .window-button, .icon-button {
   border: 0; background: transparent; cursor: pointer; display: grid; place-items: center;
