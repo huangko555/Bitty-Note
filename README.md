@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/readme/hero-en.png" width="100%" alt="Bitty-Note — small Windows desktop notes saved directly as Markdown files">
+  <img src="./assets/readme/hero-en.png?v=20260803" width="100%" alt="Bitty-Note — small Windows desktop notes saved directly as Markdown files">
 </p>
 
 <p align="center">
