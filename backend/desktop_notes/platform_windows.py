@@ -171,8 +171,8 @@ def start_window_interaction(window: object, region: str) -> WindowInteraction:
         top=rect.top,
         right=rect.right,
         bottom=rect.bottom,
-        min_width=round(320 * dpi / 96),
-        min_height=round(420 * dpi / 96),
+        min_width=round(300 * dpi / 96),
+        min_height=round(380 * dpi / 96),
     )
 
 

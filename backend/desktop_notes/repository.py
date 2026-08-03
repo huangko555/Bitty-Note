@@ -14,6 +14,7 @@ from .i18n import text as message
 from .models import NoteSummary, OpenedNote, SaveResult
 
 _INVALID_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_EMPTY_LINE_MARKER = "<!-- bitty-empty-line -->"
 _MARKDOWN_MARKERS = re.compile(
     r"^(?:#{1,6}\s+|[-+*]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)|"
     r"(\*\*|__|~~|(?<!\*)\*(?!\*)|(?<!_)_(?!_))"
@@ -59,6 +60,8 @@ def _plain_preview(text: str) -> str:
     preview_lines: list[str] = []
     for raw_line in text.splitlines():
         line = _MARKDOWN_MARKERS.sub("", raw_line.strip()).strip()
+        if line == _EMPTY_LINE_MARKER:
+            continue
         if line:
             preview_lines.append(line)
         if len(preview_lines) == 3:
@@ -137,6 +140,32 @@ class NotesRepository:
                     f"Couldn't create the note: {error}", f"无法创建记录：{error}"
                 )) from error
             return self._open_path(path)
+
+    def duplicate_note(self, name: str, requested_name: str) -> OpenedNote:
+        source = self._note_path(name)
+        with self._lock:
+            if not source.is_file():
+                raise UserVisibleError(message(
+                    f'The note “{name}” no longer exists.',
+                    f"记录“{name}”已经不存在。",
+                ))
+            target = self._unique_path(self.root, self._safe_filename(requested_name))
+            created = False
+            try:
+                data = source.read_bytes()
+                with target.open("xb") as stream:
+                    created = True
+                    stream.write(data)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+            except OSError as error:
+                if created:
+                    target.unlink(missing_ok=True)
+                raise UserVisibleError(message(
+                    f"Couldn't copy the note: {error}",
+                    f"复制记录失败：{error}",
+                )) from error
+            return self._open_path(target)
 
     def open_note(self, name: str) -> OpenedNote:
         with self._lock:

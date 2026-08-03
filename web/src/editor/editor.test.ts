@@ -9,6 +9,7 @@ import {
   type ListKind,
   toggleList,
 } from "./editor";
+import { listNormalizationPlugin } from "./list-normalization";
 import { parseMarkdown, serializeMarkdown } from "./markdown";
 import { noteSchema } from "./schema";
 
@@ -35,6 +36,23 @@ describe("task checkbox rendering", () => {
   });
 });
 
+describe("spell checking", () => {
+  it("applies the preference to the editor", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const { controller } = createEditor(host, "正文", {
+      onChange: () => {},
+      onFocusChange: () => {},
+      onSelectionChange: () => {},
+    }, true);
+
+    expect(host.querySelector(".ProseMirror")?.getAttribute("spellcheck")).toBe("true");
+
+    controller.destroy();
+    host.remove();
+  });
+});
+
 function listState(text = ""): EditorState {
   const paragraph = noteSchema.nodes.paragraph.create(
     null,
@@ -50,6 +68,73 @@ function listState(text = ""): EditorState {
   return EditorState.create({
     doc,
     selection: TextSelection.create(doc, paragraphPosition + 1),
+  });
+}
+
+function singleListState(checked: boolean | null, text: string): EditorState {
+  const paragraph = noteSchema.nodes.paragraph.create(null, noteSchema.text(text));
+  const item = noteSchema.nodes.list_item.create({ checked }, paragraph);
+  const list = noteSchema.nodes.bullet_list.create(null, item);
+  const doc = noteSchema.nodes.doc.create(null, list);
+  return EditorState.create({
+    doc,
+    selection: TextSelection.create(doc, 3),
+  });
+}
+
+function singleParagraphState(text: string): EditorState {
+  const doc = noteSchema.nodes.doc.create(
+    null,
+    noteSchema.nodes.paragraph.create(null, noteSchema.text(text)),
+  );
+  return EditorState.create({
+    doc,
+    selection: TextSelection.create(doc, 1),
+  });
+}
+
+function twoItemListState(kind: ListKind): EditorState {
+  const items = ["第一项", "第二项"].map((text, index) =>
+    noteSchema.nodes.list_item.create(
+      { checked: kind === "task" ? index === 0 : null },
+      noteSchema.nodes.paragraph.create(null, noteSchema.text(text)),
+    ),
+  );
+  const list = (kind === "ordered"
+    ? noteSchema.nodes.ordered_list
+    : noteSchema.nodes.bullet_list).create(null, items);
+  const doc = noteSchema.nodes.doc.create(null, list);
+  return EditorState.create({
+    doc,
+    selection: TextSelection.create(doc, 3),
+  });
+}
+
+function twoParagraphCursorState(): EditorState {
+  const doc = noteSchema.nodes.doc.create(null, [
+    noteSchema.nodes.paragraph.create(null, noteSchema.text("第一行")),
+    noteSchema.nodes.paragraph.create(null, noteSchema.text("第二行")),
+  ]);
+  return EditorState.create({
+    doc,
+    selection: TextSelection.create(doc, 3),
+  });
+}
+
+function middleOrderedItemState(): EditorState {
+  const items = ["第一项", "第二项", "第三项"].map((text) =>
+    noteSchema.nodes.list_item.create(
+      null,
+      noteSchema.nodes.paragraph.create(null, noteSchema.text(text)),
+    ),
+  );
+  const list = noteSchema.nodes.ordered_list.create({ order: 1 }, items);
+  const doc = noteSchema.nodes.doc.create(null, list);
+  const middleParagraphPosition = 1 + items[0]!.nodeSize + 1;
+  return EditorState.create({
+    doc,
+    selection: TextSelection.create(doc, middleParagraphPosition + 1),
+    plugins: [listNormalizationPlugin()],
   });
 }
 
@@ -264,6 +349,136 @@ describe("nested list types", () => {
 });
 
 describe("multi-line list toggling", () => {
+  it("restarts numbering after another list type interrupts an ordered list", () => {
+    const state = middleOrderedItemState();
+    let converted = state;
+
+    expect(toggleList(state, (transaction) => {
+      converted = state.apply(transaction);
+    }, "bullet")).toBe(true);
+
+    expect(Array.from({ length: converted.doc.childCount }, (_, index) =>
+      converted.doc.child(index).type.name,
+    )).toEqual(["ordered_list", "bullet_list", "ordered_list"]);
+    expect(converted.doc.lastChild?.attrs.order).toBe(1);
+  });
+
+  it("toggles only the current paragraph without changing the next line", () => {
+    const state = twoParagraphCursorState();
+    let listed = state;
+
+    expect(toggleList(state, (transaction) => {
+      listed = state.apply(transaction);
+    }, "bullet")).toBe(true);
+    expect(Array.from({ length: listed.doc.childCount }, (_, index) =>
+      listed.doc.child(index).type.name,
+    )).toEqual(["bullet_list", "paragraph"]);
+
+    let restored = listed;
+    expect(toggleList(listed, (transaction) => {
+      restored = listed.apply(transaction);
+    }, "bullet")).toBe(true);
+    expect(Array.from({ length: restored.doc.childCount }, (_, index) =>
+      restored.doc.child(index).type.name,
+    )).toEqual(["paragraph", "paragraph"]);
+  });
+
+  it.each([
+    ["bullet", "ordered"],
+    ["ordered", "task"],
+    ["task", "bullet"],
+  ] as const)("converts only the current %s item to %s", (source, target) => {
+    const state = twoItemListState(source);
+    let converted = state;
+
+    expect(toggleList(state, (transaction) => {
+      converted = state.apply(transaction);
+    }, target)).toBe(true);
+
+    expect(converted.doc.childCount).toBe(2);
+    expect(converted.doc.child(0).childCount).toBe(1);
+    expect(converted.doc.child(0).textContent).toContain("第一项");
+    expect(converted.doc.child(1).childCount).toBe(1);
+    expect(converted.doc.child(1).textContent).toBe("第二项");
+    if (source === "task") {
+      expect(converted.doc.child(1).firstChild?.attrs.checked).toBe(false);
+    }
+  });
+
+  it("turns only the current task item back into text", () => {
+    const state = twoItemListState("task");
+    let converted = state;
+
+    expect(toggleList(state, (transaction) => {
+      converted = state.apply(transaction);
+    }, "task")).toBe(true);
+
+    expect(converted.doc.childCount).toBe(2);
+    expect(converted.doc.firstChild?.type).toBe(noteSchema.nodes.paragraph);
+    expect(converted.doc.firstChild?.textContent).toBe("[✓] 第一项");
+    expect(converted.doc.lastChild?.type).toBe(noteSchema.nodes.bullet_list);
+    expect(converted.doc.lastChild?.firstChild?.attrs.checked).toBe(false);
+  });
+
+  it("keeps a checked marker when a task becomes a bullet item", () => {
+    const state = singleListState(true, "done");
+    let converted = state;
+
+    expect(toggleList(state, (transaction) => {
+      converted = state.apply(transaction);
+    }, "bullet")).toBe(true);
+
+    expect(converted.doc.firstChild?.firstChild?.attrs.checked).toBe(null);
+    expect(converted.doc.textContent).toBe("[✓] done");
+  });
+
+  it("does not add a marker when an unchecked task becomes a bullet item", () => {
+    const state = singleListState(false, "todo");
+    let converted = state;
+
+    toggleList(state, (transaction) => {
+      converted = state.apply(transaction);
+    }, "bullet");
+
+    expect(converted.doc.textContent).toBe("todo");
+  });
+
+  it("restores a checked task from a leading completion marker", () => {
+    const state = singleListState(null, "   [✓] done");
+    let converted = state;
+
+    toggleList(state, (transaction) => {
+      converted = state.apply(transaction);
+    }, "task");
+
+    expect(converted.doc.firstChild?.firstChild?.attrs.checked).toBe(true);
+    expect(converted.doc.textContent).toBe("done");
+  });
+
+  it("restores a checked task when a marked paragraph becomes a task", () => {
+    const state = singleParagraphState("  ✓ done");
+    let converted = state;
+
+    toggleList(state, (transaction) => {
+      converted = state.apply(transaction);
+    }, "task");
+
+    expect(converted.doc.firstChild?.firstChild?.attrs.checked).toBe(true);
+    expect(converted.doc.textContent).toBe("done");
+  });
+
+  it("keeps a checked marker when a task is toggled back to text", () => {
+    const state = singleListState(true, "done");
+    let converted = state;
+
+    toggleList(state, (transaction) => {
+      converted = state.apply(transaction);
+    }, "task");
+
+    expect(converted.doc.firstChild?.type).toBe(noteSchema.nodes.paragraph);
+    expect(converted.doc.textContent).toBe("[✓] done");
+  });
+
   it("converts an ordered item and a task item into one task list", () => {
     const state = mixedListState("ordered", "task");
     let converted = state;
@@ -313,7 +528,7 @@ describe("multi-line list toggling", () => {
       converted.doc.child(index).type.name,
     )).toEqual(["ordered_list", "paragraph", "ordered_list"]);
     const saved = serializeMarkdown(converted.doc);
-    expect(saved).toContain("1. 第一项\n\n\n\n1. 第二项");
+    expect(saved).toContain("1. 第一项\n\n<!-- bitty-empty-line -->\n\n1. 第二项");
 
     const reopened = parseMarkdown(saved);
     expect(reopened.mode).toBe("wysiwyg");

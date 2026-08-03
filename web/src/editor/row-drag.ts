@@ -4,6 +4,7 @@ import { Fragment, type Node as ProseMirrorNode } from "prosemirror-model";
 import { Plugin, type EditorState, type Transaction } from "prosemirror-state";
 import { type EditorView } from "prosemirror-view";
 
+import { normalizeListDocument } from "./list-normalization";
 import { noteSchema } from "./schema";
 import { t } from "../i18n";
 
@@ -151,26 +152,6 @@ function removeRowAtPath(
   );
 }
 
-function normalizeAdjacentLists(node: ProseMirrorNode): ProseMirrorNode {
-  if (node.isText || node.childCount === 0) return node;
-  let changed = false;
-  const children: ProseMirrorNode[] = [];
-  node.forEach((child) => {
-    const normalized = normalizeAdjacentLists(child);
-    if (normalized !== child) changed = true;
-    const previous = children[children.length - 1];
-    const isList = normalized.type === noteSchema.nodes.bullet_list
-      || normalized.type === noteSchema.nodes.ordered_list;
-    if (previous && isList && previous.type === normalized.type) {
-      children[children.length - 1] = previous.copy(previous.content.append(normalized.content));
-      changed = true;
-    } else {
-      children.push(normalized);
-    }
-  });
-  return changed ? copyWithChildren(node, children) : node;
-}
-
 function isDraggableRowAtPath(root: ProseMirrorNode, path: readonly number[]): boolean {
   const node = nodeAtPath(root, path);
   if (node.type === noteSchema.nodes.list_item) {
@@ -278,7 +259,7 @@ export function moveRow(
     }
   }
 
-  nextDoc = normalizeAdjacentLists(nextDoc);
+  nextDoc = normalizeListDocument(nextDoc);
   if (nextDoc.eq(state.doc)) return false;
   if (!dispatch) return true;
 
@@ -345,6 +326,14 @@ function rowHeader(dom: HTMLElement, node: ProseMirrorNode): HTMLElement | null 
   }
   return Array.from(dom.children).find((child) => child.tagName === "P") as HTMLElement | undefined
     ?? null;
+}
+
+function unshiftedVerticalRect(element: HTMLElement): { top: number; bottom: number } {
+  const rect = element.getBoundingClientRect();
+  const shift = Number.parseFloat(
+    getComputedStyle(element).getPropertyValue("--editor-text-shift-y"),
+  ) || 0;
+  return { top: rect.top - shift, bottom: rect.bottom - shift };
 }
 
 function rowAt(view: EditorView, clientX: number, clientY: number): RowDescriptor | null {
@@ -518,7 +507,7 @@ class RowDragHandleView {
       this.positionDropTarget(null, "after");
       return;
     }
-    const headerRect = row.header.getBoundingClientRect();
+    const headerRect = unshiftedVerticalRect(row.header);
     const lineHeight = Number.parseFloat(getComputedStyle(row.header).lineHeight) || 21;
     const side: RowDropSide = event.clientY < headerRect.top + lineHeight / 2
       ? "before"
@@ -627,7 +616,7 @@ class RowDragHandleView {
 
   private positionHandle(row: RowDescriptor): void {
     const hostRect = this.host.getBoundingClientRect();
-    const headerRect = row.header.getBoundingClientRect();
+    const headerRect = unshiftedVerticalRect(row.header);
     if (headerRect.bottom < hostRect.top || headerRect.top > hostRect.bottom) {
       this.handle.classList.remove("visible");
       this.highlight.classList.remove("visible");
@@ -641,8 +630,8 @@ class RowDragHandleView {
 
   private positionHighlight(row: RowDescriptor): void {
     const hostRect = this.host.getBoundingClientRect();
-    const headerRect = row.header.getBoundingClientRect();
-    const left = hostRect.left + 28;
+    const headerRect = unshiftedVerticalRect(row.header);
+    const left = hostRect.left + 3;
     const top = Math.max(hostRect.top, headerRect.top - 2);
     const bottom = Math.min(hostRect.bottom, headerRect.bottom + 2);
     this.highlight.style.left = `${left}px`;
@@ -659,12 +648,15 @@ class RowDragHandleView {
       return;
     }
     const hostRect = this.host.getBoundingClientRect();
-    const headerRect = row.header.getBoundingClientRect();
+    const headerBounds = row.header.getBoundingClientRect();
+    const headerRect = unshiftedVerticalRect(row.header);
     const rowRect = row.dom.getBoundingClientRect();
-    const top = side === "before" ? headerRect.top : rowRect.bottom;
-    this.indicator.style.left = `${headerRect.left}px`;
+    const top = side === "before"
+      ? headerRect.top
+      : row.dom === row.header ? headerRect.bottom : rowRect.bottom;
+    this.indicator.style.left = `${headerBounds.left}px`;
     this.indicator.style.top = `${top - 1}px`;
-    this.indicator.style.width = `${Math.max(24, hostRect.right - headerRect.left - 12)}px`;
+    this.indicator.style.width = `${Math.max(24, hostRect.right - headerBounds.left - 12)}px`;
     this.indicator.classList.add("visible");
   }
 }

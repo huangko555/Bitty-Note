@@ -14,6 +14,39 @@ def test_create_sanitizes_and_deduplicates_names(tmp_path: Path) -> None:
     assert {note.name for note in repository.list_notes()} == {first.name, second.name}
 
 
+def test_duplicate_preserves_bytes_and_deduplicates_name(tmp_path: Path) -> None:
+    repository = NotesRepository(tmp_path)
+    source = repository.create_note("记录")
+    source_path = tmp_path / source.name
+    source_bytes = b"\xef\xbb\xbffirst\r\nsecond\r\n"
+    source_path.write_bytes(source_bytes)
+
+    first = repository.duplicate_note(source.name, "记录 副本")
+    second = repository.duplicate_note(source.name, "记录 副本")
+
+    assert first.name == "记录 副本.md"
+    assert second.name == "记录 副本 (2).md"
+    assert (tmp_path / first.name).read_bytes() == source_bytes
+    assert first.content == "first\nsecond\n"
+    assert first.has_bom is True
+    assert first.newline == "\r\n"
+
+
+def test_note_previews_hide_empty_line_markers(tmp_path: Path) -> None:
+    repository = NotesRepository(tmp_path)
+    note = repository.create_note("记录")
+    (tmp_path / note.name).write_text(
+        "<!-- bitty-empty-line -->\n# 标题\n- <!-- bitty-empty-line -->\n正文",
+        encoding="utf-8",
+    )
+
+    assert repository.list_notes()[0].preview == "标题 正文"
+
+    repository.archive_note(note.name)
+
+    assert repository.list_archived_notes()[0].preview == "标题 正文"
+
+
 def test_save_detects_external_change_before_overwrite(tmp_path: Path) -> None:
     repository = NotesRepository(tmp_path)
     opened = repository.create_note("记录")

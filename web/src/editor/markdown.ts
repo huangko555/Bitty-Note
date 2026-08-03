@@ -10,8 +10,8 @@ import { MarkdownSerializer } from "prosemirror-markdown";
 import { noteSchema } from "./schema";
 import { t } from "../i18n";
 
-const EMPTY_LIST_PARAGRAPH_MARKER = "<!-- bitty-empty-line -->";
-const EMPTY_LIST_PARAGRAPH_SENTINEL = "BITTY_EMPTY_LIST_PARAGRAPH";
+const EMPTY_PARAGRAPH_MARKER = "<!-- bitty-empty-line -->";
+const EMPTY_PARAGRAPH_SENTINEL = "BITTY_EMPTY_PARAGRAPH";
 
 const inspector = new MarkdownIt("commonmark", {
   html: true,
@@ -53,12 +53,9 @@ const inlineTokens = new Set([
 
 const serializer = new MarkdownSerializer(
   {
-    paragraph(state, node, parent) {
+    paragraph(state, node) {
       if (node.content.size) state.renderInline(node);
-      else if (parent.type === noteSchema.nodes.list_item) {
-        state.text(EMPTY_LIST_PARAGRAPH_MARKER, false);
-      }
-      else state.write("\n");
+      else state.text(EMPTY_PARAGRAPH_MARKER, false);
       state.closeBlock(node);
     },
     heading(state, node) {
@@ -128,8 +125,8 @@ function withoutFinalNewlines(markdown: string): string {
 
 function supportedSyntax(markdown: string): string | null {
   markdown = markdown.replaceAll(
-    EMPTY_LIST_PARAGRAPH_MARKER,
-    EMPTY_LIST_PARAGRAPH_SENTINEL,
+    EMPTY_PARAGRAPH_MARKER,
+    EMPTY_PARAGRAPH_SENTINEL,
   );
   if (/^\s*\|?.+\|.+\n\s*\|?\s*:?-{3,}/m.test(markdown)) {
     return t("markdownTable");
@@ -197,13 +194,13 @@ function topLevelSourceBlocks(markdown: string): Array<string | null> {
 function parseRenderedBlock(markdown: string): ProseMirrorNode[] {
   const container = document.createElement("div");
   container.innerHTML = renderer.render(
-    markdown.replaceAll(EMPTY_LIST_PARAGRAPH_MARKER, EMPTY_LIST_PARAGRAPH_SENTINEL),
+    markdown.replaceAll(EMPTY_PARAGRAPH_MARKER, EMPTY_PARAGRAPH_SENTINEL),
   );
   const parsed = ProseMirrorDOMParser.fromSchema(noteSchema).parse(container);
   const restoreEmptyListParagraphs = (node: ProseMirrorNode): ProseMirrorNode => {
     if (
       node.type === noteSchema.nodes.paragraph
-      && node.textContent === EMPTY_LIST_PARAGRAPH_SENTINEL
+      && node.textContent === EMPTY_PARAGRAPH_SENTINEL
     ) {
       return noteSchema.nodes.paragraph.create(node.attrs);
     }

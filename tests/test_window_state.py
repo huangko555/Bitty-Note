@@ -4,7 +4,7 @@ from pathlib import Path
 
 from desktop_notes.bridge import WindowStateSaver
 from desktop_notes.config import ConfigStore
-from desktop_notes.main import _normalize_window_after_show
+from desktop_notes.main import _allow_system_shutdown, _normalize_window_after_show
 
 
 class FakeEvent:
@@ -49,10 +49,21 @@ def test_initial_size_is_normalized_before_state_tracking_starts() -> None:
     assert window.events.resized.handlers == [saver.schedule]
 
 
+def test_system_shutdown_overrides_pywebview_close_cancellation() -> None:
+    shutdown = type("CloseArgs", (), {"CloseReason": "WindowsShutDown", "Cancel": True})()
+    user_close = type("CloseArgs", (), {"CloseReason": "UserClosing", "Cancel": True})()
+
+    _allow_system_shutdown(None, shutdown)
+    _allow_system_shutdown(None, user_close)
+
+    assert shutdown.Cancel is False
+    assert user_close.Cancel is True
+
+
 def test_default_and_resized_window_dimensions_are_persisted(tmp_path: Path) -> None:
     config_path = tmp_path / "config.json"
     store = ConfigStore(config_path, tmp_path / "Bitty-Note")
-    assert (store.config.window_width, store.config.window_height) == (350, 630)
+    assert (store.config.window_width, store.config.window_height) == (350, 530)
 
     window = type(
         "Window",

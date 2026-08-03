@@ -13,6 +13,7 @@ interface PythonApi {
   list_notes(): Promise<BootstrapData["notes"]>;
   list_archived_notes(): Promise<BootstrapData["notes"]>;
   create_note(name: string): Promise<OpenedNote>;
+  duplicate_note(name: string, requestedName: string): Promise<OpenedNote>;
   open_note(name: string): Promise<OpenedNote>;
   save_note(
     name: string,
@@ -43,6 +44,7 @@ interface PythonApi {
     editorFontSize: number,
   ): Promise<{ editor_font: BootstrapData["config"]["editor_font"]; editor_font_size: number }>;
   set_heading_divider(enabled: boolean): Promise<{ enabled: boolean }>;
+  set_spellcheck(enabled: boolean): Promise<{ enabled: boolean }>;
   set_heading_list_highlight(enabled: boolean): Promise<{ enabled: boolean }>;
   set_language(language: AppLanguage): Promise<{ language: AppLanguage }>;
   check_update(force: boolean): Promise<UpdateState>;
@@ -78,6 +80,7 @@ export interface DesktopApi {
   listNotes(): Promise<BootstrapData["notes"]>;
   listArchivedNotes(): Promise<BootstrapData["notes"]>;
   createNote(name: string): Promise<OpenedNote>;
+  duplicateNote(name: string, requestedName: string): Promise<OpenedNote>;
   openNote(name: string): Promise<OpenedNote>;
   saveNote(note: OpenedNote, content: string, force?: boolean): Promise<SaveResult>;
   recreateNote(note: OpenedNote, content: string): Promise<OpenedNote>;
@@ -96,6 +99,7 @@ export interface DesktopApi {
     editorFontSize: number,
   ): Promise<void>;
   setHeadingDivider(enabled: boolean): Promise<void>;
+  setSpellcheck(enabled: boolean): Promise<void>;
   setHeadingListHighlight(enabled: boolean): Promise<void>;
   setLanguage(language: AppLanguage): Promise<AppLanguage>;
   checkUpdate(force?: boolean): Promise<UpdateState>;
@@ -114,6 +118,7 @@ function desktopApi(raw: PythonApi): DesktopApi {
     listNotes: () => raw.list_notes(),
     listArchivedNotes: () => raw.list_archived_notes(),
     createNote: (name) => raw.create_note(name),
+    duplicateNote: (name, requestedName) => raw.duplicate_note(name, requestedName),
     openNote: (name) => raw.open_note(name),
     saveNote: (note, content, force = false) =>
       raw.save_note(
@@ -150,6 +155,9 @@ function desktopApi(raw: PythonApi): DesktopApi {
     setHeadingDivider: async (enabled) => {
       await raw.set_heading_divider(enabled);
     },
+    setSpellcheck: async (enabled) => {
+      await raw.set_spellcheck(enabled);
+    },
     setHeadingListHighlight: async (enabled) => {
       await raw.set_heading_list_highlight(enabled);
     },
@@ -176,7 +184,10 @@ function browserMock(): DesktopApi {
   const summary = (items: OpenedNote[]) =>
     items.map((note, index) => ({
       name: note.name,
-      preview: note.content.replace(/[#*~\[\]-]/g, "").slice(0, 80),
+      preview: note.content
+        .replaceAll("<!-- bitty-empty-line -->", "")
+        .replace(/[#*~\[\]-]/g, "")
+        .slice(0, 80),
       modified_ms: Date.now() - index,
     }));
   const uniqueName = (requested: string) => {
@@ -199,10 +210,11 @@ function browserMock(): DesktopApi {
         window_x: null,
         window_y: null,
         window_width: 350,
-        window_height: 630,
+        window_height: 530,
         last_note: null,
         editor_font: "DengXian",
         editor_font_size: 14,
+        spellcheck: false,
         heading_divider: true,
         heading_list_highlight: true,
         last_update_check_ms: null,
@@ -224,6 +236,17 @@ function browserMock(): DesktopApi {
         revision: revision(),
         has_bom: false,
         newline: "\n",
+      };
+      notes.unshift(note);
+      return { ...note };
+    },
+    duplicateNote: async (name, requested) => {
+      const source = notes.find((item) => item.name === name);
+      if (!source) throw new Error(t("missingTitle"));
+      const note: OpenedNote = {
+        ...source,
+        name: uniqueName(requested),
+        revision: revision(),
       };
       notes.unshift(note);
       return { ...note };
@@ -287,6 +310,7 @@ function browserMock(): DesktopApi {
     getAlwaysOnTop: async () => alwaysOnTop,
     setEditorPreferences: async () => {},
     setHeadingDivider: async () => {},
+    setSpellcheck: async () => {},
     setHeadingListHighlight: async () => {},
     setLanguage: async (nextLanguage) => {
       language = nextLanguage;

@@ -18,9 +18,12 @@ def test_existing_config_gets_editor_defaults(tmp_path: Path) -> None:
     assert config.autostart is True
     assert config.editor_font == "DengXian"
     assert config.editor_font_size == 14
+    assert config.spellcheck is False
     assert config.heading_divider is True
     assert config.heading_list_highlight is True
     assert config.language == "en"
+    assert config.window_width == 350
+    assert config.window_height == 530
 
 
 def test_invalid_editor_preferences_do_not_discard_other_config(tmp_path: Path) -> None:
@@ -65,6 +68,16 @@ def test_heading_divider_preference_is_persisted(tmp_path: Path) -> None:
     reloaded = ConfigStore(config_path, tmp_path / "notes").config
 
     assert reloaded.heading_divider is False
+
+
+def test_spellcheck_preference_is_persisted(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.json"
+    store = ConfigStore(config_path, tmp_path / "notes")
+
+    store.update(spellcheck=True)
+    reloaded = ConfigStore(config_path, tmp_path / "notes").config
+
+    assert reloaded.spellcheck is True
 
 
 def test_heading_list_highlight_preference_is_persisted(tmp_path: Path) -> None:

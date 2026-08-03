@@ -47,6 +47,7 @@ let systemFonts: string[] = [];
 let overlayScrollbarCleanup: (() => void) | null = null;
 let appVersion = "";
 let updateState: UpdateState = { status: "idle", available_version: null };
+let notifiedUpdateVersion: string | null = null;
 
 const MIN_EDITOR_FONT_SIZE = 12;
 const MAX_EDITOR_FONT_SIZE = 22;
@@ -90,6 +91,7 @@ type IconName =
   | "back"
   | "bold"
   | "check"
+  | "copy"
   | "heading"
   | "github"
   | "italic"
@@ -103,8 +105,7 @@ type IconName =
   | "strikethrough"
   | "trash"
   | "update"
-  | "undo2"
-  | "close";
+  | "undo2";
 
 function icon(name: IconName): string {
   const paths = {
@@ -112,6 +113,7 @@ function icon(name: IconName): string {
     back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
     bold: '<path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8"/>',
     check: '<path d="m5 12 4 4L19 6"/>',
+    copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
     heading: '<path d="M6 12h12"/><path d="M6 20V4"/><path d="M18 20V4"/>',
     github: '<path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3.3-.4 6.8-1.6 6.8-7A5.4 5.4 0 0 0 19.4 4 5 5 0 0 0 19.3.5S18 0 15 2a13.4 13.4 0 0 0-7 0C5-.1 3.7.5 3.7.5A5 5 0 0 0 3.6 4a5.4 5.4 0 0 0-1.4 3.7c0 5.4 3.5 6.5 6.8 7A4.8 4.8 0 0 0 8 18v4"/><path d="M8 19c-3 .9-3-1.5-4-2"/>',
     italic: '<line x1="19" x2="10" y1="4" y2="4"/><line x1="14" x2="5" y1="20" y2="20"/><line x1="15" x2="9" y1="4" y2="20"/>',
@@ -119,30 +121,38 @@ function icon(name: IconName): string {
     listChecks: '<path d="M13 5h8"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/>',
     listOrdered: '<path d="M11 5h10"/><path d="M11 12h10"/><path d="M11 19h10"/><path d="M4 4h1v5"/><path d="M4 9h2"/><path d="M6.5 20H3.4c0-1 2.6-1.925 2.6-3.5a1.5 1.5 0 0 0-2.6-1.02"/>',
     minimize: '<path d="M5 12h14"/>',
-    pin: '<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>',
+    pin: '<path class="pin-stem" d="M12 17v5"/><path class="pin-body" d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>',
     plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
     settings: '<path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/>',
     strikethrough: '<path d="M16 4H9a3 3 0 0 0-2.83 4"/><path d="M14 12a4 4 0 0 1 0 8H6"/><line x1="4" x2="20" y1="12" y2="12"/>',
     trash: '<path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
     update: '<path d="M21 12a9 9 0 0 1-15.2 6.5L3 16"/><path d="M3 21v-5h5"/><path d="M3 12A9 9 0 0 1 18.2 5.5L21 8"/><path d="M21 3v5h-5"/>',
     undo2: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5A5.5 5.5 0 0 1 14.5 20H11"/>',
-    close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   };
   return `<svg class="lucide-icon" viewBox="0 0 24 24" aria-hidden="true">${paths[name]}</svg>`;
 }
 
-function titleBar(title: string, back: (() => void) | null): HTMLElement {
+function titleBar(
+  title: string,
+  back: (() => void) | null,
+  showUpdateOnBack = true,
+): HTMLElement {
   const bar = document.createElement("header");
   bar.className = "title-bar";
+  const backUpdateClass = showUpdateOnBack
+    ? ` update-indicator ${updateState.status === "available" ? "has-update" : ""}`
+    : "";
+  const backUpdateDot = showUpdateOnBack
+    ? '<span class="update-dot" aria-hidden="true"></span>'
+    : "";
   bar.innerHTML = `
     <div class="title-left">
-      ${back ? `<button class="window-button no-drag" data-action="back" aria-label="${t("back")}">${icon("back")}</button>` : '<span class="app-mark">Bitty</span>'}
+      ${back ? `<button class="window-button no-drag${backUpdateClass}" data-action="back" aria-label="${t("back")}">${icon("back")}${backUpdateDot}</button>` : '<span class="app-mark">Bitty</span>'}
     </div>
     <div class="window-title" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
     <div class="window-actions">
       <button class="window-button no-drag ${config.always_on_top ? "is-active" : ""}" data-action="pin" aria-label="${t("pin")}" aria-pressed="${config.always_on_top}">${icon("pin")}</button>
       <button class="window-button no-drag" data-action="minimize" aria-label="${t("minimize")}">${icon("minimize")}</button>
-      <button class="window-button no-drag close-button" data-action="close" aria-label="${t("close")}">${icon("close")}</button>
     </div>`;
   if (back) bar.querySelector('[data-action="back"]')?.addEventListener("click", back);
   bar.querySelector('[data-action="pin"]')?.addEventListener("click", async () => {
@@ -160,9 +170,6 @@ function titleBar(title: string, back: (() => void) | null): HTMLElement {
   minimizeButton?.addEventListener("click", () => {
     prepareForWindowMinimize(minimizeButton);
     void api.minimizeWindow();
-  });
-  bar.querySelector('[data-action="close"]')?.addEventListener("click", () => {
-    void closeApplication();
   });
   bar.addEventListener("pointerdown", (event) => {
     if (event.button !== 0 || (event.target as Element).closest(".no-drag")) return;
@@ -323,6 +330,7 @@ function pageShell(
   title: string,
   back: (() => void) | null,
   quietTitleBar = false,
+  showUpdateOnBack = true,
 ): HTMLElement {
   overlayScrollbarCleanup?.();
   overlayScrollbarCleanup = null;
@@ -332,7 +340,7 @@ function pageShell(
   const shell = document.createElement("div");
   shell.className = "app-shell";
   shell.classList.toggle("quiet-title-bar", quietTitleBar);
-  shell.append(titleBar(title, back));
+  shell.append(titleBar(title, back, showUpdateOnBack));
   appendResizeHandles(shell);
   app.append(shell);
   return shell;
@@ -447,10 +455,14 @@ async function renderHome(): Promise<void> {
           <strong>${escapeHtml(note.name.replace(/\.md$/i, ""))}</strong>
           <span>${escapeHtml(note.preview || t("emptyNote"))}</span>
         </button>
-        <button class="archive-button ${archiveCandidate === note.name ? "confirm" : ""}" aria-label="${escapeHtml(t("archiveNote", { name: note.name }))}">
-          ${archiveCandidate === note.name ? icon("check") : icon("archive")}
-        </button>`;
+        <div class="note-actions">
+          <button class="note-action copy-button" aria-label="${escapeHtml(t("copyNote", { name: note.name }))}">${icon("copy")}</button>
+          <button class="note-action archive-button ${archiveCandidate === note.name ? "confirm" : ""}" aria-label="${escapeHtml(t("archiveNote", { name: note.name }))}">
+            ${archiveCandidate === note.name ? icon("check") : icon("archive")}
+          </button>
+        </div>`;
       item.querySelector(".note-open")?.addEventListener("click", () => openNote(note.name));
+      item.querySelector(".copy-button")?.addEventListener("click", () => showCopyDialog(note.name));
       item.querySelector(".archive-button")?.addEventListener("click", () => confirmArchive(note.name));
       list.append(item);
     }
@@ -537,13 +549,7 @@ async function confirmDeleteArchivedNote(name: string): Promise<void> {
   }
 }
 
-function showCreateDialog(): void {
-  const today = new Date();
-  const defaultStem = [
-    today.getFullYear(),
-    String(today.getMonth() + 1).padStart(2, "0"),
-    String(today.getDate()).padStart(2, "0"),
-  ].join("-");
+function availableNoteName(defaultStem: string): string {
   const existingNames = new Set(notes.map((note) => note.name.toLocaleLowerCase()));
   let defaultName = defaultStem;
   let suffix = 2;
@@ -551,36 +557,72 @@ function showCreateDialog(): void {
     defaultName = `${defaultStem} (${suffix})`;
     suffix += 1;
   }
+  return defaultName;
+}
+
+function showNoteNameDialog(options: {
+  title: string;
+  defaultName: string;
+  confirmLabel: string;
+  run: (name: string) => Promise<void>;
+}): void {
   const backdrop = document.createElement("div");
   backdrop.className = "modal-backdrop";
   backdrop.innerHTML = `
     <section class="modal-panel create-panel">
-      <h2>${t("createNote")}</h2>
-      <input type="text" maxlength="100" value="${escapeHtml(defaultName)}" aria-label="${t("noteName")}" />
-      <div class="modal-actions"><button class="button" data-action="cancel">${t("cancel")}</button><button class="button primary" data-action="confirm">${t("create")}</button></div>
+      <h2>${escapeHtml(options.title)}</h2>
+      <input type="text" maxlength="100" value="${escapeHtml(options.defaultName)}" aria-label="${t("noteName")}" />
+      <div class="modal-actions"><button class="button" data-action="cancel">${t("cancel")}</button><button class="button primary" data-action="confirm">${escapeHtml(options.confirmLabel)}</button></div>
     </section>`;
   const input = backdrop.querySelector<HTMLInputElement>("input")!;
-  const create = async () => {
+  const confirm = async () => {
     const button = backdrop.querySelector<HTMLButtonElement>('[data-action="confirm"]')!;
     button.disabled = true;
     try {
-      const note = await api.createNote(input.value);
+      await options.run(input.value);
       backdrop.remove();
-      await showNote(note);
     } catch (error) {
       button.disabled = false;
       showError(error);
     }
   };
   backdrop.querySelector('[data-action="cancel"]')?.addEventListener("click", () => backdrop.remove());
-  backdrop.querySelector('[data-action="confirm"]')?.addEventListener("click", create);
+  backdrop.querySelector('[data-action="confirm"]')?.addEventListener("click", confirm);
   input.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") void create();
+    if (event.key === "Enter") void confirm();
     if (event.key === "Escape") backdrop.remove();
   });
   document.body.append(backdrop);
   input.focus();
   input.select();
+}
+
+function showCreateDialog(): void {
+  const today = new Date();
+  const defaultStem = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, "0"),
+    String(today.getDate()).padStart(2, "0"),
+  ].join("-");
+  showNoteNameDialog({
+    title: t("createNote"),
+    defaultName: availableNoteName(defaultStem),
+    confirmLabel: t("create"),
+    run: async (name) => showNote(await api.createNote(name)),
+  });
+}
+
+function showCopyDialog(sourceName: string): void {
+  const sourceStem = sourceName.replace(/\.md$/i, "");
+  showNoteNameDialog({
+    title: t("copy"),
+    defaultName: availableNoteName(`${sourceStem} ${t("copySuffix")}`),
+    confirmLabel: t("createCopy"),
+    run: async (name) => {
+      await api.duplicateNote(sourceName, name);
+      await renderHome();
+    },
+  });
 }
 
 async function confirmArchive(name: string): Promise<void> {
@@ -646,7 +688,7 @@ async function showNote(note: OpenedNote): Promise<void> {
       updateToolbar();
       selectionVisibility.selectionChanged();
     },
-  });
+  }, config.spellcheck);
   noteEditor = created.controller;
   editor = noteEditor;
   currentContent = created.snapshot.markdown;
@@ -894,6 +936,13 @@ function updateButtonText(): string {
   return updateState.status === "available" ? t("update") : t("checkUpdate");
 }
 
+function showAvailableUpdateOnce(state: UpdateState): void {
+  if (state.status !== "available" || !state.available_version) return;
+  if (notifiedUpdateVersion === state.available_version) return;
+  notifiedUpdateVersion = state.available_version;
+  showToast(t("updateAvailable", { version: state.available_version }));
+}
+
 async function refreshUpdateState(force = false): Promise<UpdateState> {
   updateState = await api.checkUpdate(force);
   document.querySelectorAll(".update-indicator").forEach((element) => {
@@ -902,6 +951,7 @@ async function refreshUpdateState(force = false): Promise<UpdateState> {
   const updateButton = document.querySelector<HTMLElement>(".update-button");
   updateButton?.setAttribute("aria-label", updateButtonText());
   updateButton?.setAttribute("title", updateButtonText());
+  if (!force) showAvailableUpdateOnce(updateState);
   return updateState;
 }
 
@@ -909,7 +959,7 @@ async function renderSettings(): Promise<void> {
   const fontOptions = Array.from(new Set([config.editor_font, ...systemFonts]))
     .filter(Boolean)
     .sort((left, right) => left.localeCompare(right, "zh-CN"));
-  const shell = pageShell("", renderHome);
+  const shell = pageShell("", renderHome, false, false);
   const main = document.createElement("main");
   main.className = "settings-page";
   main.innerHTML = `
@@ -940,6 +990,10 @@ async function renderSettings(): Promise<void> {
       <select id="editor-font" class="font-select">
         ${fontOptions.map((font) => `<option value="${escapeHtml(font)}" ${font === config.editor_font ? "selected" : ""}>${escapeHtml(font)}</option>`).join("")}
       </select>
+    </section>
+    <section class="setting-card toggle-row">
+      <div><label for="spellcheck">${t("spellcheck")}</label></div>
+      <input id="spellcheck" type="checkbox" ${config.spellcheck ? "checked" : ""} />
     </section>
     <section class="setting-card toggle-row">
       <div><label for="heading-divider">${t("headingDivider")}</label></div>
@@ -1052,6 +1106,22 @@ async function renderSettings(): Promise<void> {
     }
   });
   const headingDividerToggle = main.querySelector<HTMLInputElement>("#heading-divider")!;
+  const spellcheckToggle = main.querySelector<HTMLInputElement>("#spellcheck")!;
+  spellcheckToggle.addEventListener("change", async () => {
+    const previous = config.spellcheck;
+    const next = spellcheckToggle.checked;
+    if (next === previous) return;
+    spellcheckToggle.disabled = true;
+    try {
+      await api.setSpellcheck(next);
+      config.spellcheck = next;
+    } catch (error) {
+      spellcheckToggle.checked = previous;
+      showError(error);
+    } finally {
+      spellcheckToggle.disabled = false;
+    }
+  });
   headingDividerToggle.addEventListener("change", async () => {
     const previous = config.heading_divider;
     const next = headingDividerToggle.checked;
@@ -1175,6 +1245,7 @@ async function start(): Promise<void> {
       bootstrap.update_result.status === "success" ? "info" : "warning",
     );
   }
+  showAvailableUpdateOnce(updateState);
   void refreshUpdateState(false).catch(() => {});
   window.setInterval(() => void refreshUpdateState(false).catch(() => {}), 60 * 60 * 1000);
 }

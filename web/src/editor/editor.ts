@@ -18,8 +18,10 @@ import { EditorState, Selection, TextSelection, type Transaction } from "prosemi
 import { findWrapping } from "prosemirror-transform";
 import { EditorView } from "prosemirror-view";
 
+import { listNormalizationPlugin } from "./list-normalization";
 import { parseMarkdown, parseSupportedFragment, serializeMarkdown } from "./markdown";
 import { rowDragPlugin } from "./row-drag";
+import { rowInsertPlugin } from "./row-insert";
 import { noteSchema } from "./schema";
 import { keepRectVisible } from "./selection-visibility";
 
@@ -253,17 +255,67 @@ export function sinkListItemAcrossTypes(
   return true;
 }
 
-function setDirectItemChecked(
-  transaction: Transaction,
-  listNode: ProseMirrorNode,
-  listPosition: number,
-  checked: boolean | null,
-): void {
-  let position = listPosition + 1;
+const COMPLETED_PREFIX = "[✓] ";
+const COMPLETED_PREFIX_PATTERN = /^\s*(?:\[✓\]|✓)\s*/u;
+
+function stripCompletedPrefix(content: Fragment): { content: Fragment; completed: boolean } {
+  const paragraph = content.firstChild;
+  if (!paragraph || paragraph.type !== noteSchema.nodes.paragraph) {
+    return { content, completed: false };
+  }
+  const match = COMPLETED_PREFIX_PATTERN.exec(paragraph.textContent);
+  if (!match) return { content, completed: false };
+
+  const children: ProseMirrorNode[] = [paragraph.copy(paragraph.content.cut(match[0].length))];
+  for (let index = 1; index < content.childCount; index += 1) {
+    children.push(content.child(index));
+  }
+  return { content: Fragment.fromArray(children), completed: true };
+}
+
+function addCompletedPrefix(content: Fragment): Fragment {
+  const stripped = stripCompletedPrefix(content).content;
+  const paragraph = stripped.firstChild;
+  if (!paragraph || paragraph.type !== noteSchema.nodes.paragraph) return stripped;
+
+  const children: ProseMirrorNode[] = [paragraph.copy(
+    Fragment.from(noteSchema.text(COMPLETED_PREFIX)).append(paragraph.content),
+  )];
+  for (let index = 1; index < stripped.childCount; index += 1) {
+    children.push(stripped.child(index));
+  }
+  return Fragment.fromArray(children);
+}
+
+function convertedItemContent(
+  content: Fragment,
+  sourceChecked: boolean | null,
+  kind: ListKind,
+): { content: Fragment; checked: boolean | null } {
+  if (kind !== "task") {
+    return {
+      content: sourceChecked === true ? addCompletedPrefix(content) : content,
+      checked: null,
+    };
+  }
+  if (typeof sourceChecked === "boolean") return { content, checked: sourceChecked };
+  const stripped = stripCompletedPrefix(content);
+  return { content: stripped.content, checked: stripped.completed };
+}
+
+function convertListNode(listNode: ProseMirrorNode, kind: ListKind): ProseMirrorNode {
+  const items: ProseMirrorNode[] = [];
   listNode.forEach((item) => {
-    transaction.setNodeMarkup(position, undefined, { ...item.attrs, checked });
-    position += item.nodeSize;
+    const converted = convertedItemContent(item.content, item.attrs.checked, kind);
+    items.push(noteSchema.nodes.list_item.create(
+      { ...item.attrs, checked: converted.checked },
+      converted.content,
+    ));
   });
+  const listType = kind === "ordered"
+    ? noteSchema.nodes.ordered_list
+    : noteSchema.nodes.bullet_list;
+  return listType.create(kind === "ordered" ? { order: 1 } : undefined, items);
 }
 
 function listKind(state: EditorState): ListKind | null {
@@ -349,7 +401,8 @@ function convertSelectedUnits(
   dispatch: ((tr: Transaction) => void) | undefined,
   kind: ListKind,
 ): boolean {
-  if (state.selection.empty) return false;
+  const collapsedList = state.selection.empty ? nearestList(state) : null;
+  if (state.selection.empty && (!collapsedList || collapsedList.depth !== 1)) return false;
   const units = selectedUnits(state);
   const selected = units.filter((unit) => unit.selected);
   if (!selected.some((unit) => unit.type === "list-item")) return false;
@@ -366,7 +419,10 @@ function convertSelectedUnits(
       continue;
     }
     if (removeList && unit.type === "list-item") {
-      unit.item.forEach((node) => {
+      const content = unit.item.attrs.checked === true
+        ? addCompletedPrefix(unit.item.content)
+        : unit.item.content;
+      content.forEach((node) => {
         rebuilt.push({ type: "block", node, selected: true });
       });
       continue;
@@ -374,12 +430,17 @@ function convertSelectedUnits(
 
     const content = unit.type === "list-item"
       ? unit.item.content
-      : noteSchema.nodes.paragraph.create(null, unit.node.content).content;
+      : Fragment.from(noteSchema.nodes.paragraph.create(null, unit.node.content));
+    const converted = convertedItemContent(
+      content,
+      unit.type === "list-item" ? unit.item.attrs.checked : null,
+      kind,
+    );
     rebuilt.push({
       type: "list-item",
       item: noteSchema.nodes.list_item.create(
-        { checked: kind === "task" ? false : null },
-        content,
+        { checked: converted.checked },
+        converted.content,
       ),
       kind,
       order: 1,
@@ -448,10 +509,14 @@ function convertSelectedUnits(
   const nextDoc = noteSchema.nodes.doc.create(null, nodes);
   const transaction = state.tr.replaceWith(0, state.doc.content.size, nextDoc.content);
   if (selectedRanges.length > 0) {
+    const first = selectedRanges[0]!;
+    const last = selectedRanges[selectedRanges.length - 1]!;
     transaction.setSelection(TextSelection.create(
       transaction.doc,
-      selectedRanges[0]!.from,
-      selectedRanges[selectedRanges.length - 1]!.to,
+      state.selection.empty
+        ? first.from + Math.min(state.selection.$from.parentOffset, first.to - first.from)
+        : first.from,
+      state.selection.empty ? undefined : last.to,
     ));
   }
   dispatch(transaction.scrollIntoView());
@@ -467,6 +532,23 @@ export function toggleList(
 
   const current = listKind(state);
   if (current === kind) {
+    if (current === "task" && dispatch) {
+      const existing = nearestList(state);
+      if (!existing) return false;
+      const transaction = state.tr.replaceWith(
+        existing.position,
+        existing.position + existing.node.nodeSize,
+        convertListNode(existing.node, "bullet"),
+      );
+      const preparedState = state.apply(transaction);
+      let liftTransaction: Transaction | null = null;
+      if (!liftListItem(noteSchema.nodes.list_item)(preparedState, (next) => {
+        liftTransaction = next;
+      }) || !liftTransaction) return false;
+      for (const step of (liftTransaction as Transaction).steps) transaction.step(step);
+      dispatch(transaction.scrollIntoView());
+      return true;
+    }
     return liftListItem(noteSchema.nodes.list_item)(state, dispatch);
   }
 
@@ -476,16 +558,10 @@ export function toggleList(
     : noteSchema.nodes.bullet_list;
   if (existing) {
     if (dispatch) {
-      const transaction = state.tr.setNodeMarkup(
+      const transaction = state.tr.replaceWith(
         existing.position,
-        targetType,
-        kind === "ordered" ? { order: 1 } : undefined,
-      );
-      setDirectItemChecked(
-        transaction,
-        existing.node,
-        existing.position,
-        kind === "task" ? false : null,
+        existing.position + existing.node.nodeSize,
+        convertListNode(existing.node, kind),
       );
       dispatch(transaction.scrollIntoView());
     }
@@ -496,7 +572,19 @@ export function toggleList(
     if (kind === "task") {
       const wrapped = nearestList(transaction);
       if (wrapped) {
-        setDirectItemChecked(transaction, wrapped.node, wrapped.position, false);
+        const selection = transaction.selection;
+        transaction.replaceWith(
+          wrapped.position,
+          wrapped.position + wrapped.node.nodeSize,
+          convertListNode(wrapped.node, kind),
+        );
+        if (!selection.empty) {
+          transaction.setSelection(TextSelection.create(
+            transaction.doc,
+            selection.from,
+            selection.to,
+          ));
+        }
       }
     }
     dispatch(transaction.scrollIntoView());
@@ -507,16 +595,19 @@ class RichEditor implements EditorController {
   readonly mode = "wysiwyg" as const;
   private readonly view: EditorView;
 
-  constructor(private readonly host: HTMLElement, doc: ProseMirrorNode, private readonly callbacks: EditorCallbacks) {
+  constructor(private readonly host: HTMLElement, doc: ProseMirrorNode, private readonly callbacks: EditorCallbacks, spellcheck: boolean) {
     this.view = new EditorView(host, {
+      attributes: { spellcheck: String(spellcheck) },
       scrollMargin: { top: 8, right: 0, bottom: 8, left: 0 },
       state: EditorState.create({
         schema: noteSchema,
         doc,
         plugins: [
           inputRulePlugin(),
+          listNormalizationPlugin(),
           history(),
           rowDragPlugin(),
+          rowInsertPlugin(),
           keymap({
             "Mod-z": undo,
             "Mod-y": redo,
@@ -649,11 +740,11 @@ class RawEditor implements EditorController {
   readonly mode = "raw" as const;
   private readonly textarea: HTMLTextAreaElement;
 
-  constructor(host: HTMLElement, content: string, callbacks: EditorCallbacks) {
+  constructor(host: HTMLElement, content: string, callbacks: EditorCallbacks, spellcheck: boolean) {
     this.textarea = document.createElement("textarea");
     this.textarea.className = "raw-editor";
     this.textarea.value = content;
-    this.textarea.spellcheck = false;
+    this.textarea.setAttribute("spellcheck", String(spellcheck));
     this.textarea.addEventListener("input", () => callbacks.onChange(this.textarea.value));
     this.textarea.addEventListener("focus", () => callbacks.onFocusChange(true));
     this.textarea.addEventListener("blur", () => callbacks.onFocusChange(false));
@@ -685,16 +776,17 @@ export function createEditor(
   host: HTMLElement,
   markdown: string,
   callbacks: EditorCallbacks,
+  spellcheck = false,
 ): { controller: EditorController; snapshot: EditorSnapshot } {
   const parsed = parseMarkdown(markdown);
   if (parsed.mode === "raw") {
     return {
-      controller: new RawEditor(host, parsed.markdown, callbacks),
+      controller: new RawEditor(host, parsed.markdown, callbacks, spellcheck),
       snapshot: { mode: "raw", markdown: parsed.markdown, rawReason: parsed.reason },
     };
   }
   return {
-    controller: new RichEditor(host, parsed.doc, callbacks),
+    controller: new RichEditor(host, parsed.doc, callbacks, spellcheck),
     snapshot: { mode: "wysiwyg", markdown: parsed.markdown },
   };
 }

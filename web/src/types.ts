@@ -44,6 +44,7 @@ export interface AppConfig {
   last_note: string | null;
   editor_font: string;
   editor_font_size: number;
+  spellcheck: boolean;
   heading_divider: boolean;
   heading_list_highlight: boolean;
   last_update_check_ms: number | null;

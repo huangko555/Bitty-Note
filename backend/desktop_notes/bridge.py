@@ -56,6 +56,7 @@ class DesktopBridge:
     def set_language(self, language: str) -> dict[str, str]:
         normalized = set_backend_language(language)
         self.config_store.update(language=normalized)
+        self._require_window().set_title(text("Bitty", "小记"))
         return {"language": normalized}
 
     def check_update(self, force: bool = False) -> dict[str, str | None]:
@@ -83,6 +84,9 @@ class DesktopBridge:
 
     def create_note(self, name: str) -> dict[str, Any]:
         return self._repository.create_note(name).to_dict()
+
+    def duplicate_note(self, name: str, requested_name: str) -> dict[str, Any]:
+        return self._repository.duplicate_note(name, requested_name).to_dict()
 
     def open_note(self, name: str) -> dict[str, Any]:
         return self._repository.open_note(name).to_dict()
@@ -193,6 +197,10 @@ class DesktopBridge:
 
     def set_heading_divider(self, enabled: bool) -> dict[str, bool]:
         self.config_store.update(heading_divider=enabled)
+        return {"enabled": enabled}
+
+    def set_spellcheck(self, enabled: bool) -> dict[str, bool]:
+        self.config_store.update(spellcheck=enabled)
         return {"enabled": enabled}
 
     def set_heading_list_highlight(self, enabled: bool) -> dict[str, bool]:

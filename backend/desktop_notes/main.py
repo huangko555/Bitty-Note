@@ -12,8 +12,16 @@ import velopack
 
 from .bridge import DesktopBridge, WindowStateSaver
 from .config import ConfigStore
-from .i18n import set_language
-from .platform_windows import documents_directory, local_config_path, set_autostart
+from .i18n import set_language, text
+from .platform_windows import (
+    documents_directory,
+    local_config_path,
+    set_autostart,
+)
+
+
+MIN_WINDOW_WIDTH = 300
+MIN_WINDOW_HEIGHT = 380
 
 
 def _resource_path(relative: str) -> Path:
@@ -27,15 +35,15 @@ def _visible_window_bounds(
     width: int,
     height: int,
 ) -> tuple[int | None, int | None, int, int]:
-    width = max(320, width)
-    height = max(420, height)
+    width = max(MIN_WINDOW_WIDTH, width)
+    height = max(MIN_WINDOW_HEIGHT, height)
     if sys.platform != "win32" or x is None or y is None:
         return x, y, width, height
 
     work_area = ctypes.wintypes.RECT()
     ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(work_area), 0)
-    max_width = max(320, work_area.right - work_area.left)
-    max_height = max(420, work_area.bottom - work_area.top)
+    max_width = max(MIN_WINDOW_WIDTH, work_area.right - work_area.left)
+    max_height = max(MIN_WINDOW_HEIGHT, work_area.bottom - work_area.top)
     width = min(width, max_width)
     height = min(height, max_height)
     if x + 80 < work_area.left or x > work_area.right - 80:
@@ -72,6 +80,12 @@ def _normalize_window_after_show(
     window.events.resized += state_saver.schedule
 
 
+def _allow_system_shutdown(_sender: object, args: object) -> None:
+    """Undo pywebview's generic cancellation for a WinForms session shutdown."""
+    if str(getattr(args, "CloseReason", "")) == "WindowsShutDown":
+        setattr(args, "Cancel", False)
+
+
 def main() -> None:
     velopack.App().run()
     instance = _single_instance()
@@ -102,14 +116,14 @@ def main() -> None:
 
     bridge = DesktopBridge(config_store)
     window = webview.create_window(
-        "Bitty-Note",
+        text("Bitty", "小记"),
         str(index),
         js_api=bridge,
         width=width,
         height=height,
         x=x,
         y=y,
-        min_size=(320, 420),
+        min_size=(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT),
         frameless=True,
         easy_drag=False,
         on_top=config.always_on_top,
@@ -121,6 +135,8 @@ def main() -> None:
 
     def on_shown() -> None:
         _normalize_window_after_show(window, state_saver, width, height)
+        if sys.platform == "win32":
+            window.native.FormClosing += _allow_system_shutdown
 
     window.events.shown += on_shown
     close_request_lock = threading.Lock()

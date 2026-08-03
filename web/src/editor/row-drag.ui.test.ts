@@ -59,6 +59,7 @@ describe("row drag handle", () => {
 
     handle.dispatchEvent(new MouseEvent("pointerenter"));
     expect(highlight.classList.contains("visible")).toBe(true);
+    expect(highlight.style.left).toBe("13px");
     view.updateState(view.state);
     expect(handle.classList.contains("visible")).toBe(true);
     expect(highlight.classList.contains("visible")).toBe(true);

@@ -49,10 +49,11 @@ class AppConfig:
     window_x: int | None = None
     window_y: int | None = None
     window_width: int = 350
-    window_height: int = 630
+    window_height: int = 530
     last_note: str | None = None
     editor_font: str = DEFAULT_EDITOR_FONT
     editor_font_size: int = DEFAULT_EDITOR_FONT_SIZE
+    spellcheck: bool = False
     heading_divider: bool = True
     heading_list_highlight: bool = True
     last_update_check_ms: int | None = None
