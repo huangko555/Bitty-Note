@@ -123,12 +123,13 @@ body:hover *::-webkit-scrollbar-thumb:hover { background-color: rgb(73 71 65 / 5
 .quiet-title-bar .title-bar:hover .window-actions,
 .quiet-title-bar .title-bar:focus-within .title-left,
 .quiet-title-bar .title-bar:focus-within .window-actions { opacity: 1; pointer-events: auto; }
-.window-hover-suppressed .quiet-title-bar .title-bar:hover,
-.window-hover-suppressed .quiet-title-bar .title-bar:focus-within { border-bottom-color: transparent; }
-.window-hover-suppressed .quiet-title-bar .title-bar:hover .title-left,
-.window-hover-suppressed .quiet-title-bar .title-bar:hover .window-actions,
-.window-hover-suppressed .quiet-title-bar .title-bar:focus-within .title-left,
-.window-hover-suppressed .quiet-title-bar .title-bar:focus-within .window-actions { opacity: 0; pointer-events: none; }
+.window-hover-suppressed .quiet-title-bar .title-bar {
+  border-bottom-color: transparent; transition: none;
+}
+.window-hover-suppressed .quiet-title-bar .title-left,
+.window-hover-suppressed .quiet-title-bar .window-actions {
+  opacity: 0; pointer-events: none; transition: none;
+}
 .window-title { min-width: 0; display: flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; text-align: center; font-size: 12px; color: var(--muted); }
 .window-title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .title-pin-indicator { display: inline-flex; flex: none; color: var(--ink); transform: translateY(1px); }
