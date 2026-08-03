@@ -13,20 +13,13 @@ ICON_SIZES = [(16, 16), (20, 20), (24, 24), (32, 32), (40, 40), (48, 48), (64, 6
 
 def main() -> None:
     image = Image.open(SOURCE).convert("RGBA")
-    visible_alpha = image.getchannel("A").point(lambda alpha: 255 if alpha >= 8 else 0)
-    bounds = visible_alpha.getbbox()
-    if bounds is None:
+    if image.width != image.height:
+        raise RuntimeError("应用图标必须为正方形。")
+    if image.getchannel("A").getbbox() is None:
         raise RuntimeError("应用图标没有可见内容。")
 
-    cropped = image.crop(bounds)
-    side = max(cropped.size)
-    square = Image.new("RGBA", (side, side), (0, 0, 0, 0))
-    square.alpha_composite(
-        cropped,
-        ((side - cropped.width) // 2, (side - cropped.height) // 2),
-    )
-    square.save(TARGET, format="ICO", sizes=ICON_SIZES)
-    print(f"Generated {TARGET.relative_to(ROOT)} from bounds {bounds}.")
+    image.save(TARGET, format="ICO", sizes=ICON_SIZES)
+    print(f"Generated {TARGET.relative_to(ROOT)} with its original canvas.")
 
 
 if __name__ == "__main__":
