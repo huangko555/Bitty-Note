@@ -7,8 +7,10 @@ export function prepareForWindowMinimize(
 ): void {
   button.blur();
   root.classList.add(WINDOW_HOVER_SUPPRESSED_CLASS);
-  pointerSource.addEventListener("pointermove", () => {
-    root.classList.remove(WINDOW_HOVER_SUPPRESSED_CLASS);
+  pointerSource.addEventListener("focus", () => {
+    pointerSource.addEventListener("pointermove", () => {
+      root.classList.remove(WINDOW_HOVER_SUPPRESSED_CLASS);
+    }, { once: true });
   }, { once: true });
 }
 
@@ -16,6 +18,7 @@ export function syncPinButtons(root: ParentNode, active: boolean): void {
   root.querySelectorAll<HTMLButtonElement>('[data-action="pin"]').forEach((button) => {
     button.classList.toggle("is-active", active);
     button.setAttribute("aria-pressed", String(active));
+    if (document.activeElement === button) button.blur();
   });
   root.querySelectorAll<HTMLElement>(".title-pin-indicator").forEach((indicator) => {
     indicator.hidden = !active;
