@@ -23,7 +23,7 @@ dotnet tool run vpk pack `
     --packVersion $version.Trim() `
     --packDir $packDirectory `
     --mainExe 'Bitty-Note.exe' `
-    --packTitle 'Bitty-Note' `
+    --packTitle 'Bitty Note' `
     --icon 'assets\app-icon.ico' `
     --outputDir 'release\velopack'
 if ($LASTEXITCODE -ne 0) {
