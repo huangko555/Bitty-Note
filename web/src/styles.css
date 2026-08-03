@@ -126,8 +126,8 @@ body:hover *::-webkit-scrollbar-thumb:hover { background-color: rgb(73 71 65 / 5
 .window-hover-suppressed .quiet-title-bar .title-bar {
   border-bottom-color: transparent; transition: none;
 }
-.window-hover-suppressed .quiet-title-bar .title-left,
-.window-hover-suppressed .quiet-title-bar .window-actions {
+.window-hover-suppressed .quiet-title-bar .title-bar .title-left,
+.window-hover-suppressed .quiet-title-bar .title-bar .window-actions {
   opacity: 0; pointer-events: none; transition: none;
 }
 .window-title { min-width: 0; display: flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; text-align: center; font-size: 12px; color: var(--muted); }
