@@ -1060,6 +1060,7 @@ async function renderSettings(): Promise<void> {
       }
       updateButton.setAttribute("aria-label", t("checkingUpdate"));
       updateButton.setAttribute("title", t("checkingUpdate"));
+      updateButton.classList.add("is-checking");
       const state = await refreshUpdateState(true);
       if (state.status === "available" && state.available_version) {
         showSettingsStatus(t("updateAvailable", { version: state.available_version }));
@@ -1072,6 +1073,7 @@ async function renderSettings(): Promise<void> {
       showSettingsStatus(t("updateFailed"), "warning");
       void error;
     } finally {
+      updateButton.classList.remove("is-checking");
       updateButton.setAttribute("aria-label", updateButtonText());
       updateButton.setAttribute("title", updateButtonText());
       updateButton.disabled = false;
