@@ -1,6 +1,6 @@
 import { EditorState } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { rowInsertPlugin } from "./row-insert";
 import { noteSchema } from "./schema";
@@ -38,6 +38,23 @@ describe("row insertion gaps", () => {
       { type: "heading", text: "Title" },
       { type: "paragraph", text: "last" },
     ]);
+  });
+
+  it("notifies after a blank line is inserted and focused", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const onInsert = vi.fn();
+    const doc = noteSchema.nodes.doc.create(null, [
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("last")),
+    ]);
+    view = new EditorView(host, {
+      state: EditorState.create({ doc, plugins: [rowInsertPlugin(onInsert)] }),
+    });
+
+    host.querySelector<HTMLButtonElement>(".row-insert-button")!.click();
+
+    expect(view.hasFocus()).toBe(true);
+    expect(onInsert).toHaveBeenCalledOnce();
   });
 
   it("does not show a top gap when the first line is a heading", () => {

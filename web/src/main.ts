@@ -695,6 +695,7 @@ async function showNote(note: OpenedNote): Promise<void> {
       updateToolbar();
       selectionVisibility.selectionChanged();
     },
+    onInsertBlankLine: () => selectionVisibility.show(),
   }, config.spellcheck);
   noteEditor = created.controller;
   editor = noteEditor;

@@ -39,7 +39,11 @@ export function insertBlankParagraph(
   return true;
 }
 
-function insertButton(view: EditorView, getPosition: () => number | undefined): HTMLElement {
+function insertButton(
+  view: EditorView,
+  getPosition: () => number | undefined,
+  onInsert?: () => void,
+): HTMLElement {
   const button = document.createElement("button");
   button.type = "button";
   button.tabIndex = -1;
@@ -57,7 +61,10 @@ function insertButton(view: EditorView, getPosition: () => number | undefined): 
     event.stopPropagation();
     const position = getPosition();
     if (typeof position !== "number") return;
-    if (insertBlankParagraph(view.state, view.dispatch, position)) view.focus();
+    if (insertBlankParagraph(view.state, view.dispatch, position)) {
+      view.focus();
+      onInsert?.();
+    }
   });
   return button;
 }
@@ -68,7 +75,7 @@ function lastLineIsBlank(doc: EditorState["doc"]): boolean {
   return Boolean(node?.isTextblock && node.content.size === 0);
 }
 
-function decorations(doc: EditorState["doc"]): DecorationSet {
+function decorations(doc: EditorState["doc"], onInsert?: () => void): DecorationSet {
   const positions = new Set<number>();
   if (!lastLineIsBlank(doc)) positions.add(doc.content.size);
   doc.forEach((node, position) => {
@@ -80,19 +87,19 @@ function decorations(doc: EditorState["doc"]): DecorationSet {
       .sort((left, right) => left - right)
       .map((position) => Decoration.widget(
         position,
-        (view, getPosition) => insertButton(view, getPosition),
+        (view, getPosition) => insertButton(view, getPosition, onInsert),
         { key: `row-insert-${position}`, side: -1 },
       )),
   );
 }
 
-export function rowInsertPlugin(): Plugin<DecorationSet> {
+export function rowInsertPlugin(onInsert?: () => void): Plugin<DecorationSet> {
   return new Plugin({
     key: rowInsertKey,
     state: {
-      init: (_config, state) => decorations(state.doc),
+      init: (_config, state) => decorations(state.doc, onInsert),
       apply: (transaction, current) => transaction.docChanged
-        ? decorations(transaction.doc)
+        ? decorations(transaction.doc, onInsert)
         : current.map(transaction.mapping, transaction.doc),
     },
     props: {

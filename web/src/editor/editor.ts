@@ -57,6 +57,7 @@ interface EditorCallbacks {
   onChange: (markdown: string) => void;
   onFocusChange: (focused: boolean) => void;
   onSelectionChange: () => void;
+  onInsertBlankLine?: () => void;
 }
 
 function markInputRule(pattern: RegExp, markName: "strong" | "em" | "strike"): InputRule {
@@ -626,7 +627,7 @@ class RichEditor implements EditorController {
           listNormalizationPlugin(),
           history(),
           rowDragPlugin(),
-          rowInsertPlugin(),
+          rowInsertPlugin(callbacks.onInsertBlankLine),
           keymap({
             "Mod-z": undo,
             "Mod-y": redo,
