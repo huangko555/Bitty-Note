@@ -1,19 +1,24 @@
 const CARET_MARGIN = 8;
 
 interface SelectionVisibilityTarget {
-  ensureSelectionVisible(): void;
+  ensureSelectionVisible(bottomInset: number): void;
 }
 
 export function createSelectionVisibilityCoordinator(
   toolbar: HTMLElement,
   getTarget: () => SelectionVisibilityTarget | null,
   requestFrame: (callback: FrameRequestCallback) => number = window.requestAnimationFrame.bind(window),
+  defer: (callback: () => void) => void = window.queueMicrotask.bind(window),
 ): {
-  editorPressStarted: () => void;
+  editorPressStarted: (event?: Event) => void;
   focusChanged: (visible: boolean) => void;
   selectionChanged: () => void;
+  show: () => void;
 } {
   let scheduled = false;
+  let editorPressActive = false;
+  let pendingVisible = false;
+  let restoredFocus = false;
   const schedule = () => {
     if (scheduled || !getTarget()) return;
     scheduled = true;
@@ -25,41 +30,112 @@ export function createSelectionVisibilityCoordinator(
         && toolbar.isConnected
         && toolbar.classList.contains("visible")
       ) {
-        target.ensureSelectionVisible();
+        target.ensureSelectionVisible(toolbar.getBoundingClientRect().height);
       }
     });
   };
+  const show = () => {
+    restoredFocus = false;
+    pendingVisible = false;
+    toolbar.classList.add("visible");
+    schedule();
+  };
 
   return {
-    editorPressStarted: () => {
-      if (toolbar.classList.contains("ignore-current-press")) return;
-      toolbar.classList.add("ignore-current-press");
+    editorPressStarted: (event) => {
+      const eventTarget = event?.target;
+      const editorControl = eventTarget instanceof Element
+        && eventTarget.closest("[data-editor-control]");
+      if (editorControl) {
+        if (restoredFocus && !toolbar.classList.contains("visible")) {
+          const activeElement = toolbar.ownerDocument.activeElement;
+          if (
+            activeElement instanceof HTMLElement
+            && activeElement.classList.contains("ProseMirror")
+          ) {
+            activeElement.blur();
+          }
+        }
+        restoredFocus = false;
+        return;
+      }
+      if (
+        editorPressActive
+        || toolbar.classList.contains("visible")
+      ) {
+        return;
+      }
       const target = toolbar.ownerDocument.defaultView;
       if (!target) return;
-      const release = () => {
-        toolbar.classList.remove("ignore-current-press");
-        target.removeEventListener("pointerup", release, true);
-        target.removeEventListener("pointercancel", release, true);
+      restoredFocus = false;
+      pendingVisible = true;
+      editorPressActive = true;
+      let finishQueued = false;
+      const cleanup = () => {
+        target.removeEventListener("click", complete, true);
+        target.removeEventListener("pointercancel", cancel, true);
+        target.removeEventListener("blur", cancel, true);
       };
-      target.addEventListener("pointerup", release, true);
-      target.addEventListener("pointercancel", release, true);
+      const finish = () => {
+        cleanup();
+        editorPressActive = false;
+        if (pendingVisible) {
+          pendingVisible = false;
+          toolbar.classList.add("visible");
+          schedule();
+        }
+      };
+      const complete = () => {
+        if (finishQueued) return;
+        finishQueued = true;
+        defer(finish);
+      };
+      const cancel = () => {
+        cleanup();
+        editorPressActive = false;
+        pendingVisible = false;
+      };
+      // Wait for the actual click, not pointerup. Some WebViews may run queued
+      // work between pointerup and click, which would expose the toolbar under
+      // the still-active pointer and redirect the click to a toolbar button.
+      target.addEventListener("click", complete, true);
+      target.addEventListener("pointercancel", cancel, true);
+      target.addEventListener("blur", cancel, true);
     },
     focusChanged: (visible) => {
-      toolbar.classList.toggle("visible", visible);
-      if (visible) schedule();
+      if (!visible) {
+        restoredFocus = false;
+        pendingVisible = false;
+        toolbar.classList.remove("visible");
+        return;
+      }
+      if (editorPressActive) {
+        return;
+      }
+      if (toolbar.classList.contains("visible")) {
+        schedule();
+        return;
+      }
+      // Native WebViews can restore contenteditable focus while activating the
+      // window, before the pointer event that identifies the user's target.
+      // Keep the toolbar hidden until that actual press completes.
+      restoredFocus = true;
     },
     selectionChanged: () => {
       if (toolbar.classList.contains("visible")) schedule();
     },
+    show,
   };
 }
 
 export function keepRectVisible(
   host: HTMLElement,
   target: Pick<DOMRect, "top" | "bottom">,
+  bottomInset = 0,
 ): void {
   const viewport = host.getBoundingClientRect();
-  const lowerOverflow = target.bottom - (viewport.bottom - CARET_MARGIN);
+  const lowerOverflow = target.bottom
+    - (viewport.bottom - bottomInset - CARET_MARGIN);
   if (lowerOverflow > 0) {
     host.scrollTop += lowerOverflow;
     return;

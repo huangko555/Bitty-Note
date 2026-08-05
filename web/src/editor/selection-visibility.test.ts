@@ -20,19 +20,80 @@ function rect(top: number, bottom: number): DOMRect {
 }
 
 describe("selection visibility", () => {
-  it("keeps a toolbar shown during an editor press from receiving that press", () => {
+  it("lets the editor finish its click before showing the toolbar", () => {
     const toolbar = document.createElement("div");
     document.body.append(toolbar);
-    const coordinator = createSelectionVisibilityCoordinator(toolbar, () => null);
+    const deferred: (() => void)[] = [];
+    const coordinator = createSelectionVisibilityCoordinator(
+      toolbar,
+      () => null,
+      () => 0,
+      (callback) => deferred.push(callback),
+    );
 
     coordinator.editorPressStarted();
     coordinator.focusChanged(true);
 
-    expect(toolbar.classList.contains("visible")).toBe(true);
-    expect(toolbar.classList.contains("ignore-current-press")).toBe(true);
+    expect(toolbar.classList.contains("visible")).toBe(false);
 
     window.dispatchEvent(new PointerEvent("pointerup"));
-    expect(toolbar.classList.contains("ignore-current-press")).toBe(false);
+    expect(toolbar.classList.contains("visible")).toBe(false);
+    expect(deferred).toHaveLength(0);
+
+    const click = new MouseEvent("click", { cancelable: true });
+    window.dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(false);
+    expect(toolbar.classList.contains("visible")).toBe(false);
+    expect(deferred).toHaveLength(1);
+
+    deferred.shift()?.();
+    expect(toolbar.classList.contains("visible")).toBe(true);
+  });
+
+  it("does not change toolbar state for editor controls", () => {
+    const toolbar = document.createElement("div");
+    const host = document.createElement("div");
+    const control = document.createElement("button");
+    control.dataset.editorControl = "true";
+    host.append(control);
+    document.body.append(host, toolbar);
+    const coordinator = createSelectionVisibilityCoordinator(toolbar, () => null);
+    host.addEventListener("mousedown", coordinator.editorPressStarted, true);
+
+    control.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+
+    expect(toolbar.classList.contains("visible")).toBe(false);
+  });
+
+  it("does not expose the toolbar when the window only restores editor focus", () => {
+    const toolbar = document.createElement("div");
+    document.body.append(toolbar);
+    const coordinator = createSelectionVisibilityCoordinator(toolbar, () => null);
+
+    coordinator.focusChanged(true);
+
+    expect(toolbar.classList.contains("visible")).toBe(false);
+  });
+
+  it("undoes restored editor focus when the activating press is a control", () => {
+    const toolbar = document.createElement("div");
+    const host = document.createElement("div");
+    const editor = document.createElement("div");
+    const control = document.createElement("button");
+    editor.className = "ProseMirror";
+    editor.tabIndex = 0;
+    control.dataset.editorControl = "true";
+    host.append(editor, control);
+    document.body.append(host, toolbar);
+    const coordinator = createSelectionVisibilityCoordinator(toolbar, () => null);
+    host.addEventListener("pointerdown", coordinator.editorPressStarted, true);
+    editor.focus();
+    coordinator.focusChanged(true);
+
+    control.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+
+    expect(document.activeElement).not.toBe(editor);
+    expect(toolbar.classList.contains("visible")).toBe(false);
   });
 
   it("checks the final selection again when it changes after the focus frame", () => {
@@ -46,7 +107,7 @@ describe("selection visibility", () => {
       (callback) => frames.push(callback),
     );
 
-    coordinator.focusChanged(true);
+    coordinator.show();
     frames.shift()?.(0);
     coordinator.selectionChanged();
     frames.shift()?.(16);
@@ -55,12 +116,12 @@ describe("selection visibility", () => {
     expect(toolbar.classList.contains("visible")).toBe(true);
   });
 
-  it("scrolls a caret above the toolbar after the editor viewport shrinks", () => {
+  it("scrolls a caret above an overlaid toolbar", () => {
     const host = document.createElement("div");
     host.scrollTop = 120;
-    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(42, 502));
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(42, 546));
 
-    keepRectVisible(host, rect(486, 516));
+    keepRectVisible(host, rect(486, 516), 44);
 
     expect(host.scrollTop).toBe(142);
   });

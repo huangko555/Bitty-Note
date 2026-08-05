@@ -46,6 +46,7 @@ interface PythonApi {
   set_heading_divider(enabled: boolean): Promise<{ enabled: boolean }>;
   set_spellcheck(enabled: boolean): Promise<{ enabled: boolean }>;
   set_heading_list_highlight(enabled: boolean): Promise<{ enabled: boolean }>;
+  set_editor_highlight_color(color: string): Promise<{ color: string }>;
   set_language(language: AppLanguage): Promise<{ language: AppLanguage }>;
   check_update(force: boolean): Promise<UpdateState>;
   install_update(): Promise<UpdateState>;
@@ -101,6 +102,7 @@ export interface DesktopApi {
   setHeadingDivider(enabled: boolean): Promise<void>;
   setSpellcheck(enabled: boolean): Promise<void>;
   setHeadingListHighlight(enabled: boolean): Promise<void>;
+  setEditorHighlightColor(color: string): Promise<string>;
   setLanguage(language: AppLanguage): Promise<AppLanguage>;
   checkUpdate(force?: boolean): Promise<UpdateState>;
   installUpdate(): Promise<UpdateState>;
@@ -161,6 +163,9 @@ function desktopApi(raw: PythonApi): DesktopApi {
     setHeadingListHighlight: async (enabled) => {
       await raw.set_heading_list_highlight(enabled);
     },
+    setEditorHighlightColor: async (color) => (
+      await raw.set_editor_highlight_color(color)
+    ).color,
     setLanguage: async (language) => (await raw.set_language(language)).language,
     checkUpdate: (force = false) => raw.check_update(force),
     installUpdate: () => raw.install_update(),
@@ -217,6 +222,7 @@ function browserMock(): DesktopApi {
         spellcheck: false,
         heading_divider: true,
         heading_list_highlight: true,
+        editor_highlight_color: "#456FC4",
         last_update_check_ms: null,
         available_version: null,
         pending_update_version: null,
@@ -312,6 +318,7 @@ function browserMock(): DesktopApi {
     setHeadingDivider: async () => {},
     setSpellcheck: async () => {},
     setHeadingListHighlight: async () => {},
+    setEditorHighlightColor: async (color) => color.toUpperCase(),
     setLanguage: async (nextLanguage) => {
       language = nextLanguage;
       return language;

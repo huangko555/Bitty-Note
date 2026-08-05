@@ -1,7 +1,7 @@
 import createLucideElement from "lucide/dist/esm/createElement.mjs";
 import GripVertical from "lucide/dist/esm/icons/grip-vertical.mjs";
 import { Fragment, type Node as ProseMirrorNode } from "prosemirror-model";
-import { Plugin, type EditorState, type Transaction } from "prosemirror-state";
+import { Plugin, TextSelection, type EditorState, type Transaction } from "prosemirror-state";
 import { type EditorView } from "prosemirror-view";
 
 import { normalizeListDocument } from "./list-normalization";
@@ -163,6 +163,22 @@ function isDraggableRowAtPath(root: ProseMirrorNode, path: readonly number[]): b
     && (node.type === noteSchema.nodes.paragraph || node.type === noteSchema.nodes.heading);
 }
 
+function textPositionFor(
+  doc: ProseMirrorNode,
+  parent: ProseMirrorNode,
+  parentOffset: number,
+): number | null {
+  let result: number | null = null;
+  doc.descendants((node, position) => {
+    if (node === parent) {
+      result = position + 1 + Math.min(parentOffset, node.content.size);
+      return false;
+    }
+    return result === null;
+  });
+  return result;
+}
+
 export function moveRow(
   state: EditorState,
   dispatch: ((transaction: Transaction) => void) | undefined,
@@ -170,6 +186,14 @@ export function moveRow(
   targetPosition: number,
   side: RowDropSide,
 ): boolean {
+  const selectionAnchor = {
+    parent: state.selection.$anchor.parent,
+    offset: state.selection.$anchor.parentOffset,
+  };
+  const selectionHead = {
+    parent: state.selection.$head.parent,
+    offset: state.selection.$head.parentOffset,
+  };
   const source = state.doc.nodeAt(sourcePosition);
   const target = state.doc.nodeAt(targetPosition);
   if (!source || !target || source === target) return false;
@@ -298,6 +322,19 @@ export function moveRow(
     oldChangedTo,
     nextDoc.slice(changedFrom, newChangedTo),
   );
+  const nextAnchor = textPositionFor(
+    transaction.doc,
+    selectionAnchor.parent,
+    selectionAnchor.offset,
+  );
+  const nextHead = textPositionFor(
+    transaction.doc,
+    selectionHead.parent,
+    selectionHead.offset,
+  );
+  if (nextAnchor !== null && nextHead !== null) {
+    transaction.setSelection(TextSelection.create(transaction.doc, nextAnchor, nextHead));
+  }
   dispatch(transaction.setMeta("rowDrag", true));
   return true;
 }
@@ -378,6 +415,7 @@ class RowDragHandleView {
     this.handle.type = "button";
     this.handle.tabIndex = -1;
     this.handle.className = "block-drag-handle";
+    this.handle.dataset.editorControl = "true";
     this.handle.title = t("dragRow");
     this.handle.setAttribute("aria-label", t("dragRow"));
     this.handle.setAttribute("contenteditable", "false");

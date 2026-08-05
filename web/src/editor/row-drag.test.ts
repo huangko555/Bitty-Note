@@ -93,6 +93,33 @@ describe("row dragging", () => {
     expect(next.selection.$from.parent.textContent).toBe("甲");
   });
 
+  it("keeps the caret with a row when that row is moved", () => {
+    const doc = noteSchema.nodes.doc.create(null, [
+      paragraph("甲"),
+      paragraph("乙内容"),
+      paragraph("丙"),
+    ]);
+    const sourcePosition = rowPosition(doc, "乙内容");
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, sourcePosition + 3),
+    });
+    let next = state;
+
+    expect(moveRow(
+      state,
+      (transaction) => {
+        next = state.apply(transaction);
+      },
+      sourcePosition,
+      rowPosition(doc, "丙"),
+      "after",
+    )).toBe(true);
+
+    expect(next.selection.$from.parent.textContent).toBe("乙内容");
+    expect(next.selection.$from.parentOffset).toBe(2);
+  });
+
   it("does not request scrolling to a stale caret after a row move", () => {
     const doc = noteSchema.nodes.doc.create(null, [
       paragraph("甲"),

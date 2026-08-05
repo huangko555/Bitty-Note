@@ -2,6 +2,12 @@ import type { AppLanguage } from "./types";
 
 const messages = {
   en: {
+    noteAppearance: "Note appearance",
+    fontSizeLabel: "Font size",
+    highlightColor: "Highlight color",
+    customColor: "Six-digit hex color",
+    invalidColor: "Enter a six-digit hex value.",
+    zoom: "Text size",
     back: "Back",
     pin: "Always on top",
     minimize: "Minimize",
@@ -91,6 +97,12 @@ const messages = {
     previewUnavailable: "Couldn't read this file",
   },
   "zh-CN": {
+    noteAppearance: "编辑器样式",
+    fontSizeLabel: "字号",
+    highlightColor: "高亮颜色",
+    customColor: "六位十六进制色值",
+    invalidColor: "请输入六位十六进制色值。",
+    zoom: "文字大小",
     back: "返回",
     pin: "置顶",
     minimize: "最小化",

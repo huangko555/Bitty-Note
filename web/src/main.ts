@@ -1,8 +1,5 @@
 import "./styles.css";
 import curvedArrowUrl from "./assets/empty-create-arrow.png";
-import createLucideElement from "lucide/dist/esm/createElement.mjs";
-import ZoomIn from "lucide/dist/esm/icons/zoom-in.mjs";
-import ZoomOut from "lucide/dist/esm/icons/zoom-out.mjs";
 
 import {
   connectApi,
@@ -45,6 +42,7 @@ let deleteTimer: number | null = null;
 let editorPreferenceSave: Promise<void> = Promise.resolve();
 let systemFonts: string[] = [];
 let overlayScrollbarCleanup: (() => void) | null = null;
+let toolbarInteractionCleanup: (() => void) | null = null;
 let appVersion = "";
 let updateState: UpdateState = { status: "idle", available_version: null };
 let notifiedUpdateVersion: string | null = null;
@@ -61,11 +59,11 @@ function applyEditorAppearance(): void {
     `"${escapedFamily}", "Microsoft YaHei", sans-serif`,
   );
   document.documentElement.style.setProperty("--editor-font-size", `${config.editor_font_size}px`);
-  document.documentElement.classList.toggle("heading-divider-enabled", config.heading_divider);
-  document.documentElement.classList.toggle(
-    "heading-list-highlight-enabled",
-    config.heading_list_highlight,
+  document.documentElement.style.setProperty(
+    "--editor-structure-color",
+    config.editor_highlight_color,
   );
+  document.documentElement.classList.toggle("heading-divider-enabled", config.heading_divider);
 }
 
 function queueEditorPreferenceSave(): void {
@@ -102,6 +100,7 @@ type IconName =
   | "pin"
   | "plus"
   | "settings"
+  | "settings2"
   | "strikethrough"
   | "trash"
   | "update"
@@ -124,6 +123,7 @@ function icon(name: IconName): string {
     pin: '<path class="pin-stem" d="M12 17v5"/><path class="pin-body" d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>',
     plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
     settings: '<path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/>',
+    settings2: '<path d="M14 17H5"/><path d="M19 7h-9"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>',
     strikethrough: '<path d="M16 4H9a3 3 0 0 0-2.83 4"/><path d="M14 12a4 4 0 0 1 0 8H6"/><line x1="4" x2="20" y1="12" y2="12"/>',
     trash: '<path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
     update: '<path d="M21 12a9 9 0 0 1-15.2 6.5L3 16"/><path d="M3 21v-5h5"/><path d="M3 12A9 9 0 0 1 18.2 5.5L21 8"/><path d="M21 3v5h-5"/>',
@@ -337,6 +337,8 @@ function pageShell(
 ): HTMLElement {
   overlayScrollbarCleanup?.();
   overlayScrollbarCleanup = null;
+  toolbarInteractionCleanup?.();
+  toolbarInteractionCleanup = null;
   editor?.destroy();
   editor = null;
   app.replaceChildren();
@@ -677,6 +679,7 @@ async function showNote(note: OpenedNote): Promise<void> {
     () => noteEditor,
   );
   host.addEventListener("pointerdown", selectionVisibility.editorPressStarted, true);
+  host.addEventListener("mousedown", selectionVisibility.editorPressStarted, true);
   const created = createEditor(host, note.content, {
     onChange: (markdown) => {
       if (locked) return;
@@ -685,6 +688,7 @@ async function showNote(note: OpenedNote): Promise<void> {
       scheduleSave();
     },
     onFocusChange: (focused) => {
+      if (!focused && main.querySelector(".editor-settings-popover.visible")) return;
       selectionVisibility.focusChanged(focused && noteEditor?.mode === "wysiwyg");
     },
     onSelectionChange: () => {
@@ -695,10 +699,18 @@ async function showNote(note: OpenedNote): Promise<void> {
   noteEditor = created.controller;
   editor = noteEditor;
   currentContent = created.snapshot.markdown;
-  if (created.snapshot.mode !== "raw") renderToolbar(toolbar);
+  if (created.snapshot.mode !== "raw") {
+    renderToolbar(toolbar, () => selectionVisibility.focusChanged(false));
+  } else {
+    toolbar.classList.add("is-unavailable");
+  }
   shell.append(main);
   attachOverlayScrollbar(host);
-  window.setTimeout(() => editor?.focus(), 0);
+  window.setTimeout(() => {
+    if (editor !== noteEditor) return;
+    noteEditor.focus();
+    selectionVisibility.show();
+  }, 0);
 }
 
 const toolbarItems: { action: EditorAction; icon: IconName; title: Parameters<typeof t>[0] }[] = [
@@ -711,7 +723,7 @@ const toolbarItems: { action: EditorAction; icon: IconName; title: Parameters<ty
   { action: "task", icon: "listChecks", title: "taskList" },
 ];
 
-function renderToolbar(toolbar: HTMLElement): void {
+function renderToolbar(toolbar: HTMLElement, onWindowFocusLost: () => void): void {
   for (const [index, item] of toolbarItems.entries()) {
     if (index === 4) {
       const separator = document.createElement("span");
@@ -735,23 +747,185 @@ function renderToolbar(toolbar: HTMLElement): void {
   separator.className = "format-toolbar-separator";
   separator.setAttribute("aria-hidden", "true");
   toolbar.append(separator);
-  for (const direction of [-1, 1] as const) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "font-size-button";
-    button.dataset.fontSizeDirection = String(direction);
-    button.append(createLucideElement(direction < 0 ? ZoomOut : ZoomIn, {
-      class: "lucide-icon",
-      "aria-hidden": "true",
-    }));
-    button.addEventListener("mousedown", (event) => {
-      event.preventDefault();
-      adjustEditorFontSize(direction);
-    });
-    toolbar.append(button);
-  }
+  const settingsButton = document.createElement("button");
+  settingsButton.type = "button";
+  settingsButton.className = "editor-settings-button";
+  settingsButton.title = t("noteAppearance");
+  settingsButton.setAttribute("aria-label", t("noteAppearance"));
+  settingsButton.setAttribute("aria-expanded", "false");
+  settingsButton.innerHTML = icon("settings2");
+  toolbar.append(settingsButton);
+
+  const popover = createEditorSettingsPopover();
+  toolbar.parentElement!.insertBefore(popover, toolbar);
+
+  const closePopover = (restoreEditorFocus = true) => {
+    popover.classList.remove("visible");
+    settingsButton.classList.remove("is-active");
+    settingsButton.setAttribute("aria-expanded", "false");
+    if (restoreEditorFocus) editor?.focus();
+  };
+  settingsButton.addEventListener("click", () => {
+    const visible = !popover.classList.contains("visible");
+    popover.classList.toggle("visible", visible);
+    settingsButton.classList.toggle("is-active", visible);
+    settingsButton.setAttribute("aria-expanded", String(visible));
+    if (!visible) editor?.focus();
+  });
+  const onOutsidePress = (event: PointerEvent) => {
+    const target = event.target as Node;
+    if (
+      popover.classList.contains("visible")
+      && !popover.contains(target)
+      && !settingsButton.contains(target)
+    ) {
+      closePopover();
+    }
+  };
+  const onToolbarKeydown = (event: KeyboardEvent) => {
+    if (event.key === "Escape" && popover.classList.contains("visible")) closePopover();
+  };
+  const handleWindowBlur = () => {
+    if (!popover.classList.contains("visible")) return;
+    closePopover(false);
+    onWindowFocusLost();
+  };
+  document.addEventListener("pointerdown", onOutsidePress, true);
+  document.addEventListener("keydown", onToolbarKeydown);
+  window.addEventListener("blur", handleWindowBlur);
+  toolbarInteractionCleanup = () => {
+    document.removeEventListener("pointerdown", onOutsidePress, true);
+    document.removeEventListener("keydown", onToolbarKeydown);
+    window.removeEventListener("blur", handleWindowBlur);
+  };
   updateToolbar(toolbar);
-  updateFontSizeButtons(toolbar);
+  updateFontSizeButtons(popover);
+}
+
+function createEditorSettingsPopover(): HTMLElement {
+  const fontOptions = Array.from(new Set([config.editor_font, ...systemFonts]))
+    .filter(Boolean)
+    .sort((left, right) => left.localeCompare(right, "zh-CN"));
+  const popover = document.createElement("section");
+  popover.className = "editor-settings-popover";
+  popover.setAttribute("role", "dialog");
+  popover.setAttribute("aria-label", t("noteAppearance"));
+  popover.innerHTML = `
+    <div class="editor-settings-controls">
+      <label class="editor-settings-control">
+        <span>${t("editorFont")}</span>
+        <select class="font-select" data-editor-setting="font">
+          ${fontOptions.map((font) => `<option value="${escapeHtml(font)}" ${font === config.editor_font ? "selected" : ""}>${escapeHtml(font)}</option>`).join("")}
+        </select>
+      </label>
+      <div class="editor-settings-control font-size-control">
+        <span>${t("zoom")}</span>
+        <div class="font-size-stepper">
+          <button type="button" class="font-size-step" data-font-size-direction="-1">−</button>
+          <output class="font-size-value"></output>
+          <button type="button" class="font-size-step" data-font-size-direction="1">+</button>
+        </div>
+      </div>
+      <div class="editor-settings-control color-control">
+        <span>${t("highlightColor")}</span>
+        <div class="color-presets">
+          ${["#456FC4", "#24231F", "#C36B32", "#4F7D5B"].map((color) => `<button type="button" class="color-swatch" data-color="${color}" style="--swatch:${color}" aria-label="${color}"></button>`).join("")}
+        </div>
+        <label class="hex-color-field"><span>#</span><input data-editor-setting="color" value="${escapeHtml(config.editor_highlight_color.replace(/^#/, ""))}" maxlength="7" inputmode="text" aria-label="${t("customColor")}" /></label>
+        <small class="color-error" aria-live="polite"></small>
+      </div>
+      <label class="toggle-row editor-settings-toggle"><span>${t("spellcheck")}</span><input data-editor-setting="spellcheck" type="checkbox" ${config.spellcheck ? "checked" : ""} /></label>
+      <label class="toggle-row editor-settings-toggle"><span>${t("headingDivider")}</span><input data-editor-setting="divider" type="checkbox" ${config.heading_divider ? "checked" : ""} /></label>
+    </div>`;
+
+  const fontSelect = popover.querySelector<HTMLSelectElement>('[data-editor-setting="font"]')!;
+  fontSelect.addEventListener("change", () => {
+    config.editor_font = fontSelect.value;
+    applyEditorAppearance();
+    queueEditorPreferenceSave();
+  });
+  popover.querySelectorAll<HTMLButtonElement>(".font-size-step").forEach((button) => {
+    button.addEventListener("click", () => {
+      adjustEditorFontSize(Number(button.dataset.fontSizeDirection) as -1 | 1);
+    });
+  });
+
+  const colorInput = popover.querySelector<HTMLInputElement>('[data-editor-setting="color"]')!;
+  const colorError = popover.querySelector<HTMLElement>(".color-error")!;
+  const swatches = popover.querySelectorAll<HTMLButtonElement>(".color-swatch");
+  const syncColors = () => {
+    swatches.forEach((button) => {
+      button.classList.toggle("is-active", button.dataset.color === config.editor_highlight_color);
+    });
+  };
+  const setColor = async (color: string) => {
+    const previous = config.editor_highlight_color;
+    config.editor_highlight_color = color.toUpperCase();
+    config.heading_list_highlight = true;
+    colorInput.value = config.editor_highlight_color.slice(1);
+    colorInput.classList.remove("is-invalid");
+    colorError.textContent = "";
+    applyEditorAppearance();
+    syncColors();
+    try {
+      config.editor_highlight_color = await api.setEditorHighlightColor(
+        config.editor_highlight_color,
+      );
+      applyEditorAppearance();
+      syncColors();
+    } catch (error) {
+      config.editor_highlight_color = previous;
+      colorInput.value = previous.slice(1);
+      applyEditorAppearance();
+      syncColors();
+      showError(error);
+    }
+  };
+  swatches.forEach((button) => {
+    button.addEventListener("click", () => void setColor(button.dataset.color!));
+  });
+  colorInput.addEventListener("input", () => {
+    const value = colorInput.value.trim().replace(/^#+/, "").slice(0, 6);
+    if (colorInput.value !== value) colorInput.value = value;
+    const valid = /^[0-9a-fA-F]{6}$/.test(value);
+    colorInput.classList.toggle("is-invalid", value.length === 6 && !valid);
+    colorError.textContent = value.length === 6 && !valid ? t("invalidColor") : "";
+    if (valid) void setColor(`#${value}`);
+  });
+  colorInput.addEventListener("paste", (event) => {
+    const pasted = event.clipboardData?.getData("text").trim().replace(/^#+/, "");
+    if (!pasted || !/^[0-9a-fA-F]{6}$/.test(pasted)) return;
+    event.preventDefault();
+    colorInput.value = pasted;
+    colorInput.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+
+  const wireToggle = (
+    selector: string,
+    key: "spellcheck" | "heading_divider",
+    save: (enabled: boolean) => Promise<void>,
+  ) => {
+    const input = popover.querySelector<HTMLInputElement>(selector)!;
+    input.addEventListener("change", async () => {
+      const previous = config[key];
+      config[key] = input.checked;
+      if (key === "spellcheck") editor?.setSpellcheck(input.checked);
+      applyEditorAppearance();
+      try {
+        await save(input.checked);
+      } catch (error) {
+        config[key] = previous;
+        input.checked = previous;
+        if (key === "spellcheck") editor?.setSpellcheck(previous);
+        applyEditorAppearance();
+        showError(error);
+      }
+    });
+  };
+  wireToggle('[data-editor-setting="spellcheck"]', "spellcheck", (enabled) => api.setSpellcheck(enabled));
+  wireToggle('[data-editor-setting="divider"]', "heading_divider", (enabled) => api.setHeadingDivider(enabled));
+  syncColors();
+  return popover;
 }
 
 function adjustEditorFontSize(direction: -1 | 1): void {
@@ -767,7 +941,7 @@ function adjustEditorFontSize(direction: -1 | 1): void {
 }
 
 function updateFontSizeButtons(root: ParentNode = document): void {
-  root.querySelectorAll<HTMLButtonElement>(".font-size-button").forEach((button) => {
+  root.querySelectorAll<HTMLButtonElement>(".font-size-step").forEach((button) => {
     const direction = Number(button.dataset.fontSizeDirection);
     const unavailable = direction < 0
       ? config.editor_font_size <= MIN_EDITOR_FONT_SIZE
@@ -779,6 +953,9 @@ function updateFontSizeButtons(root: ParentNode = document): void {
       size: config.editor_font_size,
     });
     button.setAttribute("aria-label", button.title);
+  });
+  root.querySelectorAll<HTMLOutputElement>(".font-size-value").forEach((output) => {
+    output.value = String(config.editor_font_size);
   });
 }
 
@@ -959,9 +1136,6 @@ async function refreshUpdateState(force = false): Promise<UpdateState> {
 }
 
 async function renderSettings(): Promise<void> {
-  const fontOptions = Array.from(new Set([config.editor_font, ...systemFonts]))
-    .filter(Boolean)
-    .sort((left, right) => left.localeCompare(right, "zh-CN"));
   const shell = pageShell("", renderHome, false, false);
   const main = document.createElement("main");
   main.className = "settings-page";
@@ -987,24 +1161,6 @@ async function renderSettings(): Promise<void> {
     <section class="setting-card">
       <label>${t("markdownPath")}</label>
       <div class="path-row"><input type="text" readonly value="${escapeHtml(config.save_dir)}" /><button class="button" data-action="browse">${t("change")}</button><button class="button" data-action="open-directory">${t("open")}</button></div>
-    </section>
-    <section class="setting-card">
-      <label for="editor-font">${t("editorFont")}</label>
-      <select id="editor-font" class="font-select">
-        ${fontOptions.map((font) => `<option value="${escapeHtml(font)}" ${font === config.editor_font ? "selected" : ""}>${escapeHtml(font)}</option>`).join("")}
-      </select>
-    </section>
-    <section class="setting-card toggle-row">
-      <div><label for="spellcheck">${t("spellcheck")}</label></div>
-      <input id="spellcheck" type="checkbox" ${config.spellcheck ? "checked" : ""} />
-    </section>
-    <section class="setting-card toggle-row">
-      <div><label for="heading-divider">${t("headingDivider")}</label></div>
-      <input id="heading-divider" type="checkbox" ${config.heading_divider ? "checked" : ""} />
-    </section>
-    <section class="setting-card toggle-row">
-      <div><label for="heading-list-highlight">${t("structureHighlight")}</label></div>
-      <input id="heading-list-highlight" type="checkbox" ${config.heading_list_highlight ? "checked" : ""} />
     </section>`;
   const pathInput = main.querySelector<HTMLInputElement>('.path-row input')!;
   const browseButton = main.querySelector<HTMLButtonElement>('[data-action="browse"]')!;
@@ -1091,75 +1247,6 @@ async function renderSettings(): Promise<void> {
       await api.openDirectory(config.save_dir);
     } catch (error) {
       showError(error);
-    }
-  });
-  const fontSelect = main.querySelector<HTMLSelectElement>("#editor-font")!;
-  fontSelect.addEventListener("change", async () => {
-    const previous = config.editor_font;
-    const next = fontSelect.value;
-    if (next === previous) return;
-    fontSelect.disabled = true;
-    try {
-      await api.setEditorPreferences(next, config.editor_font_size);
-      config.editor_font = next;
-      applyEditorAppearance();
-    } catch (error) {
-      fontSelect.value = previous;
-      showError(error);
-    } finally {
-      fontSelect.disabled = false;
-    }
-  });
-  const headingDividerToggle = main.querySelector<HTMLInputElement>("#heading-divider")!;
-  const spellcheckToggle = main.querySelector<HTMLInputElement>("#spellcheck")!;
-  spellcheckToggle.addEventListener("change", async () => {
-    const previous = config.spellcheck;
-    const next = spellcheckToggle.checked;
-    if (next === previous) return;
-    spellcheckToggle.disabled = true;
-    try {
-      await api.setSpellcheck(next);
-      config.spellcheck = next;
-    } catch (error) {
-      spellcheckToggle.checked = previous;
-      showError(error);
-    } finally {
-      spellcheckToggle.disabled = false;
-    }
-  });
-  headingDividerToggle.addEventListener("change", async () => {
-    const previous = config.heading_divider;
-    const next = headingDividerToggle.checked;
-    if (next === previous) return;
-    headingDividerToggle.disabled = true;
-    try {
-      await api.setHeadingDivider(next);
-      config.heading_divider = next;
-      applyEditorAppearance();
-    } catch (error) {
-      headingDividerToggle.checked = previous;
-      showError(error);
-    } finally {
-      headingDividerToggle.disabled = false;
-    }
-  });
-  const headingListHighlightToggle = main.querySelector<HTMLInputElement>(
-    "#heading-list-highlight",
-  )!;
-  headingListHighlightToggle.addEventListener("change", async () => {
-    const previous = config.heading_list_highlight;
-    const next = headingListHighlightToggle.checked;
-    if (next === previous) return;
-    headingListHighlightToggle.disabled = true;
-    try {
-      await api.setHeadingListHighlight(next);
-      config.heading_list_highlight = next;
-      applyEditorAppearance();
-    } catch (error) {
-      headingListHighlightToggle.checked = previous;
-      showError(error);
-    } finally {
-      headingListHighlightToggle.disabled = false;
     }
   });
   const autostartToggle = main.querySelector<HTMLInputElement>("#autostart")!;

@@ -47,8 +47,9 @@ export interface EditorController {
   getMarkdown(): string;
   run(action: EditorAction): void;
   activeActions(): Set<EditorAction>;
+  setSpellcheck(enabled: boolean): void;
   focus(): void;
-  ensureSelectionVisible(): void;
+  ensureSelectionVisible(bottomInset?: number): void;
   destroy(): void;
 }
 
@@ -181,6 +182,26 @@ function literalTextSlice(text: string): Slice {
     noteSchema.nodes.paragraph.create(null, line ? noteSchema.text(line) : undefined),
   );
   return Slice.maxOpen(noteSchema.nodes.doc.create(null, blocks).content);
+}
+
+function restoreNativeSelection(view: EditorView, anchor: number, head: number): void {
+  window.queueMicrotask(() => {
+    if (!view.dom.isConnected) return;
+    const selection = view.dom.ownerDocument.getSelection();
+    if (!selection) return;
+    try {
+      const anchorPoint = view.domAtPos(anchor);
+      const headPoint = view.domAtPos(head);
+      selection.setBaseAndExtent(
+        anchorPoint.node,
+        anchorPoint.offset,
+        headPoint.node,
+        headPoint.offset,
+      );
+    } catch {
+      // The document may have changed again before the queued restoration.
+    }
+  });
 }
 
 function nearestList(state: Pick<EditorState, "selection">) {
@@ -630,6 +651,17 @@ class RichEditor implements EditorController {
         if (transaction.selectionSet || transaction.docChanged) this.callbacks.onSelectionChange();
       },
       handleDOMEvents: {
+        mousedown: (_view, event) => {
+          const target = event.target;
+          if (
+            target instanceof HTMLInputElement
+            && target.dataset.taskCheckbox === "true"
+          ) {
+            event.preventDefault();
+            return true;
+          }
+          return false;
+        },
         change: (view, event) => {
           const target = event.target;
           if (
@@ -643,10 +675,18 @@ class RichEditor implements EditorController {
           const position = view.posAtDOM(item, 0) - 1;
           const node = view.state.doc.nodeAt(position);
           if (node?.type !== noteSchema.nodes.list_item) return false;
+          const hadFocus = view.hasFocus();
           view.dispatch(view.state.tr.setNodeMarkup(position, undefined, {
             ...node.attrs,
             checked: target.checked,
           }));
+          if (hadFocus) {
+            restoreNativeSelection(
+              view,
+              view.state.selection.anchor,
+              view.state.selection.head,
+            );
+          }
           return true;
         },
         focus: () => {
@@ -707,12 +747,20 @@ class RichEditor implements EditorController {
     return active;
   }
 
+  setSpellcheck(enabled: boolean): void {
+    this.view.dom.spellcheck = enabled;
+  }
+
   focus(): void {
     this.view.focus();
   }
 
-  ensureSelectionVisible(): void {
-    keepRectVisible(this.host, this.view.coordsAtPos(this.view.state.selection.head));
+  ensureSelectionVisible(bottomInset = 0): void {
+    keepRectVisible(
+      this.host,
+      this.view.coordsAtPos(this.view.state.selection.head),
+      bottomInset,
+    );
   }
 
   destroy(): void {
@@ -734,6 +782,7 @@ class RichEditor implements EditorController {
   private setList(kind: ListKind): void {
     toggleList(this.view.state, this.view.dispatch, kind);
   }
+
 }
 
 class RawEditor implements EditorController {
@@ -761,11 +810,15 @@ class RawEditor implements EditorController {
     return new Set();
   }
 
+  setSpellcheck(enabled: boolean): void {
+    this.textarea.spellcheck = enabled;
+  }
+
   focus(): void {
     this.textarea.focus();
   }
 
-  ensureSelectionVisible(): void {}
+  ensureSelectionVisible(_bottomInset = 0): void {}
 
   destroy(): void {
     this.textarea.remove();

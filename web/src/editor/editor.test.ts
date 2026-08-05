@@ -1,5 +1,6 @@
 import { AllSelection, EditorState, TextSelection } from "prosemirror-state";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { EditorView } from "prosemirror-view";
 
 import {
   createEditor,
@@ -14,6 +15,59 @@ import { parseMarkdown, serializeMarkdown } from "./markdown";
 import { noteSchema } from "./schema";
 
 describe("task checkbox rendering", () => {
+  it("leaves ordinary click positioning to ProseMirror", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const positionAtCoords = vi
+      .spyOn(EditorView.prototype, "posAtCoords")
+      .mockReturnValue({ pos: 10, inside: -1 });
+    const { controller } = createEditor(host, "First line\n\nSecond line\n", {
+      onChange: () => {},
+      onFocusChange: () => {},
+      onSelectionChange: () => {},
+    });
+    const root = host.querySelector<HTMLElement>(".ProseMirror")!;
+
+    root.dispatchEvent(new MouseEvent("mousedown", {
+      bubbles: true,
+      clientX: 32,
+      clientY: 480,
+    }));
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    root.dispatchEvent(click);
+
+    expect(positionAtCoords).toHaveBeenCalledOnce();
+    expect(positionAtCoords).toHaveBeenCalledWith({ left: 32, top: 480 });
+    expect(click.defaultPrevented).toBe(false);
+
+    positionAtCoords.mockRestore();
+    controller.destroy();
+    host.remove();
+  });
+
+  it("toggles a task without allowing its press to move focus", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const focusChanges: boolean[] = [];
+    const { controller } = createEditor(host, "- [ ] 待办\n", {
+      onChange: () => {},
+      onFocusChange: (focused) => focusChanges.push(focused),
+      onSelectionChange: () => {},
+    });
+
+    const checkbox = host.querySelector<HTMLInputElement>("[data-task-checkbox]")!;
+    const press = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+    checkbox.dispatchEvent(press);
+    checkbox.click();
+
+    expect(press.defaultPrevented).toBe(true);
+    expect(focusChanges).not.toContain(true);
+    expect(controller.getMarkdown()).toContain("- [x] 待办");
+
+    controller.destroy();
+    host.remove();
+  });
+
   it("removes the checked styling when a task is unchecked", () => {
     const host = document.createElement("div");
     document.body.append(host);
@@ -30,6 +84,23 @@ describe("task checkbox rendering", () => {
     checkbox.click();
     expect(checkbox.checked).toBe(false);
     expect(host.querySelector(".task-list-item")?.classList.contains("is-checked")).toBe(false);
+
+    controller.destroy();
+    host.remove();
+  });
+
+  it("updates spell checking without recreating the editor", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const { controller } = createEditor(host, "Text\n", {
+      onChange: () => {},
+      onFocusChange: () => {},
+      onSelectionChange: () => {},
+    }, false);
+
+    controller.setSpellcheck(true);
+
+    expect(host.querySelector<HTMLElement>(".ProseMirror")?.spellcheck).toBe(true);
 
     controller.destroy();
     host.remove();

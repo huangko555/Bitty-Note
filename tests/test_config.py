@@ -21,6 +21,7 @@ def test_existing_config_gets_editor_defaults(tmp_path: Path) -> None:
     assert config.spellcheck is False
     assert config.heading_divider is True
     assert config.heading_list_highlight is True
+    assert config.editor_highlight_color == "#456FC4"
     assert config.language == "en"
     assert config.window_width == 350
     assert config.window_height == 530
@@ -88,6 +89,36 @@ def test_heading_list_highlight_preference_is_persisted(tmp_path: Path) -> None:
     reloaded = ConfigStore(config_path, tmp_path / "notes").config
 
     assert reloaded.heading_list_highlight is False
+
+
+def test_editor_highlight_color_is_persisted(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.json"
+    store = ConfigStore(config_path, tmp_path / "notes")
+
+    store.update(editor_highlight_color="#C36B32")
+
+    assert ConfigStore(config_path, tmp_path / "notes").config.editor_highlight_color == "#C36B32"
+
+
+def test_invalid_editor_highlight_color_falls_back_without_discarding_config(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "save_dir": str(tmp_path / "notes"),
+                "autostart": False,
+                "editor_highlight_color": "blue",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = ConfigStore(config_path, tmp_path / "fallback").config
+
+    assert config.autostart is False
+    assert config.editor_highlight_color == "#456FC4"
 
 
 def test_legacy_font_id_is_migrated(tmp_path: Path) -> None:

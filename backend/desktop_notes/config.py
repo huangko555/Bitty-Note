@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 import threading
 from dataclasses import asdict, dataclass, fields, replace
@@ -13,6 +14,7 @@ from .i18n import SUPPORTED_LANGUAGES
 
 DEFAULT_EDITOR_FONT = "DengXian"
 DEFAULT_EDITOR_FONT_SIZE = 14
+DEFAULT_EDITOR_HIGHLIGHT_COLOR = "#456FC4"
 MIN_EDITOR_FONT_SIZE = 12
 MAX_EDITOR_FONT_SIZE = 22
 LEGACY_EDITOR_FONTS = {
@@ -40,6 +42,11 @@ def validate_editor_preferences(editor_font: str, editor_font_size: int) -> None
         raise ValueError("Editor font size is out of range")
 
 
+def validate_editor_highlight_color(color: str) -> None:
+    if not isinstance(color, str) or re.fullmatch(r"#[0-9a-fA-F]{6}", color) is None:
+        raise ValueError("Unsupported editor highlight color")
+
+
 @dataclass(frozen=True)
 class AppConfig:
     save_dir: str
@@ -56,6 +63,7 @@ class AppConfig:
     spellcheck: bool = False
     heading_divider: bool = True
     heading_list_highlight: bool = True
+    editor_highlight_color: str = DEFAULT_EDITOR_HIGHLIGHT_COLOR
     last_update_check_ms: int | None = None
     available_version: str | None = None
     pending_update_version: str | None = None
@@ -112,6 +120,12 @@ class ConfigStore:
             except ValueError:
                 values["editor_font"] = DEFAULT_EDITOR_FONT
                 values["editor_font_size"] = DEFAULT_EDITOR_FONT_SIZE
+            try:
+                validate_editor_highlight_color(
+                    values.get("editor_highlight_color", DEFAULT_EDITOR_HIGHLIGHT_COLOR)
+                )
+            except ValueError:
+                values["editor_highlight_color"] = DEFAULT_EDITOR_HIGHLIGHT_COLOR
             return AppConfig(**values)
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             return AppConfig(save_dir=str(self.default_save_dir))

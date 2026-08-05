@@ -30,6 +30,7 @@ const listItem: NodeSpec = {
             type: "checkbox",
             checked: node.attrs.checked ? "checked" : undefined,
             "data-task-checkbox": "true",
+            "data-editor-control": "true",
             tabindex: "-1",
           },
         ],

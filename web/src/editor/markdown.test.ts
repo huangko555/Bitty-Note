@@ -4,6 +4,20 @@ import { parseMarkdown, serializeMarkdown } from "./markdown";
 import { noteSchema } from "./schema";
 
 describe("strict Markdown mode selection", () => {
+  it("renders supported inline formatting as marks", () => {
+    const parsed = parseMarkdown(
+      "Preview **bold** and *italic*.\n\n~~Deleted text.~~\n",
+    );
+    if (parsed.mode === "raw") throw new Error(parsed.reason);
+
+    const marks = new Set<string>();
+    parsed.doc.descendants((node) => {
+      node.marks.forEach((mark) => marks.add(mark.type.name));
+    });
+
+    expect(marks).toEqual(new Set(["strong", "em", "strike"]));
+  });
+
   it("round-trips the supported canonical subset", () => {
     const source = "# 标题\n\n正文有 **粗体**、*斜体* 和 ~~删除线~~。\n\n- 项目\n- [ ] 任务\n";
     const parsed = parseMarkdown(source);

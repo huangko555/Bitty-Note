@@ -44,6 +44,7 @@ function insertButton(view: EditorView, getPosition: () => number | undefined): 
   button.type = "button";
   button.tabIndex = -1;
   button.className = "row-insert-button";
+  button.dataset.editorControl = "true";
   button.setAttribute("aria-label", t("insertBlankLine"));
   button.setAttribute("contenteditable", "false");
   button.append(createLucideElement(Plus, {

@@ -47,6 +47,7 @@ export interface AppConfig {
   spellcheck: boolean;
   heading_divider: boolean;
   heading_list_highlight: boolean;
+  editor_highlight_color: string;
   last_update_check_ms: number | null;
   available_version: string | null;
   pending_update_version: string | null;

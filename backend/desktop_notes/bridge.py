@@ -7,7 +7,11 @@ from typing import Any
 import webview
 
 from . import __version__
-from .config import ConfigStore, validate_editor_preferences
+from .config import (
+    ConfigStore,
+    validate_editor_highlight_color,
+    validate_editor_preferences,
+)
 from .errors import UserVisibleError
 from .fonts import list_system_fonts
 from .i18n import set_language as set_backend_language, text
@@ -206,6 +210,15 @@ class DesktopBridge:
     def set_heading_list_highlight(self, enabled: bool) -> dict[str, bool]:
         self.config_store.update(heading_list_highlight=enabled)
         return {"enabled": enabled}
+
+    def set_editor_highlight_color(self, color: str) -> dict[str, str]:
+        validate_editor_highlight_color(color)
+        normalized = color.upper()
+        self.config_store.update(
+            editor_highlight_color=normalized,
+            heading_list_highlight=True,
+        )
+        return {"color": normalized}
 
     def start_window_interaction(self, region: str) -> None:
         with self._lock:
