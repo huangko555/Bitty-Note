@@ -192,6 +192,17 @@ function twoParagraphCursorState(): EditorState {
   });
 }
 
+function emptyParagraphBeforeTextState(): EditorState {
+  const doc = noteSchema.nodes.doc.create(null, [
+    noteSchema.nodes.paragraph.create(),
+    noteSchema.nodes.paragraph.create(null, noteSchema.text("下一行")),
+  ]);
+  return EditorState.create({
+    doc,
+    selection: TextSelection.create(doc, 1),
+  });
+}
+
 function middleOrderedItemState(): EditorState {
   const items = ["第一项", "第二项", "第三项"].map((text) =>
     noteSchema.nodes.list_item.create(
@@ -420,6 +431,20 @@ describe("nested list types", () => {
 });
 
 describe("multi-line list toggling", () => {
+  it("keeps the cursor in an empty line when turning it into a task", () => {
+    const state = emptyParagraphBeforeTextState();
+    let listed = state;
+
+    expect(toggleList(state, (transaction) => {
+      listed = state.apply(transaction);
+    }, "task")).toBe(true);
+
+    const { $from } = listed.selection;
+    expect(Array.from({ length: $from.depth + 1 }, (_, depth) => $from.node(depth).type))
+      .toContain(noteSchema.nodes.list_item);
+    expect(listed.doc.lastChild?.textContent).toBe("下一行");
+  });
+
   it("restarts numbering after another list type interrupts an ordered list", () => {
     const state = middleOrderedItemState();
     let converted = state;

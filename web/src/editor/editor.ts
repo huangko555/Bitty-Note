@@ -599,13 +599,11 @@ export function toggleList(
           wrapped.position + wrapped.node.nodeSize,
           convertListNode(wrapped.node, kind),
         );
-        if (!selection.empty) {
-          transaction.setSelection(TextSelection.create(
-            transaction.doc,
-            selection.from,
-            selection.to,
-          ));
-        }
+        transaction.setSelection(TextSelection.create(
+          transaction.doc,
+          selection.from,
+          selection.to,
+        ));
       }
     }
     dispatch(transaction.scrollIntoView());
