@@ -16,7 +16,7 @@
 
 ## v1.1.0 — 2026-08-02
 
-> This prerelease is unsigned and is published for SignPath Foundation review. Windows may display an unknown-publisher warning. Do not treat it as the final stable package.
+> This prerelease is unsigned. Windows may display an unknown-publisher or SmartScreen warning. Do not treat it as the final stable package.
 
 ### English
 
