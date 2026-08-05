@@ -7,6 +7,8 @@ if (-not (Test-Path -LiteralPath '.venv\Scripts\python.exe')) {
     python -m venv .venv
     if ($LASTEXITCODE -ne 0) { throw "创建 Python 虚拟环境失败，退出码：$LASTEXITCODE" }
 }
+& '.\.venv\Scripts\python.exe' '.\scripts\check_version.py'
+if ($LASTEXITCODE -ne 0) { throw "应用版本号不一致，退出码：$LASTEXITCODE" }
 & '.\.venv\Scripts\python.exe' -m pip install -e '.[dev]'
 if ($LASTEXITCODE -ne 0) { throw "安装 Python 依赖失败，退出码：$LASTEXITCODE" }
 
