@@ -65,6 +65,29 @@ describe("selection visibility", () => {
     expect(toolbar.classList.contains("visible")).toBe(false);
   });
 
+  it("does not show the toolbar for host padding outside the editor", () => {
+    const toolbar = document.createElement("div");
+    const host = document.createElement("div");
+    const editor = document.createElement("div");
+    editor.className = "ProseMirror";
+    host.append(editor);
+    document.body.append(host, toolbar);
+    const deferred: (() => void)[] = [];
+    const coordinator = createSelectionVisibilityCoordinator(
+      toolbar,
+      () => null,
+      () => 0,
+      (callback) => deferred.push(callback),
+    );
+    host.addEventListener("mousedown", coordinator.editorPressStarted, true);
+
+    host.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    window.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    deferred.shift()?.();
+
+    expect(toolbar.classList.contains("visible")).toBe(false);
+  });
+
   it("does not expose the toolbar when the window only restores editor focus", () => {
     const toolbar = document.createElement("div");
     document.body.append(toolbar);

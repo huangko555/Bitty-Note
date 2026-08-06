@@ -243,6 +243,7 @@ h1 { margin: 0; font-size: 23px; font-weight: 500; letter-spacing: -.025em; }
 .ProseMirror ol > li::before { content: counter(note-list) "."; position: absolute; top: 2px; left: -1.15em; min-width: 2em; height: 1.55em; color: var(--editor-structure-color); font-weight: 400; font-variant-numeric: tabular-nums; line-height: 1.55; text-align: center; white-space: nowrap; transform: translateX(-50%); }
 .ProseMirror li > p { margin: 0; }
 .ProseMirror .raw-markdown-block { min-height: 1.55em; margin: 0; white-space: pre-wrap; }
+.ProseMirror .is-terminal-empty-line { min-height: 3.1em; }
 .ProseMirror strong { color: var(--ink); font-weight: 700; }
 .ProseMirror em { font-style: italic; }
 .ProseMirror s { text-decoration: line-through; text-decoration-thickness: 1px; }
@@ -257,6 +258,7 @@ h1 { margin: 0; font-size: 23px; font-weight: 500; letter-spacing: -.025em; }
 .task-list-item.is-checked > .task-content, .task-list-item.is-checked > .task-content * { color: var(--muted); }
 .task-list-item.is-checked > .task-content > p:first-child { text-decoration-line: line-through; text-decoration-color: currentColor; text-decoration-thickness: 1px; }
 .row-insert-button { display: grid; place-items: center; width: 100%; height: 1.55em; padding: 0; border: 0; border-radius: var(--radius-compact); color: transparent; background: transparent; cursor: pointer; }
+.row-insert-button.is-terminal { margin-bottom: .775em; }
 .row-insert-button:hover, .row-insert-button:focus-visible { color: var(--muted); background: rgb(112 107 87 / 8%); }
 .row-insert-button:active { color: var(--ink); background: rgb(112 107 87 / 13%); transform: scale(.99); }
 .row-insert-button .lucide-icon { width: 12px; height: 12px; stroke-width: 2; }
@@ -295,7 +297,7 @@ h1 { margin: 0; font-size: 23px; font-weight: 500; letter-spacing: -.025em; }
 .font-size-stepper button:hover { background: var(--surface-hover); }
 .font-size-stepper button.is-disabled { opacity: .35; cursor: default; }
 .font-size-stepper button.is-disabled:hover { background: transparent; }
-.font-size-value { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; text-align: center; }
+.font-size-value { color: var(--ink); font-size: 12px; font-variant-numeric: tabular-nums; text-align: center; }
 .format-toolbar-separator { align-self: center; width: 1px; height: 18px; margin: 3px 0; background: var(--line); }
 
 .settings-page { padding-bottom: 28px; }

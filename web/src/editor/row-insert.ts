@@ -43,11 +43,13 @@ function insertButton(
   view: EditorView,
   getPosition: () => number | undefined,
   onInsert?: () => void,
+  terminal = false,
 ): HTMLElement {
   const button = document.createElement("button");
   button.type = "button";
   button.tabIndex = -1;
   button.className = "row-insert-button";
+  if (terminal) button.classList.add("is-terminal");
   button.dataset.editorControl = "true";
   button.setAttribute("aria-label", t("insertBlankLine"));
   button.setAttribute("contenteditable", "false");
@@ -75,22 +77,48 @@ function lastLineIsBlank(doc: EditorState["doc"]): boolean {
   return Boolean(node?.isTextblock && node.content.size === 0);
 }
 
+function lastBlankTextblock(doc: EditorState["doc"]): { from: number; to: number } | null {
+  let last: { from: number; to: number; empty: boolean } | null = null;
+  doc.descendants((node, position) => {
+    if (node.isTextblock) {
+      last = { from: position, to: position + node.nodeSize, empty: node.content.size === 0 };
+    }
+  });
+  const terminal = last as { from: number; to: number; empty: boolean } | null;
+  return terminal && terminal.empty
+    ? { from: terminal.from, to: terminal.to }
+    : null;
+}
+
 function decorations(doc: EditorState["doc"], onInsert?: () => void): DecorationSet {
   const positions = new Set<number>();
   if (!lastLineIsBlank(doc)) positions.add(doc.content.size);
   doc.forEach((node, position) => {
     if (node.type === noteSchema.nodes.heading && position > 0) positions.add(position);
   });
-  return DecorationSet.create(
-    doc,
-    [...positions]
+  const terminalBlank = lastBlankTextblock(doc);
+  const items: Decoration[] = terminalBlank
+    ? [Decoration.node(
+      terminalBlank.from,
+      terminalBlank.to,
+      { class: "is-terminal-empty-line" },
+    )]
+    : [];
+  items.push(
+    ...[...positions]
       .sort((left, right) => left - right)
       .map((position) => Decoration.widget(
         position,
-        (view, getPosition) => insertButton(view, getPosition, onInsert),
+        (view, getPosition) => insertButton(
+          view,
+          getPosition,
+          onInsert,
+          position === doc.content.size,
+        ),
         { key: `row-insert-${position}`, side: -1 },
       )),
   );
+  return DecorationSet.create(doc, items);
 }
 
 export function rowInsertPlugin(onInsert?: () => void): Plugin<DecorationSet> {

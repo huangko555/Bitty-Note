@@ -23,7 +23,7 @@ export interface SaveResult {
 export type AppLanguage = "en" | "zh-CN";
 
 export interface UpdateState {
-  status: "idle" | "available" | "unsupported";
+  status: "idle" | "available" | "unsupported" | "store";
   available_version: string | null;
 }
 

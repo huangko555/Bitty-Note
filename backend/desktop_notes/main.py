@@ -12,6 +12,7 @@ import velopack
 
 from .bridge import DesktopBridge, WindowStateSaver
 from .config import ConfigStore
+from .distribution import is_store_package
 from .i18n import set_language, text
 from .platform_windows import (
     documents_directory,
@@ -87,7 +88,8 @@ def _allow_system_shutdown(_sender: object, args: object) -> None:
 
 
 def main() -> None:
-    velopack.App().run()
+    if not is_store_package():
+        velopack.App().run()
     instance = _single_instance()
     if instance is None:
         return

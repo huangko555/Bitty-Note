@@ -46,6 +46,13 @@ export function createSelectionVisibilityCoordinator(
       const eventTarget = event?.target;
       const editorControl = eventTarget instanceof Element
         && eventTarget.closest("[data-editor-control]");
+      if (
+        eventTarget instanceof Element
+        && !editorControl
+        && !eventTarget.closest(".ProseMirror")
+      ) {
+        return;
+      }
       if (editorControl) {
         if (restoredFocus && !toolbar.classList.contains("visible")) {
           const activeElement = toolbar.ownerDocument.activeElement;

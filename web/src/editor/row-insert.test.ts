@@ -28,6 +28,8 @@ describe("row insertion gaps", () => {
 
     const buttons = host.querySelectorAll<HTMLButtonElement>(".row-insert-button");
     expect(buttons).toHaveLength(2);
+    expect(buttons[0]!.classList.contains("is-terminal")).toBe(false);
+    expect(buttons[1]!.classList.contains("is-terminal")).toBe(true);
     buttons[0]!.click();
     expect(Array.from(view.state.doc.content.content, (node) => ({
       type: node.type.name,
@@ -83,6 +85,7 @@ describe("row insertion gaps", () => {
     });
 
     expect(host.querySelector(".row-insert-button")).toBeNull();
+    expect(host.querySelector(".is-terminal-empty-line")).not.toBeNull();
   });
 
   it("hides the bottom gap when the final list item is already blank", () => {
@@ -106,6 +109,7 @@ describe("row insertion gaps", () => {
     });
 
     expect(host.querySelector(".row-insert-button")).toBeNull();
+    expect(host.querySelector(".is-terminal-empty-line")).not.toBeNull();
   });
 
   it.each([

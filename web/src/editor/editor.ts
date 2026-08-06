@@ -49,6 +49,7 @@ export interface EditorController {
   activeActions(): Set<EditorAction>;
   setSpellcheck(enabled: boolean): void;
   focus(): void;
+  focusEnd(): void;
   ensureSelectionVisible(bottomInset?: number): void;
   destroy(): void;
 }
@@ -754,6 +755,13 @@ class RichEditor implements EditorController {
     this.view.focus();
   }
 
+  focusEnd(): void {
+    const end = this.view.state.doc.content.size;
+    const selection = Selection.near(this.view.state.doc.resolve(end), -1);
+    this.view.dispatch(this.view.state.tr.setSelection(selection).scrollIntoView());
+    this.view.focus();
+  }
+
   ensureSelectionVisible(bottomInset = 0): void {
     keepRectVisible(
       this.host,
@@ -815,6 +823,11 @@ class RawEditor implements EditorController {
 
   focus(): void {
     this.textarea.focus();
+  }
+
+  focusEnd(): void {
+    this.textarea.focus();
+    this.textarea.setSelectionRange(this.textarea.value.length, this.textarea.value.length);
   }
 
   ensureSelectionVisible(_bottomInset = 0): void {}

@@ -8,6 +8,7 @@ import velopack
 
 from . import __version__
 from .config import ConfigStore
+from .distribution import is_store_package, open_store_updates
 from .errors import UserVisibleError
 from .i18n import text
 
@@ -17,13 +18,20 @@ CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
 
 
 class UpdateService:
-    def __init__(self, config_store: ConfigStore):
+    def __init__(
+        self,
+        config_store: ConfigStore,
+        store_package: bool | None = None,
+    ):
         self._config_store = config_store
+        self._store_package = is_store_package() if store_package is None else store_package
         self._lock = threading.RLock()
         self._manager: velopack.UpdateManager | None = None
         self._update_info: Any | None = None
 
     def state(self) -> dict[str, str | None]:
+        if self._store_package:
+            return {"status": "store", "available_version": None}
         version = self._config_store.config.available_version
         return {
             "status": "available" if version else "idle",
@@ -31,6 +39,8 @@ class UpdateService:
         }
 
     def consume_result(self) -> dict[str, str] | None:
+        if self._store_package:
+            return None
         pending = self._config_store.config.pending_update_version
         if not pending:
             return None
@@ -46,6 +56,8 @@ class UpdateService:
 
     def check(self, force: bool = False) -> dict[str, str | None]:
         with self._lock:
+            if self._store_package:
+                return self.state()
             config = self._config_store.config
             now_ms = int(time.time() * 1000)
             if (
@@ -90,6 +102,17 @@ class UpdateService:
 
     def install(self) -> dict[str, str | None]:
         with self._lock:
+            if self._store_package:
+                try:
+                    open_store_updates()
+                except OSError as error:
+                    raise UserVisibleError(
+                        text(
+                            "Couldn't open Microsoft Store updates.",
+                            "无法打开 Microsoft Store 更新页面。",
+                        )
+                    ) from error
+                return self.state()
             state = self.check(force=True)
             if state["status"] != "available":
                 return state

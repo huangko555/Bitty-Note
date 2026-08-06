@@ -699,6 +699,20 @@ async function showNote(note: OpenedNote): Promise<void> {
   }, config.spellcheck);
   noteEditor = created.controller;
   editor = noteEditor;
+  host.addEventListener("mousedown", (event) => {
+    const terminalButton = host.querySelector<HTMLElement>(
+      ".row-insert-button.is-terminal",
+    );
+    if (
+      !terminalButton
+      || event.clientY <= terminalButton.getBoundingClientRect().bottom
+    ) {
+      return;
+    }
+    event.preventDefault();
+    noteEditor?.focusEnd();
+    selectionVisibility.show();
+  }, true);
   currentContent = created.snapshot.markdown;
   if (created.snapshot.mode !== "raw") {
     renderToolbar(toolbar, () => selectionVisibility.focusChanged(false));
@@ -1114,6 +1128,7 @@ declare global {
 window.desktopNotesRequestClose = () => void closeApplication();
 
 function updateButtonText(): string {
+  if (updateState.status === "store") return t("storeUpdates");
   return updateState.status === "available" ? t("update") : t("checkUpdate");
 }
 
@@ -1208,11 +1223,28 @@ async function renderSettings(): Promise<void> {
   updateButton.addEventListener("click", async () => {
     updateButton.disabled = true;
     try {
+      if (updateState.status === "store") {
+        await api.installUpdate();
+        showSettingsStatus(t("storeOpened"));
+        return;
+      }
       if (updateState.status === "available") {
+        const installedVersion = updateState.available_version;
         updateButton.setAttribute("aria-label", t("downloadingUpdate"));
         updateButton.setAttribute("title", t("downloadingUpdate"));
         updateState = await api.installUpdate();
-        if (updateState.status !== "available") showSettingsStatus(t("upToDate"));
+        const updateDemoEnabled = import.meta.env.DEV && (
+          import.meta.env.VITE_UPDATE_DEMO === "1"
+          || new URLSearchParams(window.location.search).get("update-demo") === "1"
+        );
+        if (updateDemoEnabled && installedVersion) {
+          document.querySelectorAll(".update-indicator").forEach((element) => {
+            element.classList.remove("has-update");
+          });
+          showSettingsStatus(t("updateSucceeded", { version: installedVersion }));
+        } else if (updateState.status !== "available") {
+          showSettingsStatus(t("upToDate"));
+        }
         return;
       }
       updateButton.setAttribute("aria-label", t("checkingUpdate"));

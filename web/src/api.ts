@@ -181,6 +181,14 @@ function desktopApi(raw: PythonApi): DesktopApi {
 function browserMock(): DesktopApi {
   let notes: OpenedNote[] = [];
   let archivedNotes: OpenedNote[] = [];
+  let demoUpdateAvailable = false;
+  const updateDemoEnabled = import.meta.env.DEV && (
+    import.meta.env.VITE_UPDATE_DEMO === "1"
+    || new URLSearchParams(window.location.search).get("update-demo") === "1"
+  );
+  const demoDelay = (milliseconds: number) => new Promise<void>((resolve) => {
+    window.setTimeout(resolve, milliseconds);
+  });
   let saveDir = "Browser preview (no files are written)";
   let autostart = true;
   let alwaysOnTop = false;
@@ -323,8 +331,21 @@ function browserMock(): DesktopApi {
       language = nextLanguage;
       return language;
     },
-    checkUpdate: async () => ({ status: "unsupported", available_version: null }),
-    installUpdate: async () => ({ status: "unsupported", available_version: null }),
+    checkUpdate: async (force = false) => {
+      if (!updateDemoEnabled) return { status: "unsupported", available_version: null };
+      if (!force) return { status: "idle", available_version: null };
+      await demoDelay(1_200);
+      demoUpdateAvailable = true;
+      return { status: "available", available_version: "1.2.0" };
+    },
+    installUpdate: async () => {
+      if (!updateDemoEnabled || !demoUpdateAvailable) {
+        return { status: "unsupported", available_version: null };
+      }
+      await demoDelay(1_600);
+      demoUpdateAvailable = false;
+      return { status: "idle", available_version: null };
+    },
     openProjectHomepage: async () => {
       window.open("https://github.com/huangko555/Bitty-Note", "_blank", "noopener");
     },

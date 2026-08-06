@@ -8,6 +8,7 @@
 /node_modules/
 /dist/
 /build/
+/packaging/obj/
 /release/
 /tmp/
 /.pytest_cache/
