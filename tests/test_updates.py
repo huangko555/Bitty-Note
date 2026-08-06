@@ -32,21 +32,6 @@ def make_store(tmp_path: Path) -> ConfigStore:
     return ConfigStore(tmp_path / "config.json", tmp_path / "notes")
 
 
-def test_store_package_uses_microsoft_store_updates(
-    tmp_path: Path, monkeypatch: object
-) -> None:
-    opened: list[bool] = []
-    monkeypatch.setattr(updates, "open_store_updates", lambda: opened.append(True))
-    service = updates.UpdateService(make_store(tmp_path), store_package=True)
-
-    assert service.check(force=True) == {
-        "status": "store",
-        "available_version": None,
-    }
-    assert service.install()["status"] == "store"
-    assert opened == [True]
-
-
 def test_update_check_is_cached_for_one_day(
     tmp_path: Path, monkeypatch: object
 ) -> None:
