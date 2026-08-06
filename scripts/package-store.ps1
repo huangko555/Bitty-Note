@@ -42,15 +42,20 @@ function Find-SdkTool([string]$Name) {
 }
 
 $makeAppx = Find-SdkTool 'MakeAppx.exe'
-if (-not $makeAppx) {
+$makePri = Find-SdkTool 'MakePri.exe'
+if (-not $makeAppx -or -not $makePri) {
     dotnet restore '.\packaging\WindowsSdkBuildTools.csproj'
     if ($LASTEXITCODE -ne 0) {
         throw "Unable to restore Microsoft Windows SDK Build Tools: $LASTEXITCODE"
     }
     $makeAppx = Find-SdkTool 'MakeAppx.exe'
+    $makePri = Find-SdkTool 'MakePri.exe'
 }
 if (-not $makeAppx) {
     throw 'MakeAppx.exe was not found after restoring Microsoft Windows SDK Build Tools.'
+}
+if (-not $makePri) {
+    throw 'MakePri.exe was not found after restoring Microsoft Windows SDK Build Tools. It is required to index unplated MSIX icon assets.'
 }
 
 $buildRoot = [IO.Path]::GetFullPath((Join-Path $projectRoot 'build'))
@@ -76,6 +81,20 @@ $manifest = $manifest.Replace('__PUBLISHER_DISPLAY_NAME__', [System.Security.Sec
 $manifest = $manifest.Replace('__VERSION__', $msixVersion)
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [IO.File]::WriteAllText((Join-Path $packageRoot 'AppxManifest.xml'), $manifest, $utf8NoBom)
+
+# Windows Shell selects target-based unplated assets through resources.pri.
+# Generate the index after the manifest and all visual assets are staged.
+$priConfig = Join-Path $buildRoot 'priconfig.xml'
+& $makePri.FullName createconfig /cf $priConfig /dq en-US /o
+if ($LASTEXITCODE -ne 0) {
+    throw "Unable to create MakePri configuration: $LASTEXITCODE"
+}
+$priOutput = Join-Path $buildRoot 'resources.pri'
+& $makePri.FullName new /pr $packageRoot /cf $priConfig /of $priOutput /o
+if ($LASTEXITCODE -ne 0) {
+    throw "Unable to generate resources.pri: $LASTEXITCODE"
+}
+Copy-Item -LiteralPath $priOutput -Destination (Join-Path $packageRoot 'resources.pri')
 
 $outputDirectory = Join-Path $projectRoot 'release\store'
 New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null

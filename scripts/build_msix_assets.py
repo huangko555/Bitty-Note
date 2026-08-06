@@ -14,7 +14,9 @@ ASSETS = {
     "StoreLogo.png": (50, 50),
 }
 
-UNPLATED_TARGET_SIZES = (16, 24, 32, 48, 256)
+# Shell uses the 44px variant for taskbar and jump-list icons. Keep the
+# unplated variants available so Windows does not fall back to the plated logo.
+UNPLATED_TARGET_SIZES = (16, 24, 32, 44, 48, 256)
 
 
 def main() -> None:
