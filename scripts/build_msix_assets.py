@@ -14,9 +14,11 @@ ASSETS = {
     "StoreLogo.png": (50, 50),
 }
 
-# Shell uses the 44px variant for taskbar and jump-list icons. Keep the
-# unplated variants available so Windows does not fall back to the plated logo.
-UNPLATED_TARGET_SIZES = (16, 24, 32, 44, 48, 256)
+# Shell uses target-sized variants for taskbar, jump-list, Start, and search
+# surfaces. Cover the common Windows 11 scale factors so it never needs to
+# fall back to a plated resource. Light Shell has its own alternate form.
+UNPLATED_TARGET_SIZES = (16, 20, 24, 30, 32, 36, 40, 44, 48, 60, 64, 72, 96, 256)
+UNPLATED_ALTERNATE_FORMS = ("unplated", "lightunplated")
 
 
 def main() -> None:
@@ -38,8 +40,11 @@ def main() -> None:
 
     for size in UNPLATED_TARGET_SIZES:
         target = source.resize((size, size), Image.Resampling.LANCZOS)
-        filename = f"Square44x44Logo.targetsize-{size}_altform-unplated.png"
-        target.save(args.output / filename)
+        for alternate_form in UNPLATED_ALTERNATE_FORMS:
+            filename = (
+                f"Square44x44Logo.targetsize-{size}_altform-{alternate_form}.png"
+            )
+            target.save(args.output / filename)
 
 
 if __name__ == "__main__":
