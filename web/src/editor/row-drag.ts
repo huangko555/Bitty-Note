@@ -259,6 +259,19 @@ function changedDocumentRange(
   return { from, previousTo, nextTo };
 }
 
+function nestedListIndex(item: ProseMirrorNode): number | null {
+  for (let index = 0; index < item.childCount; index += 1) {
+    const child = item.child(index);
+    if (
+      child.type === noteSchema.nodes.bullet_list
+      || child.type === noteSchema.nodes.ordered_list
+    ) {
+      return index;
+    }
+  }
+  return null;
+}
+
 function dispatchMovedDocument(
   state: EditorState,
   dispatch: ((transaction: Transaction) => void) | undefined,
@@ -439,17 +452,31 @@ export function moveRow(
 
   let selectedNode: ProseMirrorNode;
   if (target.type === noteSchema.nodes.list_item) {
-    const listPath = nextTargetPath.slice(0, -1);
-    const list = nodeAtPath(nextDoc, listPath);
-    const targetIndex = nextTargetPath[nextTargetPath.length - 1]!;
-    const insertionIndex = targetIndex + (side === "after" ? 1 : 0);
-    const referenceIndex = side === "after" || targetIndex === 0
-      ? targetIndex
-      : targetIndex - 1;
-    const reference = list.child(referenceIndex);
-    const targetKind = listItemKind(list, reference);
-    selectedNode = listItemForKind(source, targetKind, sourceKind);
-    nextDoc = insertNodeAtPath(nextDoc, listPath, insertionIndex, selectedNode);
+    const nextTarget = nodeAtPath(nextDoc, nextTargetPath);
+    const childListIndex = side === "after" ? nestedListIndex(nextTarget) : null;
+    if (childListIndex !== null) {
+      const childListPath = [...nextTargetPath, childListIndex];
+      const childList = nodeAtPath(nextDoc, childListPath);
+      const reference = childList.firstChild!;
+      selectedNode = listItemForKind(
+        source,
+        listItemKind(childList, reference),
+        sourceKind,
+      );
+      nextDoc = insertNodeAtPath(nextDoc, childListPath, 0, selectedNode);
+    } else {
+      const listPath = nextTargetPath.slice(0, -1);
+      const list = nodeAtPath(nextDoc, listPath);
+      const targetIndex = nextTargetPath[nextTargetPath.length - 1]!;
+      const insertionIndex = targetIndex + (side === "after" ? 1 : 0);
+      const referenceIndex = side === "after" || targetIndex === 0
+        ? targetIndex
+        : targetIndex - 1;
+      const reference = list.child(referenceIndex);
+      const targetKind = listItemKind(list, reference);
+      selectedNode = listItemForKind(source, targetKind, sourceKind);
+      nextDoc = insertNodeAtPath(nextDoc, listPath, insertionIndex, selectedNode);
+    }
   } else {
     const targetIndex = nextTargetPath[0]!;
     const insertionIndex = targetIndex + (side === "after" ? 1 : 0);
@@ -917,7 +944,9 @@ class RowDragHandleView {
       ? headerRect.top
       : sourceMovesSection && row.node.type === noteSchema.nodes.heading
         ? draggedBlockVerticalRect(this.view, row).bottom
-        : row.dom === row.header ? headerRect.bottom : rowRect.bottom;
+        : !sourceMovesSection && row.node.type === noteSchema.nodes.list_item
+          ? headerRect.bottom
+          : row.dom === row.header ? headerRect.bottom : rowRect.bottom;
     this.indicator.style.left = `${headerBounds.left}px`;
     this.indicator.style.top = `${top - 1}px`;
     this.indicator.style.width = `${Math.max(24, hostRect.right - headerBounds.left - 12)}px`;

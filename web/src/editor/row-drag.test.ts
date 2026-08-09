@@ -251,6 +251,26 @@ describe("row dragging", () => {
     expect(list.lastChild?.lastChild?.lastChild?.attrs.checked).toBe(true);
   });
 
+  it("drops below a parent row before its existing children", () => {
+    const nested = bulletList([item("子项一"), item("子项二")]);
+    const doc = noteSchema.nodes.doc.create(null, orderedList([
+      item("父项", null, [nested]),
+      item("移动项"),
+      item("同级项"),
+    ]));
+
+    const next = moved(doc, "移动项", "父项");
+    const list = next.doc.firstChild!;
+    const childList = list.firstChild?.lastChild!;
+
+    expect(Array.from({ length: list.childCount }, (_, index) =>
+      list.child(index).firstChild?.textContent,
+    )).toEqual(["父项", "同级项"]);
+    expect(Array.from({ length: childList.childCount }, (_, index) =>
+      childList.child(index).firstChild?.textContent,
+    )).toEqual(["移动项", "子项一", "子项二"]);
+  });
+
   it("converts a paragraph to the preceding task-list type", () => {
     const doc = noteSchema.nodes.doc.create(null, [
       paragraph("正文"),
