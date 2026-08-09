@@ -713,10 +713,6 @@ class RowDragHandleView {
     this.preview = document.createElement("div");
     this.preview.className = "block-drag-preview";
     this.preview.setAttribute("aria-hidden", "true");
-    this.preview.append(createLucideElement(GripVertical, {
-      class: "lucide-icon",
-      "aria-hidden": "true",
-    }));
     this.previewText = document.createElement("span");
     this.previewText.className = "block-drag-preview-text";
     this.previewMeta = document.createElement("span");
@@ -1078,17 +1074,8 @@ class RowDragHandleView {
   }
 
   private positionPreview(clientX: number, clientY: number): void {
-    const margin = 8;
-    const left = Math.min(
-      clientX + 16,
-      window.innerWidth - this.preview.offsetWidth - margin,
-    );
-    const top = Math.min(
-      clientY + 8,
-      window.innerHeight - this.preview.offsetHeight - margin,
-    );
-    this.preview.style.left = `${Math.max(margin, left)}px`;
-    this.preview.style.top = `${Math.max(margin, top)}px`;
+    this.preview.style.left = `${clientX + 16}px`;
+    this.preview.style.top = `${clientY + 8}px`;
   }
 
   private positionHighlight(row: RowDescriptor): void {
