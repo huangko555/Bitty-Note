@@ -145,6 +145,33 @@ function headingOwnerIndex(
   return null;
 }
 
+function nodePositionAtPath(root: ProseMirrorNode, path: readonly number[]): number {
+  let node = root;
+  let position = 0;
+  path.forEach((index, depth) => {
+    for (let siblingIndex = 0; siblingIndex < index; siblingIndex += 1) {
+      position += node.child(siblingIndex).nodeSize;
+    }
+    node = node.child(index);
+    if (depth < path.length - 1) position += 1;
+  });
+  return position;
+}
+
+function listItemAncestorPaths(
+  root: ProseMirrorNode,
+  path: readonly number[],
+): number[][] {
+  const ancestors: number[][] = [];
+  for (let length = 1; length <= path.length; length += 1) {
+    const candidate = path.slice(0, length);
+    if (nodeAtPath(root, candidate).type === noteSchema.nodes.list_item) {
+      ancestors.push(candidate);
+    }
+  }
+  return ancestors;
+}
+
 function listItemKind(list: ProseMirrorNode, item: ProseMirrorNode): ListKind {
   if (list.type === noteSchema.nodes.ordered_list) return "ordered";
   return typeof item.attrs.checked === "boolean" ? "task" : "bullet";
@@ -457,7 +484,9 @@ export function moveRow(
   }
 
   let nextDoc = removeRowAtPath(state.doc, sourcePath);
-  const nextTargetPath = findNodePath(nextDoc, target);
+  const nextTargetPath = pathStartsWith(sourcePath, targetPath)
+    ? targetPath
+    : findNodePath(nextDoc, target);
   if (!nextTargetPath) return false;
 
   let selectedNode: ProseMirrorNode;
@@ -626,6 +655,7 @@ class RowDragHandleView {
   private source: RowDescriptor | null = null;
   private target: RowDescriptor | null = null;
   private side: RowDropSide = "after";
+  private reparentLevel: number | null = null;
   private startX = 0;
   private startY = 0;
   private moved = false;
@@ -729,7 +759,11 @@ class RowDragHandleView {
     if (this.source) {
       this.positionHandle(this.source);
       this.positionHighlight(this.source);
-      this.positionDropTarget(this.target, this.side);
+      if (this.target && this.reparentLevel !== null) {
+        this.positionReparentTarget(this.target, this.reparentLevel);
+      } else {
+        this.positionDropTarget(this.target, this.side);
+      }
     } else if (this.hovered) {
       this.positionHandle(this.hovered);
       if (this.highlight.classList.contains("visible")) this.positionHighlight(this.hovered);
@@ -785,7 +819,16 @@ class RowDragHandleView {
     else if (event.clientY > hostRect.bottom - 34) this.host.scrollTop += 18;
 
     let row = rowAt(this.view, event.clientX, event.clientY);
-    if (!row || row.node === this.source.node) {
+    if (row?.node === this.source.node) {
+      const reparent = this.reparentTarget(event.clientX, event.clientY);
+      if (reparent) {
+        this.positionReparentTarget(reparent.row, reparent.desiredLevel);
+      } else {
+        this.positionDropTarget(null, "after");
+      }
+      return;
+    }
+    if (!row) {
       this.positionDropTarget(null, "after");
       return;
     }
@@ -918,6 +961,7 @@ class RowDragHandleView {
       this.activePointerId = null;
       this.source = null;
       this.target = null;
+      this.reparentLevel = null;
       this.indicator.classList.remove("visible");
       this.insideIndicator.classList.remove("visible");
       this.deleteTarget.classList.remove("visible", "is-armed");
@@ -976,6 +1020,7 @@ class RowDragHandleView {
   private positionDropTarget(row: RowDescriptor | null, side: RowDropSide): void {
     this.target = row;
     this.side = side;
+    this.reparentLevel = null;
     this.indicator.classList.remove("visible");
     this.insideIndicator.classList.remove("visible");
     if (!row) {
@@ -1010,6 +1055,58 @@ class RowDragHandleView {
     this.indicator.style.top = `${top - 1}px`;
     this.indicator.style.width = `${Math.max(24, hostRect.right - headerBounds.left - 12)}px`;
     this.indicator.classList.add("visible");
+  }
+
+  private reparentTarget(
+    clientX: number,
+    clientY: number,
+  ): { row: RowDescriptor; desiredLevel: number } | null {
+    if (!this.source || this.source.node.type !== noteSchema.nodes.list_item) return null;
+    const sourcePath = findNodePath(this.view.state.doc, this.source.node);
+    if (!sourcePath) return null;
+    const parentList = nodeAtPath(this.view.state.doc, sourcePath.slice(0, -1));
+    const sourceIndex = sourcePath[sourcePath.length - 1]!;
+    if (sourceIndex !== parentList.childCount - 1) return null;
+
+    const ancestorPaths = listItemAncestorPaths(this.view.state.doc, sourcePath);
+    const currentLevel = ancestorPaths.length - 1;
+    if (currentLevel <= 0) return null;
+    const sourceBounds = this.source.header.getBoundingClientRect();
+    if (clientY < (sourceBounds.top + sourceBounds.bottom) / 2) return null;
+
+    const parentPath = ancestorPaths[currentLevel - 1]!;
+    const parentRow = rowAtPosition(
+      this.view,
+      nodePositionAtPath(this.view.state.doc, parentPath),
+    );
+    if (!parentRow) return null;
+    const measuredIndent = sourceBounds.left - parentRow.header.getBoundingClientRect().left;
+    const fontSize = Number.parseFloat(getComputedStyle(this.view.dom).fontSize) || 16;
+    const indentPerLevel = measuredIndent > 0 ? measuredIndent : fontSize * 1.9;
+    const baseLeft = sourceBounds.left - currentLevel * indentPerLevel;
+    if (clientX >= baseLeft + currentLevel * indentPerLevel) return null;
+
+    const desiredLevel = Math.max(Math.floor((clientX - baseLeft) / indentPerLevel), 0);
+    if (desiredLevel >= currentLevel) return null;
+    const targetPath = ancestorPaths[desiredLevel]!;
+    const row = rowAtPosition(
+      this.view,
+      nodePositionAtPath(this.view.state.doc, targetPath),
+    );
+    return row ? { row, desiredLevel } : null;
+  }
+
+  private positionReparentTarget(row: RowDescriptor, desiredLevel: number): void {
+    this.positionDropTarget(row, "after");
+    if (!this.source) return;
+    const hostRect = this.host.getBoundingClientRect();
+    const left = row.header.getBoundingClientRect().left;
+    const top = unshiftedVerticalRect(this.source.header).bottom;
+    this.indicator.style.left = `${left}px`;
+    this.indicator.style.top = `${top - 1}px`;
+    this.indicator.style.width = `${Math.max(24, hostRect.right - left - 12)}px`;
+    this.indicator.classList.add("visible");
+    this.reparentLevel = desiredLevel;
   }
 
   private updateDeleteTarget(clientX: number, clientY: number): void {

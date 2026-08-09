@@ -346,6 +346,92 @@ describe("row drag handle", () => {
     window.dispatchEvent(pointerEvent("pointercancel", 31));
   });
 
+  it.each([
+    { clientX: 80, expectedLeft: "70px", level: "B" },
+    { clientX: 50, expectedLeft: "40px", level: "A" },
+  ])("reparents the last item to the $level level using the Atlassian hitbox", ({
+    clientX,
+    expectedLeft,
+    level,
+  }) => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const paragraph = (text: string) => noteSchema.nodes.paragraph.create(
+      null,
+      noteSchema.text(text),
+    );
+    const item = (text: string, children: readonly ReturnType<typeof noteSchema.nodes.bullet_list.create>[] = []) =>
+      noteSchema.nodes.list_item.create({ checked: null }, [paragraph(text), ...children]);
+    const c = item("C");
+    const b = item("B", [noteSchema.nodes.bullet_list.create(null, c)]);
+    const a = item("A", [noteSchema.nodes.bullet_list.create(null, b)]);
+    const doc = noteSchema.nodes.doc.create(
+      null,
+      noteSchema.nodes.bullet_list.create(null, a),
+    );
+    view = new EditorView(host, {
+      state: EditorState.create({ doc, plugins: [rowDragPlugin()] }),
+    });
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 220));
+    vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 220));
+    const listItems = view.dom.querySelectorAll("li");
+    const paragraphs = view.dom.querySelectorAll("p");
+    vi.spyOn(listItems[0]!, "getBoundingClientRect").mockReturnValue(rect(40, 20, 250, 72));
+    vi.spyOn(paragraphs[0]!, "getBoundingClientRect").mockReturnValue(rect(40, 20, 200, 22));
+    vi.spyOn(listItems[1]!, "getBoundingClientRect").mockReturnValue(rect(70, 45, 220, 47));
+    vi.spyOn(paragraphs[1]!, "getBoundingClientRect").mockReturnValue(rect(70, 45, 200, 22));
+    vi.spyOn(listItems[2]!, "getBoundingClientRect").mockReturnValue(rect(100, 70, 190, 22));
+    vi.spyOn(paragraphs[2]!, "getBoundingClientRect").mockReturnValue(rect(100, 70, 190, 22));
+    let sourcePosition = -1;
+    doc.descendants((node, position) => {
+      if (node.type === noteSchema.nodes.list_item && node.firstChild?.textContent === "C") {
+        sourcePosition = position;
+        return false;
+      }
+      return true;
+    });
+    vi.spyOn(view, "posAtCoords").mockReturnValue({
+      pos: sourcePosition + 1,
+      inside: sourcePosition,
+    });
+
+    const pointerEvent = (type: string, x: number, y: number) => {
+      const event = new MouseEvent(type, {
+        bubbles: true,
+        button: 0,
+        clientX: x,
+        clientY: y,
+      });
+      Object.defineProperty(event, "pointerId", { value: 16 });
+      return event;
+    };
+    host.dispatchEvent(pointerEvent("pointermove", 110, 80));
+    const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
+    const indicator = host.querySelector<HTMLElement>(".block-drop-indicator")!;
+    Object.defineProperties(handle, {
+      setPointerCapture: { value: vi.fn() },
+      hasPointerCapture: { value: vi.fn(() => false) },
+    });
+
+    handle.dispatchEvent(pointerEvent("pointerdown", 110, 80));
+    window.dispatchEvent(pointerEvent("pointermove", clientX, 82));
+
+    expect(indicator.classList.contains("visible")).toBe(true);
+    expect(indicator.style.left).toBe(expectedLeft);
+    window.dispatchEvent(pointerEvent("pointerup", clientX, 82));
+
+    const rootList = view.state.doc.firstChild!;
+    if (level === "B") {
+      expect(rootList.childCount).toBe(1);
+      const children = rootList.firstChild!.lastChild!;
+      expect(Array.from({ length: children.childCount }, (_, index) =>
+        children.child(index).firstChild?.textContent)).toEqual(["B", "C"]);
+    } else {
+      expect(Array.from({ length: rootList.childCount }, (_, index) =>
+        rootList.child(index).firstChild?.textContent)).toEqual(["A", "C"]);
+    }
+  });
+
   it("leaves dragging state when pointer capture is lost", () => {
     const host = document.createElement("div");
     document.body.append(host);
