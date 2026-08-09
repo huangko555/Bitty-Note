@@ -515,12 +515,13 @@ export function moveRow(
       } else {
         const parentList = nodeAtPath(nextDoc, nextTargetPath.slice(0, -1));
         const targetKind = listItemKind(parentList, nextTarget);
-        selectedNode = listItemForKind(source, targetKind, sourceKind);
+        const childKind = sourceKind ?? targetKind;
+        selectedNode = listItemForKind(source, childKind, sourceKind);
         nextDoc = insertNodeAtPath(
           nextDoc,
           nextTargetPath,
           nextTarget.childCount,
-          listForKind(targetKind, selectedNode),
+          listForKind(childKind, selectedNode),
         );
       }
     } else {
@@ -541,24 +542,9 @@ export function moveRow(
     const insertionIndex = side === "inside" && target.type === noteSchema.nodes.heading
       ? headingSectionEndIndex(nextDoc, targetIndex)
       : targetIndex + (side === "after" ? 1 : 0);
-    const previous = insertionIndex > 0 ? nextDoc.child(insertionIndex - 1) : null;
-    if (
-      previous
-      && (previous.type === noteSchema.nodes.bullet_list
-        || previous.type === noteSchema.nodes.ordered_list)
-    ) {
-      const reference = previous.lastChild!;
-      selectedNode = listItemForKind(
-        source,
-        listItemKind(previous, reference),
-        sourceKind,
-      );
-      nextDoc = insertNodeAtPath(nextDoc, [insertionIndex - 1], previous.childCount, selectedNode);
-    } else {
-      const root = rootNodeForSource(source, sourceKind);
-      selectedNode = root.selected;
-      nextDoc = insertNodeAtPath(nextDoc, [], insertionIndex, root.node);
-    }
+    const root = rootNodeForSource(source, sourceKind);
+    selectedNode = root.selected;
+    nextDoc = insertNodeAtPath(nextDoc, [], insertionIndex, root.node);
   }
 
   return dispatchMovedDocument(state, dispatch, nextDoc, selectionAnchor, selectionHead);

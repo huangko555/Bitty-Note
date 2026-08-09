@@ -291,6 +291,19 @@ describe("row dragging", () => {
     )).toEqual(["子项一", "子项二", "移动项"]);
   });
 
+  it("preserves the source list type when it creates a new child list", () => {
+    const doc = noteSchema.nodes.doc.create(null, [
+      bulletList([item("父项")]),
+      orderedList([item("有序子项")]),
+    ]);
+
+    const next = moved(doc, "有序子项", "父项", "inside");
+    const childList = next.doc.firstChild?.firstChild?.lastChild;
+
+    expect(childList?.type).toBe(noteSchema.nodes.ordered_list);
+    expect(childList?.firstChild?.firstChild?.textContent).toBe("有序子项");
+  });
+
   it("converts a paragraph to the preceding task-list type", () => {
     const doc = noteSchema.nodes.doc.create(null, [
       paragraph("正文"),
@@ -340,6 +353,21 @@ describe("row dragging", () => {
     )).toEqual(["ordered_list", "paragraph", "ordered_list", "paragraph"]);
     expect(next.doc.child(0).textContent).toBe("有序二");
     expect(next.doc.child(2).textContent).toBe("有序一");
+  });
+
+  it("preserves a list type at a top-level boundary after another list", () => {
+    const doc = noteSchema.nodes.doc.create(null, [
+      orderedList([item("移动有序项")]),
+      bulletList([item("已有无序项")]),
+      paragraph("目标正文"),
+    ]);
+
+    const next = moved(doc, "移动有序项", "目标正文", "before");
+
+    expect(Array.from({ length: next.doc.childCount }, (_, index) =>
+      next.doc.child(index).type.name,
+    )).toEqual(["bullet_list", "ordered_list", "paragraph"]);
+    expect(next.doc.child(1).textContent).toBe("移动有序项");
   });
 
   it("converts the parent type but preserves child-list properties", () => {
@@ -458,6 +486,22 @@ describe("row dragging", () => {
     expect(Array.from({ length: next.doc.childCount }, (_, index) =>
       next.doc.child(index).textContent,
     )).toEqual(["目标标题", "目标正文一", "目标正文二", "移动内容", "末尾标题"]);
+  });
+
+  it("preserves a list type when moving it inside a heading section", () => {
+    const doc = noteSchema.nodes.doc.create(null, [
+      orderedList([item("有序内容")]),
+      heading("目标标题"),
+      bulletList([item("无序内容")]),
+      heading("末尾标题"),
+    ]);
+
+    const next = moved(doc, "有序内容", "目标标题", "inside");
+
+    expect(Array.from({ length: next.doc.childCount }, (_, index) =>
+      next.doc.child(index).type.name,
+    )).toEqual(["heading", "bullet_list", "ordered_list", "heading"]);
+    expect(next.doc.child(2).textContent).toBe("有序内容");
   });
 
   it("keeps a heading section outside a nested list", () => {
