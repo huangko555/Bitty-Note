@@ -9,6 +9,7 @@ import {
 } from "./api";
 import {
   createEditor,
+  handleWindowEditorHistoryShortcut,
   type EditorAction,
   type EditorController,
 } from "./editor/editor";
@@ -1346,6 +1347,9 @@ async function start(): Promise<void> {
   appVersion = bootstrap.app_version;
   updateState = bootstrap.update_state;
   applyEditorAppearance();
+  window.addEventListener("keydown", (event) => {
+    handleWindowEditorHistoryShortcut(event, editor);
+  });
   await syncAlwaysOnTop();
   window.addEventListener("focus", () => {
     void checkExternalChange();

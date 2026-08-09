@@ -5,6 +5,7 @@ import { EditorView } from "prosemirror-view";
 import {
   createEditor,
   exitEmptyListItem,
+  handleWindowEditorHistoryShortcut,
   joinEmptyParagraphAfterList,
   sinkListItemAcrossTypes,
   type ListKind,
@@ -13,6 +14,77 @@ import {
 import { listNormalizationPlugin } from "./list-normalization";
 import { parseMarkdown, serializeMarkdown } from "./markdown";
 import { noteSchema } from "./schema";
+
+describe("window-level editor history shortcuts", () => {
+  it("undoes and redoes while the rich editor is unfocused", () => {
+    const host = document.createElement("div");
+    const outside = document.createElement("button");
+    document.body.append(host, outside);
+    const { controller } = createEditor(host, "- [ ] 待办\n", {
+      onChange: () => {},
+      onFocusChange: () => {},
+      onSelectionChange: () => {},
+    });
+    host.querySelector<HTMLInputElement>("[data-task-checkbox]")!.click();
+    outside.focus();
+
+    const undoEvent = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      key: "z",
+    });
+    outside.addEventListener("keydown", (event) => {
+      handleWindowEditorHistoryShortcut(event, controller);
+    });
+    outside.dispatchEvent(undoEvent);
+    expect(controller.getMarkdown()).toContain("- [ ] 待办");
+    expect(undoEvent.defaultPrevented).toBe(true);
+
+    const redoEvent = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      key: "y",
+    });
+    outside.dispatchEvent(redoEvent);
+    expect(controller.getMarkdown()).toContain("- [x] 待办");
+    expect(redoEvent.defaultPrevented).toBe(true);
+
+    controller.destroy();
+    host.remove();
+    outside.remove();
+  });
+
+  it("keeps history shortcuts with another editable control", () => {
+    const host = document.createElement("div");
+    const input = document.createElement("input");
+    document.body.append(host, input);
+    const { controller } = createEditor(host, "- [ ] 待办\n", {
+      onChange: () => {},
+      onFocusChange: () => {},
+      onSelectionChange: () => {},
+    });
+    host.querySelector<HTMLInputElement>("[data-task-checkbox]")!.click();
+    const event = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      key: "z",
+    });
+    input.addEventListener("keydown", (shortcut) => {
+      handleWindowEditorHistoryShortcut(shortcut, controller);
+    });
+    input.dispatchEvent(event);
+
+    expect(controller.getMarkdown()).toContain("- [x] 待办");
+    expect(event.defaultPrevented).toBe(false);
+
+    controller.destroy();
+    host.remove();
+    input.remove();
+  });
+});
 
 describe("task checkbox rendering", () => {
   it("leaves ordinary click positioning to ProseMirror", () => {

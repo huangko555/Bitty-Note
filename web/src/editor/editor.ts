@@ -48,10 +48,39 @@ export interface EditorController {
   run(action: EditorAction): void;
   activeActions(): Set<EditorAction>;
   setSpellcheck(enabled: boolean): void;
+  undo(): boolean;
+  redo(): boolean;
   focus(): void;
   focusEnd(): void;
   ensureSelectionVisible(bottomInset?: number): void;
   destroy(): void;
+}
+
+export function handleWindowEditorHistoryShortcut(
+  event: KeyboardEvent,
+  target: Pick<EditorController, "undo" | "redo"> | null,
+): boolean {
+  if (!target || event.defaultPrevented || event.isComposing || event.altKey) return false;
+  if (!event.ctrlKey && !event.metaKey) return false;
+  const eventTarget = event.target;
+  if (
+    eventTarget instanceof HTMLInputElement
+    || eventTarget instanceof HTMLTextAreaElement
+    || (eventTarget instanceof HTMLElement && eventTarget.isContentEditable)
+  ) {
+    return false;
+  }
+
+  const key = event.key.toLowerCase();
+  const action = key === "z" && !event.shiftKey
+    ? "undo"
+    : (key === "y" && !event.shiftKey) || (key === "z" && event.shiftKey)
+      ? "redo"
+      : null;
+  if (!action || !target[action]()) return false;
+  event.preventDefault();
+  event.stopPropagation();
+  return true;
 }
 
 interface EditorCallbacks {
@@ -751,6 +780,14 @@ class RichEditor implements EditorController {
     this.view.dom.spellcheck = enabled;
   }
 
+  undo(): boolean {
+    return undo(this.view.state, this.view.dispatch);
+  }
+
+  redo(): boolean {
+    return redo(this.view.state, this.view.dispatch);
+  }
+
   focus(): void {
     this.view.focus();
   }
@@ -819,6 +856,14 @@ class RawEditor implements EditorController {
 
   setSpellcheck(enabled: boolean): void {
     this.textarea.spellcheck = enabled;
+  }
+
+  undo(): boolean {
+    return false;
+  }
+
+  redo(): boolean {
+    return false;
   }
 
   focus(): void {
