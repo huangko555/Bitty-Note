@@ -153,6 +153,46 @@ describe("row drag handle", () => {
     expect(highlight.style.height).toBe("74px");
   });
 
+  it("moves the active handle and highlight with their source while scrolling", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const doc = noteSchema.nodes.doc.create(null, [
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("拖动内容")),
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("目标内容")),
+    ]);
+    view = new EditorView(host, {
+      state: EditorState.create({ doc, plugins: [rowDragPlugin()] }),
+    });
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    const paragraph = view.dom.querySelector("p")!;
+    vi.spyOn(paragraph, "getBoundingClientRect").mockImplementation(
+      () => rect(80, 60 - host.scrollTop, 200, 22),
+    );
+    vi.spyOn(view, "posAtCoords").mockReturnValue({ pos: 1, inside: 0 });
+
+    host.dispatchEvent(new MouseEvent("pointermove", {
+      bubbles: true,
+      clientX: 100,
+      clientY: 70,
+    }));
+    const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
+    const highlight = host.querySelector<HTMLElement>(".block-row-handle-highlight")!;
+    Object.defineProperties(handle, {
+      setPointerCapture: { value: vi.fn() },
+      hasPointerCapture: { value: vi.fn(() => false) },
+    });
+    handle.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
+    expect(handle.style.top).toBe("60px");
+    expect(highlight.style.top).toBe("58px");
+
+    host.scrollTop = 30;
+    host.dispatchEvent(new Event("scroll"));
+
+    expect(handle.style.top).toBe("30px");
+    expect(highlight.style.top).toBe("28px");
+  });
+
   it("leaves dragging state when pointer capture is lost", () => {
     const host = document.createElement("div");
     document.body.append(host);

@@ -368,24 +368,24 @@ describe("row dragging", () => {
 
   it("moves a complete heading section and splits an ordered list around it", () => {
     const doc = noteSchema.nodes.doc.create(null, [
+      orderedList([item("有序一"), item("有序二"), item("有序三")]),
       heading("标题"),
       paragraph("标题正文"),
-      heading("目标章节"),
-      orderedList([item("有序一"), item("有序二"), item("有序三")]),
+      heading("保留章节"),
     ]);
 
     const next = moved(doc, "标题", "有序一");
 
     expect(Array.from({ length: next.doc.childCount }, (_, index) =>
       next.doc.child(index).type.name,
-    )).toEqual(["heading", "ordered_list", "heading", "paragraph", "ordered_list"]);
-    expect(next.doc.child(0).textContent).toBe("目标章节");
-    expect(next.doc.child(1).textContent).toBe("有序一");
-    expect(next.doc.child(2).textContent).toBe("标题");
-    expect(next.doc.child(3).textContent).toBe("标题正文");
-    expect(next.doc.child(4).textContent).toBe("有序二有序三");
-    expect(next.doc.child(1).attrs.order).toBe(1);
-    expect(next.doc.child(4).attrs.order).toBe(1);
+    )).toEqual(["ordered_list", "heading", "paragraph", "ordered_list", "heading"]);
+    expect(next.doc.child(0).textContent).toBe("有序一");
+    expect(next.doc.child(1).textContent).toBe("标题");
+    expect(next.doc.child(2).textContent).toBe("标题正文");
+    expect(next.doc.child(3).textContent).toBe("有序二有序三");
+    expect(next.doc.child(4).textContent).toBe("保留章节");
+    expect(next.doc.child(0).attrs.order).toBe(1);
+    expect(next.doc.child(3).attrs.order).toBe(1);
   });
 
   it("drops a heading after another heading's complete section", () => {
@@ -406,23 +406,26 @@ describe("row dragging", () => {
 
   it("keeps a heading section outside a nested list", () => {
     const doc = noteSchema.nodes.doc.create(null, [
-      heading("标题"),
-      paragraph("标题正文"),
-      heading("目标章节"),
       orderedList([
         item("父项", null, [bulletList([item("子项")])]),
         item("同级项"),
       ]),
+      paragraph("前言正文"),
+      heading("标题"),
+      paragraph("标题正文"),
+      heading("保留章节"),
     ]);
 
     const next = moved(doc, "标题", "子项");
 
     expect(Array.from({ length: next.doc.childCount }, (_, index) =>
       next.doc.child(index).type.name,
-    )).toEqual(["heading", "ordered_list", "heading", "paragraph"]);
-    expect(next.doc.child(1).textContent).toBe("父项子项同级项");
-    expect(next.doc.child(2).textContent).toBe("标题");
-    expect(next.doc.child(3).textContent).toBe("标题正文");
+    )).toEqual(["ordered_list", "heading", "paragraph", "paragraph", "heading"]);
+    expect(next.doc.child(0).textContent).toBe("父项子项同级项");
+    expect(next.doc.child(1).textContent).toBe("标题");
+    expect(next.doc.child(2).textContent).toBe("标题正文");
+    expect(next.doc.child(3).textContent).toBe("前言正文");
+    expect(next.doc.child(4).textContent).toBe("保留章节");
   });
 
   it("does not allow a heading to be dropped into its own section", () => {
@@ -440,5 +443,39 @@ describe("row dragging", () => {
       rowPosition(doc, "正文"),
       "after",
     )).toBe(false);
+  });
+
+  it("does not allow a heading section to split another heading section", () => {
+    const doc = noteSchema.nodes.doc.create(null, [
+      heading("移动标题"),
+      paragraph("移动正文"),
+      heading("目标标题"),
+      paragraph("目标正文一"),
+      paragraph("目标正文二"),
+    ]);
+    const state = EditorState.create({ doc });
+
+    expect(moveRow(
+      state,
+      undefined,
+      rowPosition(doc, "移动标题"),
+      rowPosition(doc, "目标正文一"),
+      "after",
+    )).toBe(false);
+  });
+
+  it("allows a heading section to be inserted among unowned leading content", () => {
+    const doc = noteSchema.nodes.doc.create(null, [
+      paragraph("前言一"),
+      paragraph("前言二"),
+      heading("移动标题"),
+      paragraph("移动正文"),
+      heading("保留标题"),
+    ]);
+
+    const next = moved(doc, "移动标题", "前言一", "after");
+
+    expect(Array.from(next.doc.content.content, (node) => node.textContent))
+      .toEqual(["前言一", "移动标题", "移动正文", "前言二", "保留标题"]);
   });
 });

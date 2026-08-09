@@ -135,6 +135,23 @@ function pathIsWithinDraggedBlock(
   return targetPath[0]! >= start && targetPath[0]! < headingSectionEndIndex(root, start);
 }
 
+function dropPreservesHeadingSections(
+  root: ProseMirrorNode,
+  sourcePath: readonly number[],
+  targetPath: readonly number[],
+): boolean {
+  if (pathIsWithinDraggedBlock(root, sourcePath, targetPath)) return false;
+  const source = nodeAtPath(root, sourcePath);
+  const target = nodeAtPath(root, targetPath);
+  if (source.type !== noteSchema.nodes.heading || target.type === noteSchema.nodes.heading) {
+    return true;
+  }
+  for (let index = targetPath[0]!; index >= 0; index -= 1) {
+    if (root.child(index).type === noteSchema.nodes.heading) return false;
+  }
+  return true;
+}
+
 function listItemKind(list: ProseMirrorNode, item: ProseMirrorNode): ListKind {
   if (list.type === noteSchema.nodes.ordered_list) return "ordered";
   return typeof item.attrs.checked === "boolean" ? "task" : "bullet";
@@ -345,7 +362,7 @@ export function moveRow(
     || !targetPath
     || !isDraggableRowAtPath(state.doc, sourcePath)
     || !isDraggableRowAtPath(state.doc, targetPath)
-    || pathIsWithinDraggedBlock(state.doc, sourcePath, targetPath)
+    || !dropPreservesHeadingSections(state.doc, sourcePath, targetPath)
   ) {
     return false;
   }
@@ -640,6 +657,8 @@ class RowDragHandleView {
 
   private readonly onScroll = (): void => {
     if (this.source) {
+      this.positionHandle(this.source);
+      this.positionHighlight(this.source);
       this.positionDropTarget(this.target, this.side);
     } else if (this.hovered) {
       this.positionHandle(this.hovered);
@@ -702,7 +721,7 @@ class RowDragHandleView {
     }
     const sourcePath = findNodePath(this.view.state.doc, this.source.node);
     const targetPath = findNodePath(this.view.state.doc, row.node);
-    if (sourcePath && targetPath && pathIsWithinDraggedBlock(
+    if (sourcePath && targetPath && !dropPreservesHeadingSections(
       this.view.state.doc,
       sourcePath,
       targetPath,
@@ -832,14 +851,14 @@ class RowDragHandleView {
   private positionHandle(row: RowDescriptor): void {
     const hostRect = this.host.getBoundingClientRect();
     const headerRect = unshiftedVerticalRect(row.header);
+    const lineHeight = Number.parseFloat(getComputedStyle(row.header).lineHeight) || 21;
+    this.handle.style.left = `${hostRect.left + 3}px`;
+    this.handle.style.top = `${headerRect.top + Math.max(0, (lineHeight - 22) / 2)}px`;
     if (headerRect.bottom < hostRect.top || headerRect.top > hostRect.bottom) {
       this.handle.classList.remove("visible");
       this.highlight.classList.remove("visible");
       return;
     }
-    const lineHeight = Number.parseFloat(getComputedStyle(row.header).lineHeight) || 21;
-    this.handle.style.left = `${hostRect.left + 3}px`;
-    this.handle.style.top = `${headerRect.top + Math.max(0, (lineHeight - 22) / 2)}px`;
     this.handle.classList.add("visible");
   }
 
