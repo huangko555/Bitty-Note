@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.2.0 — 2026-08-10
+
+### English
+
+- Made heading rows move together with their complete sections while preserving section boundaries.
+- Added explicit list drop zones for placing rows before, inside, or after list items while preserving hierarchy and list type.
+- Kept the editor viewport at the drop location after moving content across long notes.
+- Added a compact, opaque drag preview beside the pointer and restored source highlighting when dragged content returns to view.
+- Placed the Markdown storage path on its own row with the action buttons below it.
+
+### 简体中文
+
+- 拖动标题行时会连同完整章节一起移动，并保持章节边界正确。
+- 为列表增加明确的前方、内部和后方落点，同时保持层级关系与列表类型。
+- 在长便签中跨区域移动内容后，编辑器视口会停留在松手位置。
+- 增加位于指针旁的不透明简洁拖动预览，并在拖动内容重新进入视口时恢复来源高亮。
+- Markdown 保存路径改为独占一行，操作按钮排列在下一行。
+
 ## v1.1.3 — 2026-08-09
 
 ### English
