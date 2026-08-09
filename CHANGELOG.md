@@ -7,12 +7,14 @@
 - Made GitHub update checks use the static Velopack release manifest, avoiding GitHub API rate limits.
 - Added distinct messages for update-check failures and download or installation failures.
 - Added an undoable row-delete target when dragging a row by its handle, with precise release hit testing and preserved editor scroll position.
+- Made undo and redo shortcuts work across the note window while preserving the behavior of other text inputs.
 
 ### 简体中文
 
 - 将 GitHub 更新检查改为读取 Velopack 静态发布清单，避免 GitHub API 限流。
 - 区分更新检查失败与下载或安装失败的提示。
 - 增加通过行手柄拖动删除的可撤销目标，精确判断松开位置并保持编辑器滚动位置。
+- 让撤销和重做快捷键在便签窗口内统一生效，同时保留其他文本输入框自身的快捷键行为。
 
 ## v1.1.1 — 2026-08-02
 
