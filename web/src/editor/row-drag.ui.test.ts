@@ -538,6 +538,71 @@ describe("row drag handle", () => {
     expect(handle.classList.contains("visible")).toBe(true);
   });
 
+  it("keeps the viewport at the drop location when moving a row from the end", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const doc = noteSchema.nodes.doc.create(null, [
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("开头")),
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("中间")),
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("末尾")),
+    ]);
+    let editor!: EditorView;
+    editor = new EditorView(host, {
+      state: EditorState.create({ doc, plugins: [rowDragPlugin()] }),
+      dispatchTransaction: (transaction) => {
+        editor.updateState(editor.state.apply(transaction));
+        // WebView can reveal the remapped native selection after the DOM update.
+        host.scrollTop = 900;
+      },
+    });
+    view = editor;
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    const paragraphs = Array.from(view.dom.querySelectorAll("p"));
+    paragraphs.forEach((paragraph, index) => {
+      vi.spyOn(paragraph, "getBoundingClientRect")
+        .mockReturnValue(rect(80, 20 + index * 30, 200, 22));
+    });
+    vi.spyOn(view, "posAtCoords").mockImplementation(({ top }) => {
+      if (top < 45) return { pos: 1, inside: 0 };
+      if (top < 75) return { pos: 5, inside: 4 };
+      return { pos: 9, inside: 8 };
+    });
+    let restoreFrame: FrameRequestCallback | null = null;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      restoreFrame = callback;
+      return 1;
+    });
+
+    const pointerEvent = (type: string, clientY: number) => {
+      const event = new MouseEvent(type, {
+        bubbles: true,
+        button: 0,
+        clientX: 100,
+        clientY,
+      });
+      Object.defineProperty(event, "pointerId", { value: 17 });
+      return event;
+    };
+    host.dispatchEvent(pointerEvent("pointermove", 90));
+    const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
+    Object.defineProperties(handle, {
+      setPointerCapture: { value: vi.fn() },
+      hasPointerCapture: { value: vi.fn(() => false) },
+    });
+    handle.dispatchEvent(pointerEvent("pointerdown", 90));
+    window.dispatchEvent(pointerEvent("pointermove", 21));
+    host.scrollTop = 0;
+    window.dispatchEvent(pointerEvent("pointerup", 21));
+
+    expect(view.state.doc.textContent).toBe("末尾开头中间");
+    expect(host.scrollTop).toBe(0);
+    host.scrollTop = 900;
+    expect(restoreFrame).not.toBeNull();
+    (restoreFrame as unknown as FrameRequestCallback)(0);
+    expect(host.scrollTop).toBe(0);
+  });
+
   it("keeps a moved empty paragraph hittable", () => {
     const host = document.createElement("div");
     document.body.append(host);

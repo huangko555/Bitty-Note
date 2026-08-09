@@ -896,13 +896,22 @@ class RowDragHandleView {
       // The browser may still clamp this value when the document becomes shorter.
       this.host.scrollTop = scrollTop;
     } else if (shouldMove) {
-      moveRow(
+      const scrollTop = this.host.scrollTop;
+      const moved = moveRow(
         this.view.state,
         this.view.dispatch,
         sourcePosition,
         targetPosition,
         side,
       );
+      if (moved) {
+        // The viewport already represents the drop location after drag auto-scroll.
+        // Keep it stable while WebView reconciles the remapped native selection.
+        this.host.scrollTop = scrollTop;
+        window.requestAnimationFrame(() => {
+          this.host.scrollTop = scrollTop;
+        });
+      }
     }
 
     const hostRect = this.host.getBoundingClientRect();
