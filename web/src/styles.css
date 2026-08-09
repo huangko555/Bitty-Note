@@ -323,6 +323,8 @@ h1 { margin: 0; font-size: 23px; font-weight: 500; letter-spacing: -.025em; }
 .setting-card label { display: block; margin-bottom: 9px; font-size: 13px; font-weight: 500; }
 .setting-card p { margin: 8px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .path-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; }
+.path-row input { grid-column: 1 / -1; }
+.path-row button:first-of-type { grid-column: 2; }
 .path-row input, .create-panel input, .font-select { min-width: 0; height: 38px; padding: 0 11px; border: 1px solid var(--line); border-radius: var(--radius-control); outline: none; color: var(--ink); background: var(--surface); font-size: 12px; }
 .path-row input:hover, .create-panel input:hover, .font-select:hover { border-color: var(--line-strong); }
 .path-row input:focus, .create-panel input:focus, .font-select:focus { padding-inline: 10px; border-width: 2px; border-color: var(--ink); box-shadow: none; }
