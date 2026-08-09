@@ -193,6 +193,78 @@ describe("row drag handle", () => {
     expect(highlight.style.top).toBe("28px");
   });
 
+  it("snaps a heading dragged over section content to the section bottom", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const heading = (text: string) => noteSchema.nodes.heading.create(
+      { level: 1 },
+      noteSchema.text(text),
+    );
+    const paragraph = (text: string) => noteSchema.nodes.paragraph.create(
+      null,
+      noteSchema.text(text),
+    );
+    const doc = noteSchema.nodes.doc.create(null, [
+      heading("源标题"),
+      paragraph("源正文"),
+      heading("目标标题"),
+      paragraph("目标正文"),
+      heading("末尾标题"),
+    ]);
+    view = new EditorView(host, {
+      state: EditorState.create({ doc, plugins: [rowDragPlugin()] }),
+    });
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 220));
+    vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 220));
+    const headings = view.dom.querySelectorAll("h1");
+    const paragraphs = view.dom.querySelectorAll("p");
+    vi.spyOn(headings[0]!, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 22));
+    vi.spyOn(paragraphs[0]!, "getBoundingClientRect").mockReturnValue(rect(80, 50, 200, 22));
+    vi.spyOn(headings[1]!, "getBoundingClientRect").mockReturnValue(rect(80, 90, 200, 22));
+    vi.spyOn(paragraphs[1]!, "getBoundingClientRect").mockReturnValue(rect(80, 120, 200, 22));
+    vi.spyOn(headings[2]!, "getBoundingClientRect").mockReturnValue(rect(80, 160, 200, 22));
+    let targetPosition = -1;
+    doc.descendants((node, position) => {
+      if (node.type === noteSchema.nodes.paragraph && node.textContent === "目标正文") {
+        targetPosition = position;
+        return false;
+      }
+      return targetPosition < 0;
+    });
+    vi.spyOn(view, "posAtCoords").mockImplementation(({ top }) => top < 80
+      ? { pos: 1, inside: 0 }
+      : { pos: targetPosition + 1, inside: targetPosition });
+
+    host.dispatchEvent(new MouseEvent("pointermove", {
+      bubbles: true,
+      clientX: 100,
+      clientY: 30,
+    }));
+    const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
+    const indicator = host.querySelector<HTMLElement>(".block-drop-indicator")!;
+    Object.defineProperties(handle, {
+      setPointerCapture: { value: vi.fn() },
+      hasPointerCapture: { value: vi.fn(() => false) },
+    });
+    const pointerEvent = (type: string, clientY: number) => {
+      const event = new MouseEvent(type, {
+        bubbles: true,
+        button: 0,
+        clientX: 100,
+        clientY,
+      });
+      Object.defineProperty(event, "pointerId", { value: 14 });
+      return event;
+    };
+
+    handle.dispatchEvent(pointerEvent("pointerdown", 30));
+    window.dispatchEvent(pointerEvent("pointermove", 130));
+
+    expect(indicator.classList.contains("visible")).toBe(true);
+    expect(indicator.style.top).toBe("141px");
+    window.dispatchEvent(pointerEvent("pointercancel", 130));
+  });
+
   it("leaves dragging state when pointer capture is lost", () => {
     const host = document.createElement("div");
     document.body.append(host);

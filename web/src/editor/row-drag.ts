@@ -135,21 +135,14 @@ function pathIsWithinDraggedBlock(
   return targetPath[0]! >= start && targetPath[0]! < headingSectionEndIndex(root, start);
 }
 
-function dropPreservesHeadingSections(
+function headingOwnerIndex(
   root: ProseMirrorNode,
-  sourcePath: readonly number[],
   targetPath: readonly number[],
-): boolean {
-  if (pathIsWithinDraggedBlock(root, sourcePath, targetPath)) return false;
-  const source = nodeAtPath(root, sourcePath);
-  const target = nodeAtPath(root, targetPath);
-  if (source.type !== noteSchema.nodes.heading || target.type === noteSchema.nodes.heading) {
-    return true;
-  }
+): number | null {
   for (let index = targetPath[0]!; index >= 0; index -= 1) {
-    if (root.child(index).type === noteSchema.nodes.heading) return false;
+    if (root.child(index).type === noteSchema.nodes.heading) return index;
   }
-  return true;
+  return null;
 }
 
 function listItemKind(list: ProseMirrorNode, item: ProseMirrorNode): ListKind {
@@ -352,19 +345,28 @@ export function moveRow(
     offset: state.selection.$head.parentOffset,
   };
   const source = state.doc.nodeAt(sourcePosition);
-  const target = state.doc.nodeAt(targetPosition);
+  let target = state.doc.nodeAt(targetPosition);
   if (!source || !target || source === target) return false;
 
   const sourcePath = findNodePath(state.doc, source);
-  const targetPath = findNodePath(state.doc, target);
+  let targetPath = findNodePath(state.doc, target);
   if (
     !sourcePath
     || !targetPath
     || !isDraggableRowAtPath(state.doc, sourcePath)
     || !isDraggableRowAtPath(state.doc, targetPath)
-    || !dropPreservesHeadingSections(state.doc, sourcePath, targetPath)
+    || pathIsWithinDraggedBlock(state.doc, sourcePath, targetPath)
   ) {
     return false;
+  }
+
+  if (source.type === noteSchema.nodes.heading && target.type !== noteSchema.nodes.heading) {
+    const ownerIndex = headingOwnerIndex(state.doc, targetPath);
+    if (ownerIndex !== null) {
+      target = state.doc.child(ownerIndex);
+      targetPath = [ownerIndex];
+      side = "after";
+    }
   }
 
 
@@ -546,13 +548,18 @@ function rowAt(view: EditorView, clientX: number, clientY: number): RowDescripto
     if (candidate < 0) continue;
     const position = rowPositionAt(view, candidate);
     if (position === null) continue;
-    const node = view.state.doc.nodeAt(position);
-    const dom = view.nodeDOM(position);
-    if (!node || !(dom instanceof HTMLElement)) continue;
-    const header = rowHeader(dom, node);
-    if (header) return { node, position, dom, header };
+    const row = rowAtPosition(view, position);
+    if (row) return row;
   }
   return null;
+}
+
+function rowAtPosition(view: EditorView, position: number): RowDescriptor | null {
+  const node = view.state.doc.nodeAt(position);
+  const dom = view.nodeDOM(position);
+  if (!node || !(dom instanceof HTMLElement)) return null;
+  const header = rowHeader(dom, node);
+  return header ? { node, position, dom, header } : null;
 }
 
 class RowDragHandleView {
@@ -714,20 +721,40 @@ class RowDragHandleView {
     if (event.clientY < hostRect.top + 34) this.host.scrollTop -= 18;
     else if (event.clientY > hostRect.bottom - 34) this.host.scrollTop += 18;
 
-    const row = rowAt(this.view, event.clientX, event.clientY);
+    let row = rowAt(this.view, event.clientX, event.clientY);
     if (!row || row.node === this.source.node) {
       this.positionDropTarget(null, "after");
       return;
     }
     const sourcePath = findNodePath(this.view.state.doc, this.source.node);
     const targetPath = findNodePath(this.view.state.doc, row.node);
-    if (sourcePath && targetPath && !dropPreservesHeadingSections(
+    if (sourcePath && targetPath && pathIsWithinDraggedBlock(
       this.view.state.doc,
       sourcePath,
       targetPath,
     )) {
       this.positionDropTarget(null, "after");
       return;
+    }
+    if (
+      sourcePath
+      && targetPath
+      && this.source.node.type === noteSchema.nodes.heading
+      && row.node.type !== noteSchema.nodes.heading
+    ) {
+      const ownerIndex = headingOwnerIndex(this.view.state.doc, targetPath);
+      if (ownerIndex !== null) {
+        row = rowAtPosition(
+          this.view,
+          topLevelNodePosition(this.view.state.doc, ownerIndex),
+        );
+        if (!row) {
+          this.positionDropTarget(null, "after");
+          return;
+        }
+        this.positionDropTarget(row, "after");
+        return;
+      }
     }
     const headerRect = unshiftedVerticalRect(row.header);
     const lineHeight = Number.parseFloat(getComputedStyle(row.header).lineHeight) || 21;

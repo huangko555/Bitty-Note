@@ -445,7 +445,7 @@ describe("row dragging", () => {
     )).toBe(false);
   });
 
-  it("does not allow a heading section to split another heading section", () => {
+  it("snaps a heading dropped within another section to that section's end", () => {
     const doc = noteSchema.nodes.doc.create(null, [
       heading("移动标题"),
       paragraph("移动正文"),
@@ -453,15 +453,10 @@ describe("row dragging", () => {
       paragraph("目标正文一"),
       paragraph("目标正文二"),
     ]);
-    const state = EditorState.create({ doc });
+    const next = moved(doc, "移动标题", "目标正文一", "before");
 
-    expect(moveRow(
-      state,
-      undefined,
-      rowPosition(doc, "移动标题"),
-      rowPosition(doc, "目标正文一"),
-      "after",
-    )).toBe(false);
+    expect(Array.from(next.doc.content.content, (node) => node.textContent))
+      .toEqual(["目标标题", "目标正文一", "目标正文二", "移动标题", "移动正文"]);
   });
 
   it("allows a heading section to be inserted among unowned leading content", () => {
