@@ -444,6 +444,22 @@ describe("row dragging", () => {
     )).toEqual(["目标标题", "目标正文", "移动标题", "移动正文", "末尾标题"]);
   });
 
+  it("moves content inside a heading to the end of that section", () => {
+    const doc = noteSchema.nodes.doc.create(null, [
+      paragraph("移动内容"),
+      heading("目标标题"),
+      paragraph("目标正文一"),
+      paragraph("目标正文二"),
+      heading("末尾标题"),
+    ]);
+
+    const next = moved(doc, "移动内容", "目标标题", "inside");
+
+    expect(Array.from({ length: next.doc.childCount }, (_, index) =>
+      next.doc.child(index).textContent,
+    )).toEqual(["目标标题", "目标正文一", "目标正文二", "移动内容", "末尾标题"]);
+  });
+
   it("keeps a heading section outside a nested list", () => {
     const doc = noteSchema.nodes.doc.create(null, [
       orderedList([

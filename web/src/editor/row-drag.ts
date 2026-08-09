@@ -417,7 +417,11 @@ export function moveRow(
       side = "after";
     }
   }
-  if (side === "inside" && target.type !== noteSchema.nodes.list_item) return false;
+  if (
+    side === "inside"
+    && target.type !== noteSchema.nodes.list_item
+    && target.type !== noteSchema.nodes.heading
+  ) return false;
 
 
   if (source.type === noteSchema.nodes.heading) {
@@ -534,7 +538,9 @@ export function moveRow(
     }
   } else {
     const targetIndex = nextTargetPath[0]!;
-    const insertionIndex = targetIndex + (side === "after" ? 1 : 0);
+    const insertionIndex = side === "inside" && target.type === noteSchema.nodes.heading
+      ? headingSectionEndIndex(nextDoc, targetIndex)
+      : targetIndex + (side === "after" ? 1 : 0);
     const previous = insertionIndex > 0 ? nextDoc.child(insertionIndex - 1) : null;
     if (
       previous
@@ -867,7 +873,8 @@ class RowDragHandleView {
     let side: RowDropSide;
     if (
       this.source.node.type !== noteSchema.nodes.heading
-      && row.node.type === noteSchema.nodes.list_item
+      && (row.node.type === noteSchema.nodes.list_item
+        || row.node.type === noteSchema.nodes.heading)
     ) {
       const hitHeight = Math.max(lineHeight, headerRect.bottom - headerRect.top);
       const relativeY = (event.clientY - headerRect.top) / hitHeight;
@@ -1035,7 +1042,10 @@ class RowDragHandleView {
       const left = Math.max(hostRect.left + 3, Math.min(rowBounds.left, headerBounds.left) - 8);
       const top = Math.max(hostRect.top, headerRect.top - 3);
       const right = hostRect.right - 12;
-      const bottom = Math.min(hostRect.bottom, rowRect.bottom + 3);
+      const bottom = Math.min(
+        hostRect.bottom,
+        draggedBlockVerticalRect(this.view, row).bottom + 3,
+      );
       this.insideIndicator.style.left = `${left}px`;
       this.insideIndicator.style.top = `${top}px`;
       this.insideIndicator.style.width = `${Math.max(24, right - left)}px`;
