@@ -1222,6 +1222,7 @@ async function renderSettings(): Promise<void> {
   });
   const updateButton = main.querySelector<HTMLButtonElement>('[data-action="update"]')!;
   updateButton.addEventListener("click", async () => {
+    const installingAvailableUpdate = updateState.status === "available";
     updateButton.disabled = true;
     try {
       if (updateState.status === "store") {
@@ -1233,6 +1234,11 @@ async function renderSettings(): Promise<void> {
         const installedVersion = updateState.available_version;
         updateButton.setAttribute("aria-label", t("downloadingUpdate"));
         updateButton.setAttribute("title", t("downloadingUpdate"));
+        updateButton.classList.add("is-downloading");
+        document.querySelectorAll(".update-indicator").forEach((element) => {
+          element.classList.remove("has-update");
+        });
+        showSettingsStatus(t("downloadingUpdate"));
         updateState = await api.installUpdate();
         const updateDemoEnabled = import.meta.env.DEV && (
           import.meta.env.VITE_UPDATE_DEMO === "1"
@@ -1260,9 +1266,13 @@ async function renderSettings(): Promise<void> {
         showSettingsStatus(t("upToDate"));
       }
     } catch (error) {
-      showSettingsStatus(errorMessage(error), "warning");
+      showSettingsStatus(installingAvailableUpdate ? t("updateFailed") : errorMessage(error), "warning");
     } finally {
       updateButton.classList.remove("is-checking");
+      updateButton.classList.remove("is-downloading");
+      document.querySelectorAll(".update-indicator").forEach((element) => {
+        element.classList.toggle("has-update", updateState.status === "available");
+      });
       updateButton.setAttribute("aria-label", updateButtonText());
       updateButton.setAttribute("title", updateButtonText());
       updateButton.disabled = false;

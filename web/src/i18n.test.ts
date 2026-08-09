@@ -18,6 +18,7 @@ describe("i18n", () => {
     expect(t("settingsTitle")).toBe("设置");
     expect(t("copy")).toBe("创建副本");
     expect(t("createCopy")).toBe("复制");
+    expect(t("downloadingUpdate")).toBe("正在下载更新，请稍候");
     expect(t("updateAvailable", { version: "1.1.0" })).toBe("发现新版本 v1.1.0");
     expect(document.documentElement.lang).toBe("zh-CN");
   });

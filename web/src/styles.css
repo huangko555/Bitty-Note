@@ -172,7 +172,7 @@ main { min-height: 0; flex: 1; }
 .update-dot { display: none; position: absolute; top: 1px; right: 1px; width: 10px; height: 10px; border: 1.5px solid var(--paper); border-radius: 50%; background: var(--danger); pointer-events: none; }
 .update-indicator { position: relative; }
 .update-indicator.has-update .update-dot { display: block; }
-.update-button.is-checking .lucide-icon { animation: update-icon-spin .8s linear infinite; }
+.update-button:is(.is-checking, .is-downloading) .lucide-icon { animation: update-icon-spin .8s linear infinite; }
 @keyframes update-icon-spin { to { transform: rotate(360deg); } }
 .eyebrow { margin: 0 0 5px; color: var(--accent-deep); font-size: 10px; font-weight: 500; letter-spacing: .12em; }
 h1 { margin: 0; font-size: 23px; font-weight: 500; letter-spacing: -.025em; }
