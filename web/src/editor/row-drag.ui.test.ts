@@ -26,6 +26,7 @@ describe("row drag handle", () => {
     view?.destroy();
     view = null;
     document.body.replaceChildren();
+    vi.restoreAllMocks();
   });
 
   it("keeps the handle fixed and highlights only while using it", () => {
@@ -232,5 +233,77 @@ describe("row drag handle", () => {
     expect(Array.from(view.state.doc.content.content, (node) => node.textContent))
       .toEqual(["甲", "乙", ""]);
     expect(handle.classList.contains("visible")).toBe(true);
+  });
+
+  it("deletes only when released over the visible delete target", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const doc = noteSchema.nodes.doc.create(null, [
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("甲")),
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("乙")),
+    ]);
+    view = new EditorView(host, {
+      state: EditorState.create({ doc, plugins: [rowDragPlugin()] }),
+    });
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(0, 0, 300, 200));
+    vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(0, 0, 300, 200));
+    const paragraph = view.dom.querySelector("p")!;
+    vi.spyOn(paragraph, "getBoundingClientRect").mockReturnValue(rect(50, 20, 220, 22));
+    vi.spyOn(view, "posAtCoords").mockReturnValue({ pos: 1, inside: 0 });
+
+    host.dispatchEvent(new MouseEvent("pointermove", {
+      bubbles: true,
+      clientX: 100,
+      clientY: 30,
+    }));
+    const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
+    const deleteTarget = host.querySelector<HTMLElement>(".block-delete-target")!;
+    vi.spyOn(deleteTarget, "getBoundingClientRect")
+      .mockReturnValue(rect(238, 135, 44, 44));
+    Object.defineProperties(handle, {
+      setPointerCapture: { value: vi.fn() },
+      hasPointerCapture: { value: vi.fn(() => false) },
+    });
+    const pointerEvent = (type: string, clientX: number, clientY: number) => {
+      const event = new MouseEvent(type, {
+        bubbles: true,
+        button: 0,
+        clientX,
+        clientY,
+      });
+      Object.defineProperty(event, "pointerId", { value: 13 });
+      return event;
+    };
+
+    handle.dispatchEvent(pointerEvent("pointerdown", 100, 30));
+    expect(deleteTarget.classList.contains("visible")).toBe(false);
+
+    window.dispatchEvent(pointerEvent("pointermove", 120, 40));
+    expect(deleteTarget.classList.contains("visible")).toBe(true);
+    expect(deleteTarget.classList.contains("is-armed")).toBe(false);
+
+    window.dispatchEvent(pointerEvent("pointerup", 120, 40));
+    expect(view.state.doc.textContent).toBe("甲乙");
+    expect(deleteTarget.classList.contains("visible")).toBe(false);
+
+    handle.dispatchEvent(pointerEvent("pointerdown", 100, 30));
+    window.dispatchEvent(pointerEvent("pointermove", 160, 40));
+    expect(deleteTarget.classList.contains("is-armed")).toBe(false);
+
+    window.dispatchEvent(pointerEvent("pointermove", 250, 150));
+    expect(deleteTarget.classList.contains("is-armed")).toBe(true);
+
+    window.dispatchEvent(pointerEvent("pointerup", 120, 40));
+    expect(view.state.doc.textContent).toBe("甲乙");
+    expect(deleteTarget.classList.contains("visible")).toBe(false);
+
+    handle.dispatchEvent(pointerEvent("pointerdown", 100, 30));
+    window.dispatchEvent(pointerEvent("pointermove", 160, 40));
+    host.scrollTop = 80;
+    window.dispatchEvent(pointerEvent("pointerup", 250, 150));
+
+    expect(view.state.doc.textContent).toBe("乙");
+    expect(host.scrollTop).toBe(80);
+    expect(deleteTarget.classList.contains("visible")).toBe(false);
   });
 });

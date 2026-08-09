@@ -1,7 +1,8 @@
-import { EditorState, TextSelection } from "prosemirror-state";
+import { history, redo, undo } from "prosemirror-history";
+import { EditorState, TextSelection, type Transaction } from "prosemirror-state";
 import { describe, expect, it } from "vitest";
 
-import { moveRow } from "./row-drag";
+import { deleteRow, moveRow } from "./row-drag";
 import { noteSchema } from "./schema";
 
 function paragraph(text: string) {
@@ -68,6 +69,59 @@ function moved(
 }
 
 describe("row dragging", () => {
+  it("deletes a row through history so it can be undone and redone", () => {
+    const doc = noteSchema.nodes.doc.create(null, [
+      paragraph("甲"),
+      paragraph("乙"),
+      paragraph("丙"),
+    ]);
+    let state = EditorState.create({ doc, plugins: [history()] });
+    let scrolledIntoView = false;
+    const dispatch = (transaction: Transaction) => {
+      scrolledIntoView = transaction.scrolledIntoView;
+      state = state.apply(transaction);
+    };
+
+    expect(deleteRow(state, dispatch, rowPosition(doc, "乙"))).toBe(true);
+    expect(scrolledIntoView).toBe(false);
+    expect(state.doc.textContent).toBe("甲丙");
+    expect(undo(state, dispatch)).toBe(true);
+    expect(state.doc.textContent).toBe("甲乙丙");
+    expect(redo(state, dispatch)).toBe(true);
+    expect(state.doc.textContent).toBe("甲丙");
+  });
+
+  it("keeps an editable empty paragraph after deleting the only row", () => {
+    const doc = noteSchema.nodes.doc.create(null, paragraph("唯一一行"));
+    const state = EditorState.create({ doc });
+    let next = state;
+
+    expect(deleteRow(state, (transaction) => {
+      next = state.apply(transaction);
+    }, rowPosition(doc, "唯一一行"))).toBe(true);
+
+    expect(next.doc.childCount).toBe(1);
+    expect(next.doc.firstChild?.type).toBe(noteSchema.nodes.paragraph);
+    expect(next.doc.firstChild?.textContent).toBe("");
+  });
+
+  it("deletes one list item without removing its remaining siblings", () => {
+    const doc = noteSchema.nodes.doc.create(null, bulletList([
+      item("保留"),
+      item("删除"),
+    ]));
+    const state = EditorState.create({ doc });
+    let next = state;
+
+    expect(deleteRow(state, (transaction) => {
+      next = state.apply(transaction);
+    }, rowPosition(doc, "删除"))).toBe(true);
+
+    expect(next.doc.firstChild?.type).toBe(noteSchema.nodes.bullet_list);
+    expect(next.doc.firstChild?.childCount).toBe(1);
+    expect(next.doc.textContent).toBe("保留");
+  });
+
   it("does not steal an existing caret from an unrelated row", () => {
     const doc = noteSchema.nodes.doc.create(null, [
       paragraph("甲"),

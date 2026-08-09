@@ -1,5 +1,6 @@
 import createLucideElement from "lucide/dist/esm/createElement.mjs";
 import GripVertical from "lucide/dist/esm/icons/grip-vertical.mjs";
+import Trash2 from "lucide/dist/esm/icons/trash-2.mjs";
 import { Fragment, type Node as ProseMirrorNode } from "prosemirror-model";
 import { Plugin, TextSelection, type EditorState, type Transaction } from "prosemirror-state";
 import { type EditorView } from "prosemirror-view";
@@ -11,6 +12,7 @@ import { t } from "../i18n";
 export type RowDropSide = "before" | "after";
 
 type ListKind = "bullet" | "ordered" | "task";
+const DELETE_TARGET_HIT_PADDING = 6;
 
 interface RowDescriptor {
   node: ProseMirrorNode;
@@ -179,6 +181,69 @@ function textPositionFor(
   return result;
 }
 
+function changedDocumentRange(
+  previous: ProseMirrorNode,
+  next: ProseMirrorNode,
+): { from: number; previousTo: number; nextTo: number } {
+  let prefixCount = 0;
+  while (
+    prefixCount < previous.childCount
+    && prefixCount < next.childCount
+    && previous.child(prefixCount).eq(next.child(prefixCount))
+  ) {
+    prefixCount += 1;
+  }
+
+  let suffixCount = 0;
+  while (
+    suffixCount < previous.childCount - prefixCount
+    && suffixCount < next.childCount - prefixCount
+    && previous.child(previous.childCount - suffixCount - 1)
+      .eq(next.child(next.childCount - suffixCount - 1))
+  ) {
+    suffixCount += 1;
+  }
+
+  let from = 0;
+  for (let index = 0; index < prefixCount; index += 1) {
+    from += previous.child(index).nodeSize;
+  }
+  let previousTo = previous.content.size;
+  let nextTo = next.content.size;
+  for (let index = 0; index < suffixCount; index += 1) {
+    previousTo -= previous.child(previous.childCount - index - 1).nodeSize;
+    nextTo -= next.child(next.childCount - index - 1).nodeSize;
+  }
+  return { from, previousTo, nextTo };
+}
+
+export function deleteRow(
+  state: EditorState,
+  dispatch: ((transaction: Transaction) => void) | undefined,
+  sourcePosition: number,
+): boolean {
+  const source = state.doc.nodeAt(sourcePosition);
+  if (!source) return false;
+  const sourcePath = findNodePath(state.doc, source);
+  if (!sourcePath || !isDraggableRowAtPath(state.doc, sourcePath)) return false;
+
+  let nextDoc = removeRowAtPath(state.doc, sourcePath);
+  if (nextDoc.childCount === 0) {
+    nextDoc = noteSchema.nodes.doc.create(null, noteSchema.nodes.paragraph.create());
+  }
+  nextDoc = normalizeListDocument(nextDoc);
+  if (nextDoc.eq(state.doc)) return false;
+  if (!dispatch) return true;
+
+  const changed = changedDocumentRange(state.doc, nextDoc);
+  dispatch(state.tr.replace(
+    changed.from,
+    changed.previousTo,
+    nextDoc.slice(changed.from, changed.nextTo),
+  ).setMeta("rowDrag", true));
+  return true;
+}
+
 export function moveRow(
   state: EditorState,
   dispatch: ((transaction: Transaction) => void) | undefined,
@@ -287,40 +352,12 @@ export function moveRow(
   if (nextDoc.eq(state.doc)) return false;
   if (!dispatch) return true;
 
-  let prefixCount = 0;
-  while (
-    prefixCount < state.doc.childCount
-    && prefixCount < nextDoc.childCount
-    && state.doc.child(prefixCount).eq(nextDoc.child(prefixCount))
-  ) {
-    prefixCount += 1;
-  }
-
-  let suffixCount = 0;
-  while (
-    suffixCount < state.doc.childCount - prefixCount
-    && suffixCount < nextDoc.childCount - prefixCount
-    && state.doc.child(state.doc.childCount - suffixCount - 1)
-      .eq(nextDoc.child(nextDoc.childCount - suffixCount - 1))
-  ) {
-    suffixCount += 1;
-  }
-
-  let changedFrom = 0;
-  for (let index = 0; index < prefixCount; index += 1) {
-    changedFrom += state.doc.child(index).nodeSize;
-  }
-  let oldChangedTo = state.doc.content.size;
-  let newChangedTo = nextDoc.content.size;
-  for (let index = 0; index < suffixCount; index += 1) {
-    oldChangedTo -= state.doc.child(state.doc.childCount - index - 1).nodeSize;
-    newChangedTo -= nextDoc.child(nextDoc.childCount - index - 1).nodeSize;
-  }
+  const changed = changedDocumentRange(state.doc, nextDoc);
 
   const transaction = state.tr.replace(
-    changedFrom,
-    oldChangedTo,
-    nextDoc.slice(changedFrom, newChangedTo),
+    changed.from,
+    changed.previousTo,
+    nextDoc.slice(changed.from, changed.nextTo),
   );
   const nextAnchor = textPositionFor(
     transaction.doc,
@@ -399,6 +436,7 @@ class RowDragHandleView {
   private readonly handle: HTMLButtonElement;
   private readonly highlight: HTMLDivElement;
   private readonly indicator: HTMLDivElement;
+  private readonly deleteTarget: HTMLDivElement;
   private hovered: RowDescriptor | null = null;
   private source: RowDescriptor | null = null;
   private target: RowDescriptor | null = null;
@@ -427,7 +465,17 @@ class RowDragHandleView {
     this.highlight.className = "block-row-handle-highlight";
     this.indicator = document.createElement("div");
     this.indicator.className = "block-drop-indicator";
-    this.host.append(this.highlight, this.handle, this.indicator);
+    this.deleteTarget = document.createElement("div");
+    this.deleteTarget.className = "block-delete-target";
+    this.deleteTarget.setAttribute("aria-hidden", "true");
+    this.deleteTarget.append(createLucideElement(Trash2, {
+      class: "lucide-icon",
+      "aria-hidden": "true",
+    }));
+    const deleteLabel = document.createElement("span");
+    deleteLabel.textContent = t("releaseToDelete");
+    this.deleteTarget.append(deleteLabel);
+    this.host.append(this.highlight, this.handle, this.indicator, this.deleteTarget);
 
     this.host.addEventListener("pointermove", this.onHoverMove);
     this.host.addEventListener("pointerleave", this.onHoverLeave);
@@ -465,6 +513,7 @@ class RowDragHandleView {
     this.highlight.remove();
     this.handle.remove();
     this.indicator.remove();
+    this.deleteTarget.remove();
   }
 
   private readonly onHoverMove = (event: PointerEvent): void => {
@@ -530,6 +579,11 @@ class RowDragHandleView {
     if (Math.hypot(event.clientX - this.startX, event.clientY - this.startY) >= 4) {
       this.moved = true;
     }
+    this.updateDeleteTarget(event.clientX, event.clientY);
+    if (this.deleteTarget.classList.contains("is-armed")) {
+      this.positionDropTarget(null, "after");
+      return;
+    }
     const hostRect = this.host.getBoundingClientRect();
     if (event.clientY < hostRect.top + 34) this.host.scrollTop -= 18;
     else if (event.clientY > hostRect.bottom - 34) this.host.scrollTop += 18;
@@ -559,14 +613,25 @@ class RowDragHandleView {
     const side = this.side;
     const pointerX = event.clientX;
     const pointerY = event.clientY;
+    this.updateDeleteTarget(pointerX, pointerY);
+    const shouldDelete = sourcePosition !== undefined
+      && this.moved
+      && this.deleteTarget.classList.contains("is-armed");
     const shouldMove = sourcePosition !== undefined
       && targetPosition !== undefined
-      && this.moved;
+      && this.moved
+      && !shouldDelete;
 
     // End pointer capture before changing the editor DOM. WebView otherwise may
     // reconcile the old native caret after ProseMirror has rendered the move.
     this.finishDrag(event.pointerId);
-    if (shouldMove) {
+    if (shouldDelete) {
+      const scrollTop = this.host.scrollTop;
+      deleteRow(this.view.state, this.view.dispatch, sourcePosition);
+      // Deleting a row must not make ProseMirror reveal the remapped selection.
+      // The browser may still clamp this value when the document becomes shorter.
+      this.host.scrollTop = scrollTop;
+    } else if (shouldMove) {
       moveRow(
         this.view.state,
         this.view.dispatch,
@@ -626,6 +691,7 @@ class RowDragHandleView {
       this.source = null;
       this.target = null;
       this.indicator.classList.remove("visible");
+      this.deleteTarget.classList.remove("visible", "is-armed");
       this.highlight.classList.remove("visible");
       this.hide();
       this.finishing = false;
@@ -696,6 +762,22 @@ class RowDragHandleView {
     this.indicator.style.top = `${top - 1}px`;
     this.indicator.style.width = `${Math.max(24, hostRect.right - headerBounds.left - 12)}px`;
     this.indicator.classList.add("visible");
+  }
+
+  private updateDeleteTarget(clientX: number, clientY: number): void {
+    if (!this.moved) {
+      this.deleteTarget.classList.remove("visible", "is-armed");
+      return;
+    }
+    this.deleteTarget.classList.add("visible");
+    const bounds = this.deleteTarget.getBoundingClientRect();
+    this.deleteTarget.classList.toggle(
+      "is-armed",
+      clientX >= bounds.left - DELETE_TARGET_HIT_PADDING
+        && clientX <= bounds.right + DELETE_TARGET_HIT_PADDING
+        && clientY >= bounds.top - DELETE_TARGET_HIT_PADDING
+        && clientY <= bounds.bottom + DELETE_TARGET_HIT_PADDING,
+    );
   }
 }
 
