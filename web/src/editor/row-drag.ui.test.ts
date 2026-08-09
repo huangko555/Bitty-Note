@@ -53,6 +53,7 @@ describe("row drag handle", () => {
 
     const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
     const highlight = host.querySelector<HTMLElement>(".block-row-handle-highlight")!;
+    const preview = host.querySelector<HTMLElement>(".block-drag-preview")!;
     expect(handle.classList.contains("visible")).toBe(true);
     expect(handle.style.left).toBe("13px");
     expect(host.querySelector(".block-row-highlight")).toBeNull();
@@ -73,8 +74,11 @@ describe("row drag handle", () => {
     });
     handle.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
     expect(highlight.classList.contains("visible")).toBe(true);
+    expect(preview.classList.contains("visible")).toBe(true);
+    expect(preview.querySelector(".block-drag-preview-text")?.textContent).toBe("缩进内容");
     window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, button: 0 }));
     expect(highlight.classList.contains("visible")).toBe(false);
+    expect(preview.classList.contains("visible")).toBe(false);
   });
 
   it("highlights a heading and its complete section as one block", () => {
@@ -191,6 +195,14 @@ describe("row drag handle", () => {
 
     expect(handle.style.top).toBe("30px");
     expect(highlight.style.top).toBe("28px");
+
+    host.scrollTop = 100;
+    host.dispatchEvent(new Event("scroll"));
+    expect(highlight.classList.contains("visible")).toBe(false);
+
+    host.scrollTop = 0;
+    host.dispatchEvent(new Event("scroll"));
+    expect(highlight.classList.contains("visible")).toBe(true);
   });
 
   it("snaps a heading dragged over section content to the section bottom", () => {

@@ -172,6 +172,39 @@ function listItemAncestorPaths(
   return ancestors;
 }
 
+function visibleRowCount(node: ProseMirrorNode): number {
+  if (node.type === noteSchema.nodes.list_item) {
+    let count = 1;
+    node.descendants((descendant) => {
+      if (descendant.type === noteSchema.nodes.list_item) count += 1;
+    });
+    return count;
+  }
+  if (
+    node.type === noteSchema.nodes.bullet_list
+    || node.type === noteSchema.nodes.ordered_list
+  ) {
+    let count = 0;
+    node.descendants((descendant) => {
+      if (descendant.type === noteSchema.nodes.list_item) count += 1;
+    });
+    return count;
+  }
+  return 1;
+}
+
+function draggedRowCount(root: ProseMirrorNode, path: readonly number[]): number {
+  const source = nodeAtPath(root, path);
+  if (source.type !== noteSchema.nodes.heading) return visibleRowCount(source);
+  const start = path[0]!;
+  const end = headingSectionEndIndex(root, start);
+  let count = 0;
+  for (let index = start; index < end; index += 1) {
+    count += visibleRowCount(root.child(index));
+  }
+  return count;
+}
+
 function listItemKind(list: ProseMirrorNode, item: ProseMirrorNode): ListKind {
   if (list.type === noteSchema.nodes.ordered_list) return "ordered";
   return typeof item.attrs.checked === "boolean" ? "task" : "bullet";
@@ -642,6 +675,9 @@ class RowDragHandleView {
   private readonly highlight: HTMLDivElement;
   private readonly indicator: HTMLDivElement;
   private readonly insideIndicator: HTMLDivElement;
+  private readonly preview: HTMLDivElement;
+  private readonly previewText: HTMLSpanElement;
+  private readonly previewMeta: HTMLSpanElement;
   private readonly deleteTarget: HTMLDivElement;
   private hovered: RowDescriptor | null = null;
   private source: RowDescriptor | null = null;
@@ -674,6 +710,18 @@ class RowDragHandleView {
     this.indicator.className = "block-drop-indicator";
     this.insideIndicator = document.createElement("div");
     this.insideIndicator.className = "block-drop-inside-indicator";
+    this.preview = document.createElement("div");
+    this.preview.className = "block-drag-preview";
+    this.preview.setAttribute("aria-hidden", "true");
+    this.preview.append(createLucideElement(GripVertical, {
+      class: "lucide-icon",
+      "aria-hidden": "true",
+    }));
+    this.previewText = document.createElement("span");
+    this.previewText.className = "block-drag-preview-text";
+    this.previewMeta = document.createElement("span");
+    this.previewMeta.className = "block-drag-preview-meta";
+    this.preview.append(this.previewText, this.previewMeta);
     this.deleteTarget = document.createElement("div");
     this.deleteTarget.className = "block-delete-target";
     this.deleteTarget.setAttribute("aria-hidden", "true");
@@ -689,6 +737,7 @@ class RowDragHandleView {
       this.handle,
       this.indicator,
       this.insideIndicator,
+      this.preview,
       this.deleteTarget,
     );
 
@@ -729,6 +778,7 @@ class RowDragHandleView {
     this.handle.remove();
     this.indicator.remove();
     this.insideIndicator.remove();
+    this.preview.remove();
     this.deleteTarget.remove();
   }
 
@@ -783,6 +833,7 @@ class RowDragHandleView {
     this.moved = false;
     this.positionHighlight(this.source);
     this.highlight.classList.add("visible");
+    this.showPreview(this.source, event.clientX, event.clientY);
     this.handle.classList.add("is-dragging");
     try {
       this.handle.setPointerCapture(event.pointerId);
@@ -798,6 +849,7 @@ class RowDragHandleView {
 
   private readonly onDragMove = (event: PointerEvent): void => {
     if (!this.source) return;
+    this.positionPreview(event.clientX, event.clientY);
     if (Math.hypot(event.clientX - this.startX, event.clientY - this.startY) >= 4) {
       this.moved = true;
     }
@@ -967,6 +1019,7 @@ class RowDragHandleView {
       this.indicator.classList.remove("visible");
       this.insideIndicator.classList.remove("visible");
       this.deleteTarget.classList.remove("visible", "is-armed");
+      this.preview.classList.remove("visible", "is-group");
       this.highlight.classList.remove("visible");
       this.hide();
       this.finishing = false;
@@ -1005,6 +1058,37 @@ class RowDragHandleView {
       return;
     }
     this.handle.classList.add("visible");
+    if (this.source) this.highlight.classList.add("visible");
+  }
+
+  private showPreview(row: RowDescriptor, clientX: number, clientY: number): void {
+    const path = findNodePath(this.view.state.doc, row.node);
+    const count = path ? draggedRowCount(this.view.state.doc, path) : 1;
+    this.previewText.textContent = row.header.textContent?.trim() || t("dragPreviewEmpty");
+    if (row.node.type === noteSchema.nodes.heading) {
+      this.previewMeta.textContent = t("dragPreviewSection", { count });
+    } else if (count > 1) {
+      this.previewMeta.textContent = t("dragPreviewItems", { count });
+    } else {
+      this.previewMeta.textContent = "";
+    }
+    this.preview.classList.toggle("is-group", count > 1);
+    this.preview.classList.add("visible");
+    this.positionPreview(clientX, clientY);
+  }
+
+  private positionPreview(clientX: number, clientY: number): void {
+    const margin = 8;
+    const left = Math.min(
+      clientX + 16,
+      window.innerWidth - this.preview.offsetWidth - margin,
+    );
+    const top = Math.min(
+      clientY + 8,
+      window.innerHeight - this.preview.offsetHeight - margin,
+    );
+    this.preview.style.left = `${Math.max(margin, left)}px`;
+    this.preview.style.top = `${Math.max(margin, top)}px`;
   }
 
   private positionHighlight(row: RowDescriptor): void {
