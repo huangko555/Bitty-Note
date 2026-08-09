@@ -1074,7 +1074,7 @@ class RowDragHandleView {
 
   private positionPreview(clientX: number, clientY: number): void {
     this.preview.style.left = `${clientX + 16}px`;
-    this.preview.style.top = `${clientY + 8}px`;
+    this.preview.style.top = `${clientY - 18}px`;
   }
 
   private positionHighlight(row: RowDescriptor): void {
