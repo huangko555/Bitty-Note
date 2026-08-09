@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.1.3 — 2026-08-09
+
+### English
+
+- Added clear progress feedback while downloading GitHub updates, including a notification, continuous icon animation, a disabled update button, and temporary update-dot hiding.
+
+### 简体中文
+
+- 为 GitHub 更新下载过程增加明确的进行中反馈，包括轻通知、持续旋转的更新图标、禁用更新按钮和临时隐藏更新红点。
+
 ## v1.1.2 — 2026-08-09
 
 ### English
