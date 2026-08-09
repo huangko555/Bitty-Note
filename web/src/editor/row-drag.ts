@@ -1015,7 +1015,7 @@ class RowDragHandleView {
       this.indicator.classList.remove("visible");
       this.insideIndicator.classList.remove("visible");
       this.deleteTarget.classList.remove("visible", "is-armed");
-      this.preview.classList.remove("visible", "is-group");
+      this.preview.classList.remove("visible");
       this.highlight.classList.remove("visible");
       this.hide();
       this.finishing = false;
@@ -1068,7 +1068,6 @@ class RowDragHandleView {
     } else {
       this.previewMeta.textContent = "";
     }
-    this.preview.classList.toggle("is-group", count > 1);
     this.preview.classList.add("visible");
     this.positionPreview(clientX, clientY);
   }
