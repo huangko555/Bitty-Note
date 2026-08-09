@@ -14,6 +14,7 @@ from .i18n import text
 
 
 PROJECT_URL = "https://github.com/huangko555/Bitty-Note"
+UPDATE_SOURCE_URL = f"{PROJECT_URL}/releases/latest/download"
 CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
 
 
@@ -69,7 +70,7 @@ class UpdateService:
 
             try:
                 manager = velopack.UpdateManager(
-                    velopack.GithubSource(PROJECT_URL, None, False)
+                    velopack.HttpSource(UPDATE_SOURCE_URL)
                 )
                 update_info = manager.check_for_updates()
             except RuntimeError as error:

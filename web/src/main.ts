@@ -1259,8 +1259,7 @@ async function renderSettings(): Promise<void> {
         showSettingsStatus(t("upToDate"));
       }
     } catch (error) {
-      showSettingsStatus(t("updateFailed"), "warning");
-      void error;
+      showSettingsStatus(errorMessage(error), "warning");
     } finally {
       updateButton.classList.remove("is-checking");
       updateButton.setAttribute("aria-label", updateButtonText());

@@ -3,8 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from desktop_notes import updates
 from desktop_notes.config import ConfigStore
+from desktop_notes.errors import UserVisibleError
 
 
 class FakeManager:
@@ -51,7 +54,12 @@ def test_update_check_is_cached_for_one_day(
     tmp_path: Path, monkeypatch: object
 ) -> None:
     FakeManager.checks = 0
-    monkeypatch.setattr(updates.velopack, "GithubSource", lambda *_args: object())
+    sources: list[str] = []
+    monkeypatch.setattr(
+        updates.velopack,
+        "HttpSource",
+        lambda url: sources.append(url) or object(),
+    )
     monkeypatch.setattr(updates.velopack, "UpdateManager", FakeManager)
     service = updates.UpdateService(make_store(tmp_path))
 
@@ -61,13 +69,16 @@ def test_update_check_is_cached_for_one_day(
     assert first == {"status": "available", "available_version": "1.1.0"}
     assert second == first
     assert FakeManager.checks == 1
+    assert sources == [
+        "https://github.com/huangko555/Bitty-Note/releases/latest/download"
+    ]
 
 
 def test_install_downloads_and_hands_off_to_velopack(
     tmp_path: Path, monkeypatch: object
 ) -> None:
     FakeManager.checks = FakeManager.downloads = FakeManager.restarts = 0
-    monkeypatch.setattr(updates.velopack, "GithubSource", lambda *_args: object())
+    monkeypatch.setattr(updates.velopack, "HttpSource", lambda _url: object())
     monkeypatch.setattr(updates.velopack, "UpdateManager", FakeManager)
     store = make_store(tmp_path)
     service = updates.UpdateService(store)
@@ -85,10 +96,41 @@ def test_unpackaged_build_reports_update_as_unsupported(
     def fail(_source: object) -> object:
         raise RuntimeError("This application is not properly installed")
 
-    monkeypatch.setattr(updates.velopack, "GithubSource", lambda *_args: object())
+    monkeypatch.setattr(updates.velopack, "HttpSource", lambda _url: object())
     monkeypatch.setattr(updates.velopack, "UpdateManager", fail)
 
     assert updates.UpdateService(make_store(tmp_path)).check() == {
         "status": "unsupported",
         "available_version": None,
     }
+
+
+def test_check_failure_has_check_specific_message(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    class CheckFailingManager(FakeManager):
+        def check_for_updates(self) -> object:
+            raise OSError("network unavailable")
+
+    monkeypatch.setattr(updates.velopack, "HttpSource", lambda _url: object())
+    monkeypatch.setattr(updates.velopack, "UpdateManager", CheckFailingManager)
+
+    with pytest.raises(UserVisibleError, match="Couldn't check for updates"):
+        updates.UpdateService(make_store(tmp_path)).check(force=True)
+
+
+def test_download_failure_has_install_specific_message(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    class DownloadFailingManager(FakeManager):
+        def download_updates(self, _info: object) -> None:
+            raise OSError("download unavailable")
+
+    monkeypatch.setattr(updates.velopack, "HttpSource", lambda _url: object())
+    monkeypatch.setattr(updates.velopack, "UpdateManager", DownloadFailingManager)
+    store = make_store(tmp_path)
+
+    with pytest.raises(UserVisibleError, match="Automatic update failed"):
+        updates.UpdateService(store).install()
+
+    assert store.config.pending_update_version is None
