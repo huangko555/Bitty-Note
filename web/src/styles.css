@@ -262,15 +262,18 @@ h1 { margin: 0; font-size: 23px; font-weight: 500; letter-spacing: -.025em; }
 .row-insert-button:hover, .row-insert-button:focus-visible { color: var(--muted); background: rgb(112 107 87 / 8%); }
 .row-insert-button:active { color: var(--ink); background: rgb(112 107 87 / 13%); transform: scale(.99); }
 .row-insert-button .lucide-icon { width: 12px; height: 12px; stroke-width: 2; }
-.block-row-handle-highlight { position: fixed; z-index: 0; display: none; border-radius: var(--radius-control); background: rgb(112 107 87 / 8%); pointer-events: none; }
+.block-row-handle-highlight { position: fixed; z-index: 0; display: none; border-radius: var(--radius-control); background: rgb(51 156 255 / 9%); pointer-events: none; }
 .block-row-handle-highlight.visible { display: block; }
 .block-drag-handle { position: fixed; z-index: 8; display: none; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 8px; color: var(--muted); background: transparent; cursor: grab; }
 .block-drag-handle.visible { display: grid; }
 .block-drag-handle:hover { color: var(--ink); background: transparent; }
 .block-drag-handle.is-dragging { display: grid; color: var(--ink); cursor: grabbing; background: transparent; transform: scale(.95); }
 .block-drag-handle .lucide-icon { width: 15px; height: 15px; }
-.block-drop-indicator { position: fixed; z-index: 9; display: none; height: 2px; border-radius: 999px; background: var(--accent-deep); pointer-events: none; }
+.block-drop-indicator { position: fixed; z-index: 9; display: none; height: 2px; border-radius: 999px; background: #339cff; pointer-events: none; }
+.block-drop-indicator::before { content: ""; position: absolute; top: 50%; left: 0; box-sizing: border-box; width: 8px; height: 8px; border: 2px solid #339cff; border-radius: 50%; background: var(--paper); transform: translate(-50%, -50%); }
 .block-drop-indicator.visible { display: block; }
+.block-drop-inside-indicator { position: fixed; z-index: 7; display: none; box-sizing: border-box; border: 2px solid #339cff; border-radius: 10px; background: rgb(51 156 255 / 11%); box-shadow: 0 4px 12px rgb(51 156 255 / 10%); pointer-events: none; }
+.block-drop-inside-indicator.visible { display: block; }
 .block-delete-target { position: fixed; z-index: 11; right: 12px; bottom: 12px; display: flex; flex-direction: row-reverse; align-items: center; width: max-content; min-width: 44px; height: 44px; padding: 11px; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 14px; color: var(--danger); background: color-mix(in srgb, var(--paper) 92%, transparent); box-shadow: 0 5px 18px rgb(32 30 24 / 13%); opacity: 0; pointer-events: none; transform: translateY(7px) scale(.94); transform-origin: right center; transition: opacity .12s ease, transform .14s cubic-bezier(.2, .8, .2, 1), color .1s ease, background-color .1s ease, border-color .1s ease, box-shadow .1s ease; backdrop-filter: blur(8px); }
 .block-delete-target.visible { opacity: 1; transform: translateY(0) scale(1); }
 .block-delete-target.is-armed { color: #fff; background: var(--danger); border-color: var(--danger); box-shadow: 0 7px 22px rgb(126 43 37 / 25%); transform: translateY(0) scale(1); }

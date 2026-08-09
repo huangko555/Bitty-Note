@@ -52,7 +52,7 @@ function moved(
   doc: EditorState["doc"],
   source: string,
   target: string,
-  side: "before" | "after" = "after",
+  side: "before" | "after" | "inside" = "after",
 ): EditorState {
   const state = EditorState.create({ doc });
   let next = state;
@@ -251,7 +251,27 @@ describe("row dragging", () => {
     expect(list.lastChild?.lastChild?.lastChild?.attrs.checked).toBe(true);
   });
 
-  it("drops below a parent row before its existing children", () => {
+  it("drops below a parent row as its next sibling", () => {
+    const nested = bulletList([item("子项一"), item("子项二")]);
+    const doc = noteSchema.nodes.doc.create(null, orderedList([
+      item("父项", null, [nested]),
+      item("同级项"),
+      item("移动项"),
+    ]));
+
+    const next = moved(doc, "移动项", "父项");
+    const list = next.doc.firstChild!;
+
+    expect(Array.from({ length: list.childCount }, (_, index) =>
+      list.child(index).firstChild?.textContent,
+    )).toEqual(["父项", "移动项", "同级项"]);
+    const childList = list.firstChild?.lastChild!;
+    expect(Array.from({ length: childList.childCount }, (_, index) =>
+      childList.child(index).firstChild?.textContent,
+    )).toEqual(["子项一", "子项二"]);
+  });
+
+  it("drops inside a parent after its existing children", () => {
     const nested = bulletList([item("子项一"), item("子项二")]);
     const doc = noteSchema.nodes.doc.create(null, orderedList([
       item("父项", null, [nested]),
@@ -259,7 +279,7 @@ describe("row dragging", () => {
       item("同级项"),
     ]));
 
-    const next = moved(doc, "移动项", "父项");
+    const next = moved(doc, "移动项", "父项", "inside");
     const list = next.doc.firstChild!;
     const childList = list.firstChild?.lastChild!;
 
@@ -268,7 +288,7 @@ describe("row dragging", () => {
     )).toEqual(["父项", "同级项"]);
     expect(Array.from({ length: childList.childCount }, (_, index) =>
       childList.child(index).firstChild?.textContent,
-    )).toEqual(["移动项", "子项一", "子项二"]);
+    )).toEqual(["子项一", "子项二", "移动项"]);
   });
 
   it("converts a paragraph to the preceding task-list type", () => {

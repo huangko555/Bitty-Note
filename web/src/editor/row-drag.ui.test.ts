@@ -310,6 +310,7 @@ describe("row drag handle", () => {
     }));
     const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
     const indicator = host.querySelector<HTMLElement>(".block-drop-indicator")!;
+    const insideIndicator = host.querySelector<HTMLElement>(".block-drop-inside-indicator")!;
     Object.defineProperties(handle, {
       setPointerCapture: { value: vi.fn() },
       hasPointerCapture: { value: vi.fn(() => false) },
@@ -326,11 +327,23 @@ describe("row drag handle", () => {
     };
 
     handle.dispatchEvent(pointerEvent("pointerdown", 120));
-    window.dispatchEvent(pointerEvent("pointermove", 35));
+    window.dispatchEvent(pointerEvent("pointermove", 40));
 
     expect(indicator.classList.contains("visible")).toBe(true);
     expect(indicator.style.top).toBe("41px");
-    window.dispatchEvent(pointerEvent("pointercancel", 35));
+    expect(insideIndicator.classList.contains("visible")).toBe(false);
+    window.dispatchEvent(pointerEvent("pointercancel", 40));
+
+    host.dispatchEvent(pointerEvent("pointermove", 120));
+    handle.dispatchEvent(pointerEvent("pointerdown", 120));
+    window.dispatchEvent(pointerEvent("pointermove", 31));
+
+    expect(indicator.classList.contains("visible")).toBe(false);
+    expect(insideIndicator.classList.contains("visible")).toBe(true);
+    expect(insideIndicator.style.left).toBe("72px");
+    expect(insideIndicator.style.top).toBe("17px");
+    expect(insideIndicator.style.height).toBe("76px");
+    window.dispatchEvent(pointerEvent("pointercancel", 31));
   });
 
   it("leaves dragging state when pointer capture is lost", () => {

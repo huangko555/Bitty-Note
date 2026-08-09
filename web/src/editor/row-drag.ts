@@ -9,7 +9,7 @@ import { normalizeListDocument } from "./list-normalization";
 import { noteSchema } from "./schema";
 import { t } from "../i18n";
 
-export type RowDropSide = "before" | "after";
+export type RowDropSide = "before" | "after" | "inside";
 
 type ListKind = "bullet" | "ordered" | "task";
 const DELETE_TARGET_HIT_PADDING = 6;
@@ -272,6 +272,15 @@ function nestedListIndex(item: ProseMirrorNode): number | null {
   return null;
 }
 
+function listForKind(kind: ListKind, item: ProseMirrorNode): ProseMirrorNode {
+  return (kind === "ordered"
+    ? noteSchema.nodes.ordered_list
+    : noteSchema.nodes.bullet_list).create(
+    kind === "ordered" ? { order: 1 } : undefined,
+    item,
+  );
+}
+
 function dispatchMovedDocument(
   state: EditorState,
   dispatch: ((transaction: Transaction) => void) | undefined,
@@ -381,6 +390,7 @@ export function moveRow(
       side = "after";
     }
   }
+  if (side === "inside" && target.type !== noteSchema.nodes.list_item) return false;
 
 
   if (source.type === noteSchema.nodes.heading) {
@@ -453,17 +463,33 @@ export function moveRow(
   let selectedNode: ProseMirrorNode;
   if (target.type === noteSchema.nodes.list_item) {
     const nextTarget = nodeAtPath(nextDoc, nextTargetPath);
-    const childListIndex = side === "after" ? nestedListIndex(nextTarget) : null;
-    if (childListIndex !== null) {
-      const childListPath = [...nextTargetPath, childListIndex];
-      const childList = nodeAtPath(nextDoc, childListPath);
-      const reference = childList.firstChild!;
-      selectedNode = listItemForKind(
-        source,
-        listItemKind(childList, reference),
-        sourceKind,
-      );
-      nextDoc = insertNodeAtPath(nextDoc, childListPath, 0, selectedNode);
+    if (side === "inside") {
+      const childListIndex = nestedListIndex(nextTarget);
+      if (childListIndex !== null) {
+        const childListPath = [...nextTargetPath, childListIndex];
+        const childList = nodeAtPath(nextDoc, childListPath);
+        selectedNode = listItemForKind(
+          source,
+          listItemKind(childList, childList.lastChild!),
+          sourceKind,
+        );
+        nextDoc = insertNodeAtPath(
+          nextDoc,
+          childListPath,
+          childList.childCount,
+          selectedNode,
+        );
+      } else {
+        const parentList = nodeAtPath(nextDoc, nextTargetPath.slice(0, -1));
+        const targetKind = listItemKind(parentList, nextTarget);
+        selectedNode = listItemForKind(source, targetKind, sourceKind);
+        nextDoc = insertNodeAtPath(
+          nextDoc,
+          nextTargetPath,
+          nextTarget.childCount,
+          listForKind(targetKind, selectedNode),
+        );
+      }
     } else {
       const listPath = nextTargetPath.slice(0, -1);
       const list = nodeAtPath(nextDoc, listPath);
@@ -594,6 +620,7 @@ class RowDragHandleView {
   private readonly handle: HTMLButtonElement;
   private readonly highlight: HTMLDivElement;
   private readonly indicator: HTMLDivElement;
+  private readonly insideIndicator: HTMLDivElement;
   private readonly deleteTarget: HTMLDivElement;
   private hovered: RowDescriptor | null = null;
   private source: RowDescriptor | null = null;
@@ -623,6 +650,8 @@ class RowDragHandleView {
     this.highlight.className = "block-row-handle-highlight";
     this.indicator = document.createElement("div");
     this.indicator.className = "block-drop-indicator";
+    this.insideIndicator = document.createElement("div");
+    this.insideIndicator.className = "block-drop-inside-indicator";
     this.deleteTarget = document.createElement("div");
     this.deleteTarget.className = "block-delete-target";
     this.deleteTarget.setAttribute("aria-hidden", "true");
@@ -633,7 +662,13 @@ class RowDragHandleView {
     const deleteLabel = document.createElement("span");
     deleteLabel.textContent = t("releaseToDelete");
     this.deleteTarget.append(deleteLabel);
-    this.host.append(this.highlight, this.handle, this.indicator, this.deleteTarget);
+    this.host.append(
+      this.highlight,
+      this.handle,
+      this.indicator,
+      this.insideIndicator,
+      this.deleteTarget,
+    );
 
     this.host.addEventListener("pointermove", this.onHoverMove);
     this.host.addEventListener("pointerleave", this.onHoverLeave);
@@ -671,6 +706,7 @@ class RowDragHandleView {
     this.highlight.remove();
     this.handle.remove();
     this.indicator.remove();
+    this.insideIndicator.remove();
     this.deleteTarget.remove();
   }
 
@@ -785,9 +821,17 @@ class RowDragHandleView {
     }
     const headerRect = unshiftedVerticalRect(row.header);
     const lineHeight = Number.parseFloat(getComputedStyle(row.header).lineHeight) || 21;
-    const side: RowDropSide = event.clientY < headerRect.top + lineHeight / 2
-      ? "before"
-      : "after";
+    let side: RowDropSide;
+    if (
+      this.source.node.type !== noteSchema.nodes.heading
+      && row.node.type === noteSchema.nodes.list_item
+    ) {
+      const hitHeight = Math.max(lineHeight, headerRect.bottom - headerRect.top);
+      const relativeY = (event.clientY - headerRect.top) / hitHeight;
+      side = relativeY < 0.25 ? "before" : relativeY > 0.75 ? "after" : "inside";
+    } else {
+      side = event.clientY < headerRect.top + lineHeight / 2 ? "before" : "after";
+    }
     this.positionDropTarget(row, side);
   };
 
@@ -875,6 +919,7 @@ class RowDragHandleView {
       this.source = null;
       this.target = null;
       this.indicator.classList.remove("visible");
+      this.insideIndicator.classList.remove("visible");
       this.deleteTarget.classList.remove("visible", "is-armed");
       this.highlight.classList.remove("visible");
       this.hide();
@@ -931,14 +976,28 @@ class RowDragHandleView {
   private positionDropTarget(row: RowDescriptor | null, side: RowDropSide): void {
     this.target = row;
     this.side = side;
+    this.indicator.classList.remove("visible");
+    this.insideIndicator.classList.remove("visible");
     if (!row) {
-      this.indicator.classList.remove("visible");
       return;
     }
     const hostRect = this.host.getBoundingClientRect();
     const headerBounds = row.header.getBoundingClientRect();
+    const rowBounds = row.dom.getBoundingClientRect();
     const headerRect = unshiftedVerticalRect(row.header);
     const rowRect = unshiftedVerticalRect(row.dom);
+    if (side === "inside") {
+      const left = Math.max(hostRect.left + 3, Math.min(rowBounds.left, headerBounds.left) - 8);
+      const top = Math.max(hostRect.top, headerRect.top - 3);
+      const right = hostRect.right - 12;
+      const bottom = Math.min(hostRect.bottom, rowRect.bottom + 3);
+      this.insideIndicator.style.left = `${left}px`;
+      this.insideIndicator.style.top = `${top}px`;
+      this.insideIndicator.style.width = `${Math.max(24, right - left)}px`;
+      this.insideIndicator.style.height = `${Math.max(0, bottom - top)}px`;
+      this.insideIndicator.classList.add("visible");
+      return;
+    }
     const sourceMovesSection = this.source?.node.type === noteSchema.nodes.heading;
     const top = side === "before"
       ? headerRect.top
