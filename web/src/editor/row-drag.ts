@@ -103,6 +103,38 @@ function insertNodeAtPath(
   return replaceNodeAtPath(root, parentPath, copyWithChildren(parent, children));
 }
 
+function insertNodesAtPath(
+  root: ProseMirrorNode,
+  parentPath: readonly number[],
+  index: number,
+  inserted: readonly ProseMirrorNode[],
+): ProseMirrorNode {
+  const parent = nodeAtPath(root, parentPath);
+  const children: ProseMirrorNode[] = [];
+  parent.forEach((child) => children.push(child));
+  children.splice(index, 0, ...inserted);
+  return replaceNodeAtPath(root, parentPath, copyWithChildren(parent, children));
+}
+
+function headingSectionEndIndex(root: ProseMirrorNode, headingIndex: number): number {
+  let index = headingIndex + 1;
+  while (index < root.childCount && root.child(index).type !== noteSchema.nodes.heading) {
+    index += 1;
+  }
+  return index;
+}
+
+function pathIsWithinDraggedBlock(
+  root: ProseMirrorNode,
+  sourcePath: readonly number[],
+  targetPath: readonly number[],
+): boolean {
+  const source = nodeAtPath(root, sourcePath);
+  if (source.type !== noteSchema.nodes.heading) return pathStartsWith(targetPath, sourcePath);
+  const start = sourcePath[0]!;
+  return targetPath[0]! >= start && targetPath[0]! < headingSectionEndIndex(root, start);
+}
+
 function listItemKind(list: ProseMirrorNode, item: ProseMirrorNode): ListKind {
   if (list.type === noteSchema.nodes.ordered_list) return "ordered";
   return typeof item.attrs.checked === "boolean" ? "task" : "bullet";
@@ -217,6 +249,40 @@ function changedDocumentRange(
   return { from, previousTo, nextTo };
 }
 
+function dispatchMovedDocument(
+  state: EditorState,
+  dispatch: ((transaction: Transaction) => void) | undefined,
+  nextDoc: ProseMirrorNode,
+  selectionAnchor: { parent: ProseMirrorNode; offset: number },
+  selectionHead: { parent: ProseMirrorNode; offset: number },
+): boolean {
+  nextDoc = normalizeListDocument(nextDoc);
+  if (nextDoc.eq(state.doc)) return false;
+  if (!dispatch) return true;
+
+  const changed = changedDocumentRange(state.doc, nextDoc);
+  const transaction = state.tr.replace(
+    changed.from,
+    changed.previousTo,
+    nextDoc.slice(changed.from, changed.nextTo),
+  );
+  const nextAnchor = textPositionFor(
+    transaction.doc,
+    selectionAnchor.parent,
+    selectionAnchor.offset,
+  );
+  const nextHead = textPositionFor(
+    transaction.doc,
+    selectionHead.parent,
+    selectionHead.offset,
+  );
+  if (nextAnchor !== null && nextHead !== null) {
+    transaction.setSelection(TextSelection.create(transaction.doc, nextAnchor, nextHead));
+  }
+  dispatch(transaction.setMeta("rowDrag", true));
+  return true;
+}
+
 export function deleteRow(
   state: EditorState,
   dispatch: ((transaction: Transaction) => void) | undefined,
@@ -227,7 +293,16 @@ export function deleteRow(
   const sourcePath = findNodePath(state.doc, source);
   if (!sourcePath || !isDraggableRowAtPath(state.doc, sourcePath)) return false;
 
-  let nextDoc = removeRowAtPath(state.doc, sourcePath);
+  let nextDoc: ProseMirrorNode;
+  if (source.type === noteSchema.nodes.heading) {
+    const start = sourcePath[0]!;
+    const children: ProseMirrorNode[] = [];
+    state.doc.forEach((child) => children.push(child));
+    children.splice(start, headingSectionEndIndex(state.doc, start) - start);
+    nextDoc = copyWithChildren(state.doc, children);
+  } else {
+    nextDoc = removeRowAtPath(state.doc, sourcePath);
+  }
   if (nextDoc.childCount === 0) {
     nextDoc = noteSchema.nodes.doc.create(null, noteSchema.nodes.paragraph.create());
   }
@@ -270,16 +345,74 @@ export function moveRow(
     || !targetPath
     || !isDraggableRowAtPath(state.doc, sourcePath)
     || !isDraggableRowAtPath(state.doc, targetPath)
-    || pathStartsWith(targetPath, sourcePath)
+    || pathIsWithinDraggedBlock(state.doc, sourcePath, targetPath)
   ) {
     return false;
+  }
+
+
+  if (source.type === noteSchema.nodes.heading) {
+    const sectionStart = sourcePath[0]!;
+    const sectionEnd = headingSectionEndIndex(state.doc, sectionStart);
+    const section: ProseMirrorNode[] = [];
+    for (let index = sectionStart; index < sectionEnd; index += 1) {
+      section.push(state.doc.child(index));
+    }
+
+    const children: ProseMirrorNode[] = [];
+    state.doc.forEach((child) => children.push(child));
+    children.splice(sectionStart, sectionEnd - sectionStart);
+    let nextDoc = copyWithChildren(state.doc, children);
+    const nextTargetPath = findNodePath(nextDoc, target);
+    if (!nextTargetPath) return false;
+
+    if (target.type === noteSchema.nodes.list_item) {
+      const listPath = nextTargetPath.slice(0, -1);
+      const list = nodeAtPath(nextDoc, listPath);
+      const targetIndex = nextTargetPath[nextTargetPath.length - 1]!;
+      const insertionIndex = targetIndex + (side === "after" ? 1 : 0);
+      if (listPath.length === 1) {
+        const listChildren: ProseMirrorNode[] = [];
+        list.forEach((child) => listChildren.push(child));
+        const replacements: ProseMirrorNode[] = [];
+        if (insertionIndex > 0) {
+          replacements.push(copyWithChildren(list, listChildren.slice(0, insertionIndex)));
+        }
+        replacements.push(...section);
+        if (insertionIndex < list.childCount) {
+          replacements.push(copyWithChildren(list, listChildren.slice(insertionIndex)));
+        }
+        nextDoc = replaceNodeAtPathWithNodes(nextDoc, listPath, replacements);
+      } else {
+        const topLevelIndex = nextTargetPath[0]!;
+        nextDoc = insertNodesAtPath(
+          nextDoc,
+          [],
+          topLevelIndex + (side === "after" ? 1 : 0),
+          section,
+        );
+      }
+    } else {
+      const targetIndex = nextTargetPath[0]!;
+      const insertionIndex = target.type === noteSchema.nodes.heading && side === "after"
+        ? headingSectionEndIndex(nextDoc, targetIndex)
+        : targetIndex + (side === "after" ? 1 : 0);
+      nextDoc = insertNodesAtPath(nextDoc, [], insertionIndex, section);
+    }
+
+    return dispatchMovedDocument(
+      state,
+      dispatch,
+      nextDoc,
+      selectionAnchor,
+      selectionHead,
+    );
   }
 
   let sourceKind: ListKind | null = null;
   if (source.type === noteSchema.nodes.list_item) {
     sourceKind = listItemKind(nodeAtPath(state.doc, sourcePath.slice(0, -1)), source);
   }
-  const sourceIsHeading = source.type === noteSchema.nodes.heading;
 
   let nextDoc = removeRowAtPath(state.doc, sourcePath);
   const nextTargetPath = findNodePath(nextDoc, target);
@@ -291,45 +424,18 @@ export function moveRow(
     const list = nodeAtPath(nextDoc, listPath);
     const targetIndex = nextTargetPath[nextTargetPath.length - 1]!;
     const insertionIndex = targetIndex + (side === "after" ? 1 : 0);
-    if (sourceIsHeading && listPath.length === 1) {
-      const listChildren: ProseMirrorNode[] = [];
-      list.forEach((child) => listChildren.push(child));
-      const replacements: ProseMirrorNode[] = [];
-      if (insertionIndex > 0) {
-        replacements.push(copyWithChildren(list, listChildren.slice(0, insertionIndex)));
-      }
-      selectedNode = source;
-      replacements.push(source);
-      if (insertionIndex < list.childCount) {
-        replacements.push(copyWithChildren(list, listChildren.slice(insertionIndex)));
-      }
-      nextDoc = replaceNodeAtPathWithNodes(nextDoc, listPath, replacements);
-    } else if (sourceIsHeading) {
-      selectedNode = source;
-      const topLevelIndex = nextTargetPath[0]!;
-      nextDoc = insertNodeAtPath(
-        nextDoc,
-        [],
-        topLevelIndex + (side === "after" ? 1 : 0),
-        source,
-      );
-    } else {
-      const referenceIndex = side === "after" || targetIndex === 0
-        ? targetIndex
-        : targetIndex - 1;
-      const reference = list.child(referenceIndex);
-      const targetKind = listItemKind(list, reference);
-      selectedNode = listItemForKind(source, targetKind, sourceKind);
-      nextDoc = insertNodeAtPath(nextDoc, listPath, insertionIndex, selectedNode);
-    }
+    const referenceIndex = side === "after" || targetIndex === 0
+      ? targetIndex
+      : targetIndex - 1;
+    const reference = list.child(referenceIndex);
+    const targetKind = listItemKind(list, reference);
+    selectedNode = listItemForKind(source, targetKind, sourceKind);
+    nextDoc = insertNodeAtPath(nextDoc, listPath, insertionIndex, selectedNode);
   } else {
     const targetIndex = nextTargetPath[0]!;
     const insertionIndex = targetIndex + (side === "after" ? 1 : 0);
     const previous = insertionIndex > 0 ? nextDoc.child(insertionIndex - 1) : null;
-    if (sourceIsHeading) {
-      selectedNode = source;
-      nextDoc = insertNodeAtPath(nextDoc, [], insertionIndex, source);
-    } else if (
+    if (
       previous
       && (previous.type === noteSchema.nodes.bullet_list
         || previous.type === noteSchema.nodes.ordered_list)
@@ -348,32 +454,7 @@ export function moveRow(
     }
   }
 
-  nextDoc = normalizeListDocument(nextDoc);
-  if (nextDoc.eq(state.doc)) return false;
-  if (!dispatch) return true;
-
-  const changed = changedDocumentRange(state.doc, nextDoc);
-
-  const transaction = state.tr.replace(
-    changed.from,
-    changed.previousTo,
-    nextDoc.slice(changed.from, changed.nextTo),
-  );
-  const nextAnchor = textPositionFor(
-    transaction.doc,
-    selectionAnchor.parent,
-    selectionAnchor.offset,
-  );
-  const nextHead = textPositionFor(
-    transaction.doc,
-    selectionHead.parent,
-    selectionHead.offset,
-  );
-  if (nextAnchor !== null && nextHead !== null) {
-    transaction.setSelection(TextSelection.create(transaction.doc, nextAnchor, nextHead));
-  }
-  dispatch(transaction.setMeta("rowDrag", true));
-  return true;
+  return dispatchMovedDocument(state, dispatch, nextDoc, selectionAnchor, selectionHead);
 }
 
 function rowPositionAt(view: EditorView, documentPosition: number): number | null {
@@ -408,6 +489,32 @@ function unshiftedVerticalRect(element: HTMLElement): { top: number; bottom: num
     getComputedStyle(element).getPropertyValue("--editor-text-shift-y"),
   ) || 0;
   return { top: rect.top - shift, bottom: rect.bottom - shift };
+}
+
+function topLevelNodePosition(root: ProseMirrorNode, index: number): number {
+  let position = 0;
+  for (let childIndex = 0; childIndex < index; childIndex += 1) {
+    position += root.child(childIndex).nodeSize;
+  }
+  return position;
+}
+
+function draggedBlockVerticalRect(
+  view: EditorView,
+  row: RowDescriptor,
+): { top: number; bottom: number } {
+  const headerRect = unshiftedVerticalRect(row.header);
+  if (row.node.type === noteSchema.nodes.list_item) {
+    return { top: headerRect.top, bottom: unshiftedVerticalRect(row.dom).bottom };
+  }
+  if (row.node.type !== noteSchema.nodes.heading) return headerRect;
+
+  const sourcePath = findNodePath(view.state.doc, row.node);
+  if (!sourcePath) return headerRect;
+  const lastIndex = headingSectionEndIndex(view.state.doc, sourcePath[0]!) - 1;
+  const lastDom = view.nodeDOM(topLevelNodePosition(view.state.doc, lastIndex));
+  if (!(lastDom instanceof HTMLElement)) return headerRect;
+  return { top: headerRect.top, bottom: unshiftedVerticalRect(lastDom).bottom };
 }
 
 function rowAt(view: EditorView, clientX: number, clientY: number): RowDescriptor | null {
@@ -595,7 +702,11 @@ class RowDragHandleView {
     }
     const sourcePath = findNodePath(this.view.state.doc, this.source.node);
     const targetPath = findNodePath(this.view.state.doc, row.node);
-    if (sourcePath && targetPath && pathStartsWith(targetPath, sourcePath)) {
+    if (sourcePath && targetPath && pathIsWithinDraggedBlock(
+      this.view.state.doc,
+      sourcePath,
+      targetPath,
+    )) {
       this.positionDropTarget(null, "after");
       return;
     }
@@ -734,10 +845,10 @@ class RowDragHandleView {
 
   private positionHighlight(row: RowDescriptor): void {
     const hostRect = this.host.getBoundingClientRect();
-    const headerRect = unshiftedVerticalRect(row.header);
+    const blockRect = draggedBlockVerticalRect(this.view, row);
     const left = hostRect.left + 3;
-    const top = Math.max(hostRect.top, headerRect.top - 2);
-    const bottom = Math.min(hostRect.bottom, headerRect.bottom + 2);
+    const top = Math.max(hostRect.top, blockRect.top - 2);
+    const bottom = Math.min(hostRect.bottom, blockRect.bottom + 2);
     this.highlight.style.left = `${left}px`;
     this.highlight.style.top = `${top}px`;
     this.highlight.style.width = `${Math.max(24, hostRect.right - left - 12)}px`;
@@ -754,10 +865,13 @@ class RowDragHandleView {
     const hostRect = this.host.getBoundingClientRect();
     const headerBounds = row.header.getBoundingClientRect();
     const headerRect = unshiftedVerticalRect(row.header);
-    const rowRect = row.dom.getBoundingClientRect();
+    const rowRect = unshiftedVerticalRect(row.dom);
+    const sourceMovesSection = this.source?.node.type === noteSchema.nodes.heading;
     const top = side === "before"
       ? headerRect.top
-      : row.dom === row.header ? headerRect.bottom : rowRect.bottom;
+      : sourceMovesSection && row.node.type === noteSchema.nodes.heading
+        ? draggedBlockVerticalRect(this.view, row).bottom
+        : row.dom === row.header ? headerRect.bottom : rowRect.bottom;
     this.indicator.style.left = `${headerBounds.left}px`;
     this.indicator.style.top = `${top - 1}px`;
     this.indicator.style.width = `${Math.max(24, hostRect.right - headerBounds.left - 12)}px`;

@@ -77,6 +77,82 @@ describe("row drag handle", () => {
     expect(highlight.classList.contains("visible")).toBe(false);
   });
 
+  it("highlights a heading and its complete section as one block", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const doc = noteSchema.nodes.doc.create(null, [
+      noteSchema.nodes.heading.create({ level: 1 }, noteSchema.text("章节")),
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("章节正文")),
+      noteSchema.nodes.heading.create({ level: 1 }, noteSchema.text("下一章节")),
+    ]);
+    view = new EditorView(host, {
+      state: EditorState.create({ doc, plugins: [rowDragPlugin()] }),
+    });
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    const headings = view.dom.querySelectorAll("h1");
+    const paragraph = view.dom.querySelector("p")!;
+    vi.spyOn(headings[0]!, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 25));
+    vi.spyOn(paragraph, "getBoundingClientRect").mockReturnValue(rect(80, 55, 200, 22));
+    vi.spyOn(headings[1]!, "getBoundingClientRect").mockReturnValue(rect(80, 90, 200, 25));
+    vi.spyOn(view, "posAtCoords").mockReturnValue({ pos: 1, inside: 0 });
+
+    host.dispatchEvent(new MouseEvent("pointermove", {
+      bubbles: true,
+      clientX: 100,
+      clientY: 30,
+    }));
+    const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
+    const highlight = host.querySelector<HTMLElement>(".block-row-handle-highlight")!;
+    handle.dispatchEvent(new MouseEvent("pointerenter"));
+
+    expect(highlight.classList.contains("visible")).toBe(true);
+    expect(highlight.style.top).toBe("18px");
+    expect(highlight.style.height).toBe("61px");
+  });
+
+  it("highlights a list item and its indented children as one block", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const paragraph = (text: string) => noteSchema.nodes.paragraph.create(
+      null,
+      noteSchema.text(text),
+    );
+    const child = noteSchema.nodes.list_item.create({ checked: null }, paragraph("子项"));
+    const nested = noteSchema.nodes.bullet_list.create(null, child);
+    const parent = noteSchema.nodes.list_item.create(
+      { checked: null },
+      [paragraph("父项"), nested],
+    );
+    const doc = noteSchema.nodes.doc.create(
+      null,
+      noteSchema.nodes.bullet_list.create(null, parent),
+    );
+    view = new EditorView(host, {
+      state: EditorState.create({ doc, plugins: [rowDragPlugin()] }),
+    });
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    const listItem = view.dom.querySelector("li")!;
+    const parentParagraph = listItem.querySelector(":scope > p")!;
+    vi.spyOn(listItem, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 70));
+    vi.spyOn(parentParagraph, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 22));
+    vi.spyOn(view, "posAtCoords").mockReturnValue({ pos: 2, inside: 1 });
+
+    host.dispatchEvent(new MouseEvent("pointermove", {
+      bubbles: true,
+      clientX: 100,
+      clientY: 30,
+    }));
+    const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
+    const highlight = host.querySelector<HTMLElement>(".block-row-handle-highlight")!;
+    handle.dispatchEvent(new MouseEvent("pointerenter"));
+
+    expect(highlight.classList.contains("visible")).toBe(true);
+    expect(highlight.style.top).toBe("18px");
+    expect(highlight.style.height).toBe("74px");
+  });
+
   it("leaves dragging state when pointer capture is lost", () => {
     const host = document.createElement("div");
     document.body.append(host);
