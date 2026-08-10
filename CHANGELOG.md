@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.3.1 — 2026-08-11
+
+### English
+
+- Fixed drag-handle hit testing when a folded final section contains the document's terminal blank line.
+
+### 简体中文
+
+- 修复末尾折叠章节包含文档空行时，拖动手柄命中检测异常的问题。
+
 ## v1.3.0 — 2026-08-11
 
 ### English
