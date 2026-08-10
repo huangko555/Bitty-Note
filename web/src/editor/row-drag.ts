@@ -806,11 +806,15 @@ class RowDragHandleView {
     this.preview = document.createElement("div");
     this.preview.className = "block-drag-preview";
     this.preview.setAttribute("aria-hidden", "true");
+    const previewHandle = createLucideElement(GripVertical, {
+      class: "lucide-icon block-drag-preview-handle",
+      "aria-hidden": "true",
+    });
     this.previewText = document.createElement("span");
     this.previewText.className = "block-drag-preview-text";
     this.previewMeta = document.createElement("span");
     this.previewMeta.className = "block-drag-preview-meta";
-    this.preview.append(this.previewText, this.previewMeta);
+    this.preview.append(previewHandle, this.previewText, this.previewMeta);
     this.deleteTarget = document.createElement("div");
     this.deleteTarget.className = "block-delete-target";
     this.deleteTarget.setAttribute("aria-hidden", "true");
@@ -1213,7 +1217,7 @@ class RowDragHandleView {
   }
 
   private positionPreview(clientX: number, clientY: number): void {
-    this.preview.style.left = `${clientX + 16}px`;
+    this.preview.style.left = `${clientX - 18}px`;
     this.preview.style.top = `${clientY - 18}px`;
   }
 

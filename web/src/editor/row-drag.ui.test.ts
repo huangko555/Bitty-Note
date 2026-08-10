@@ -73,10 +73,18 @@ describe("row drag handle", () => {
       setPointerCapture: { value: vi.fn() },
       hasPointerCapture: { value: vi.fn(() => false) },
     });
-    handle.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
+    handle.dispatchEvent(new MouseEvent("pointerdown", {
+      bubbles: true,
+      button: 0,
+      clientX: 100,
+      clientY: 50,
+    }));
     expect(highlight.classList.contains("visible")).toBe(true);
     expect(preview.classList.contains("visible")).toBe(true);
+    expect(preview.firstElementChild?.classList.contains("block-drag-preview-handle")).toBe(true);
     expect(preview.querySelector(".block-drag-preview-text")?.textContent).toBe("缩进内容");
+    expect(preview.style.left).toBe("82px");
+    expect(preview.style.top).toBe("32px");
     window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, button: 0 }));
     expect(highlight.classList.contains("visible")).toBe(false);
     expect(preview.classList.contains("visible")).toBe(false);

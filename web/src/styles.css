@@ -284,8 +284,9 @@ h1.has-fold-toggle, .has-fold-toggle > p:first-child, .has-fold-toggle > .task-c
 .block-drop-indicator.visible { display: block; }
 .block-drop-inside-indicator { position: fixed; z-index: 7; display: none; box-sizing: border-box; border: 2px solid #339cff; border-radius: 10px; background: rgb(51 156 255 / 11%); box-shadow: 0 4px 12px rgb(51 156 255 / 10%); pointer-events: none; }
 .block-drop-inside-indicator.visible { display: block; }
-.block-drag-preview { position: fixed; z-index: 12; display: none; align-items: center; gap: 7px; box-sizing: border-box; max-width: 220px; height: 36px; padding: 0 9px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: var(--paper); box-shadow: 0 7px 20px rgb(32 30 24 / 16%); pointer-events: none; }
+.block-drag-preview { position: fixed; z-index: 12; display: none; align-items: center; gap: 6px; box-sizing: border-box; max-width: 220px; height: 36px; padding: 0 9px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: var(--paper); box-shadow: 0 7px 20px rgb(32 30 24 / 16%); pointer-events: none; }
 .block-drag-preview.visible { display: flex; }
+.block-drag-preview-handle { width: 15px; height: 15px; flex: 0 0 15px; color: var(--muted); stroke-width: 1.9; }
 .block-drag-preview-text { min-width: 0; overflow: hidden; font-family: var(--editor-font-family); font-size: 13px; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
 .block-drag-preview-meta { flex: 0 0 auto; color: var(--ink); font-family: var(--editor-font-family); font-size: 13px; font-weight: 400; line-height: 18px; white-space: nowrap; }
 .block-drag-preview-meta:empty { display: none; }
