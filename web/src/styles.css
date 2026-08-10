@@ -69,9 +69,8 @@ body { user-select: none; background: transparent; }
 button, input, textarea { font: inherit; }
 button { color: inherit; }
 button, input, textarea, select {
-  transition: background-color .12s ease, border-color .12s ease, color .12s ease, box-shadow .12s ease, opacity .12s ease, transform .08s ease;
+  transition: background-color .12s ease, border-color .12s ease, color .12s ease, box-shadow .12s ease, opacity .12s ease;
 }
-button:active:not(:disabled) { transform: scale(.985); }
 button:focus-visible, .toggle-row input:focus-visible {
   outline: 2px solid var(--focus-ring); outline-offset: 2px;
 }
@@ -207,8 +206,8 @@ h1 { margin: 0; font-size: 23px; font-weight: 500; letter-spacing: -.025em; }
 .archived-action:active { background: var(--surface-pressed); }
 .delete-button:hover { color: var(--danger); }
 .delete-button.confirm { color: white; background: var(--danger); }
-.create-button { position: fixed; z-index: 2; right: 22px; bottom: 22px; display: grid; place-items: center; width: 46px; height: 46px; padding: 0; border: 1px solid var(--ink); border-radius: 15px; color: white; background: var(--ink); box-shadow: 0 4px 12px rgb(20 20 18 / 18%); line-height: 0; cursor: pointer; }
-.create-button .lucide-icon { width: 20px; height: 20px; stroke-width: 2.3; transform-origin: center; }
+.create-button { position: fixed; z-index: 2; right: 22px; bottom: 22px; display: grid; place-items: center; width: 46px; height: 46px; padding: 0; border: 1px solid var(--ink); border-radius: 15px; color: white; background: var(--ink); box-shadow: 0 4px 12px rgb(20 20 18 / 18%); line-height: 0; cursor: pointer; transition: background-color .12s ease, border-color .12s ease, color .12s ease, box-shadow .12s ease, opacity .12s ease, transform .08s ease; }
+.create-button .lucide-icon { width: 20px; height: 20px; stroke-width: 2.3; transform-origin: center; transition: transform .08s ease; }
 .create-button:hover:not(:disabled) { border-color: color-mix(in srgb, var(--ink) 86%, white); background: color-mix(in srgb, var(--ink) 86%, white); box-shadow: 0 6px 16px rgb(20 20 18 / 22%); transform: translateY(-1px); }
 .create-button:focus-visible { outline-color: var(--accent); box-shadow: 0 4px 12px rgb(20 20 18 / 18%), 0 0 0 3px var(--focus-ring); }
 .create-button:active:not(:disabled) { border-color: color-mix(in srgb, var(--ink) 84%, black); background: color-mix(in srgb, var(--ink) 84%, black); box-shadow: 0 2px 6px rgb(20 20 18 / 18%); transform: translateY(1px) scale(.95652); }
@@ -261,7 +260,7 @@ h1 { margin: 0; font-size: 23px; font-weight: 500; letter-spacing: -.025em; }
 .row-insert-button { display: grid; place-items: center; width: 100%; height: 1.55em; padding: 0; border: 0; border-radius: var(--radius-compact); color: transparent; background: transparent; cursor: pointer; }
 .row-insert-button.is-terminal { margin-bottom: .775em; }
 .row-insert-button:hover, .row-insert-button:focus-visible { color: var(--muted); background: rgb(112 107 87 / 8%); }
-.row-insert-button:active { color: var(--ink); background: rgb(112 107 87 / 13%); transform: scale(.99); }
+.row-insert-button:active { color: var(--ink); background: rgb(112 107 87 / 13%); }
 .row-insert-button .lucide-icon { width: 12px; height: 12px; stroke-width: 2; }
 h1.has-fold-toggle, .has-fold-toggle > p:first-child, .has-fold-toggle > .task-content > p:first-child { box-sizing: border-box; padding-right: 28px; }
 .has-fold-toggle > p:first-child, .has-fold-toggle > .task-content > p:first-child { position: relative; }
