@@ -18,6 +18,9 @@ export type RowDropSide = "before" | "after" | "inside";
 
 type ListKind = "bullet" | "ordered" | "task";
 const DELETE_TARGET_HIT_PADDING = 6;
+const LIST_MARKER_CENTER_EM = 1.15;
+const BULLET_MARKER_RADIUS = 2.5;
+const TASK_MARKER_HALF_WIDTH = 8.5;
 
 interface RowDescriptor {
   node: ProseMirrorNode;
@@ -329,6 +332,13 @@ function changedDocumentRange(
     nextTo -= next.child(next.childCount - index - 1).nodeSize;
   }
   return { from, previousTo, nextTo };
+}
+
+function listMarkerOffset(kind: ListKind, fontSize: number): number {
+  const center = LIST_MARKER_CENTER_EM * fontSize;
+  if (kind === "ordered") return center + fontSize;
+  if (kind === "task") return center + TASK_MARKER_HALF_WIDTH;
+  return center + BULLET_MARKER_RADIUS;
 }
 
 function nestedListIndex(item: ProseMirrorNode): number | null {
@@ -1180,7 +1190,9 @@ class RowDragHandleView {
   private positionHighlight(row: RowDescriptor): void {
     const hostRect = this.host.getBoundingClientRect();
     const blockRect = draggedBlockVerticalRect(this.view, row);
-    const left = hostRect.left + 3;
+    const left = row.node.type === noteSchema.nodes.list_item
+      ? Math.max(hostRect.left + 3, this.listMarkerLeft(row) - 4)
+      : hostRect.left + 3;
     const top = Math.max(hostRect.top, blockRect.top - 2);
     const bottom = Math.min(hostRect.bottom, blockRect.bottom + 2);
     this.highlight.style.left = `${left}px`;
@@ -1227,7 +1239,10 @@ class RowDragHandleView {
     const rowBounds = row.dom.getBoundingClientRect();
     const headerRect = unshiftedVerticalRect(row.header);
     if (side === "inside") {
-      const left = Math.max(hostRect.left + 3, Math.min(rowBounds.left, headerBounds.left) - 8);
+      const contentLeft = row.node.type === noteSchema.nodes.list_item
+        ? this.listMarkerLeft(row) - 4
+        : Math.min(rowBounds.left, headerBounds.left) - 8;
+      const left = Math.max(hostRect.left + 3, contentLeft);
       const top = Math.max(hostRect.top, headerRect.top - 3);
       const right = hostRect.right - 12;
       const bottom = Math.min(
@@ -1287,17 +1302,33 @@ class RowDragHandleView {
 
   private dropIndicatorLeft(row: RowDescriptor | null): number {
     const editorRect = this.view.dom.getBoundingClientRect();
-    const source = this.source?.node;
+    const sourceRow = this.source;
+    const source = sourceRow?.node;
     if (!source) return editorRect.left;
     if (source.type === noteSchema.nodes.heading) return editorRect.left;
     if (row?.node.type === noteSchema.nodes.list_item) {
-      return row.header.getBoundingClientRect().left;
+      return this.listMarkerLeft(row);
     }
     if (source.type === noteSchema.nodes.list_item) {
       const fontSize = Number.parseFloat(getComputedStyle(this.view.dom).fontSize) || 16;
-      return editorRect.left + fontSize * 1.9;
+      const sourceKind = this.listKindForRow(sourceRow) ?? "bullet";
+      return editorRect.left + fontSize * 1.9 - listMarkerOffset(sourceKind, fontSize);
     }
     return editorRect.left;
+  }
+
+  private listKindForRow(row: RowDescriptor): ListKind | null {
+    if (row.node.type !== noteSchema.nodes.list_item) return null;
+    const path = findNodePath(this.view.state.doc, row.node);
+    if (!path || path.length < 2) return null;
+    return listItemKind(nodeAtPath(this.view.state.doc, path.slice(0, -1)), row.node);
+  }
+
+  private listMarkerLeft(row: RowDescriptor): number {
+    const headerLeft = row.header.getBoundingClientRect().left;
+    const fontSize = Number.parseFloat(getComputedStyle(row.header).fontSize) || 16;
+    const kind = this.listKindForRow(row) ?? "bullet";
+    return headerLeft - listMarkerOffset(kind, fontSize);
   }
 
   private dropBoundary(
@@ -1431,7 +1462,7 @@ class RowDragHandleView {
     this.positionDropTarget(row, "after");
     if (!this.source) return;
     const hostRect = this.host.getBoundingClientRect();
-    const left = row.header.getBoundingClientRect().left;
+    const left = this.listMarkerLeft(row);
     const top = unshiftedVerticalRect(this.source.header).bottom;
     this.indicator.style.left = `${left}px`;
     this.indicator.style.top = `${top - 1}px`;

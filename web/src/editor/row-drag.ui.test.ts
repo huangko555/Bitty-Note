@@ -154,6 +154,7 @@ describe("row drag handle", () => {
     handle.dispatchEvent(new MouseEvent("pointerenter"));
 
     expect(highlight.classList.contains("visible")).toBe(true);
+    expect(highlight.style.left).toBe("55.1px");
     expect(highlight.style.top).toBe("18px");
     expect(highlight.style.height).toBe("74px");
   });
@@ -352,15 +353,15 @@ describe("row drag handle", () => {
 
     expect(indicator.classList.contains("visible")).toBe(false);
     expect(insideIndicator.classList.contains("visible")).toBe(true);
-    expect(insideIndicator.style.left).toBe("72px");
+    expect(insideIndicator.style.left).toBe("55.1px");
     expect(insideIndicator.style.top).toBe("17px");
     expect(insideIndicator.style.height).toBe("76px");
     window.dispatchEvent(pointerEvent("pointercancel", 31));
   });
 
   it.each([
-    { clientX: 80, expectedLeft: "70px", level: "B" },
-    { clientX: 50, expectedLeft: "40px", level: "A" },
+    { clientX: 80, expectedLeft: "49.1px", level: "B" },
+    { clientX: 50, expectedLeft: "19.1px", level: "A" },
   ])("reparents the last item to the $level level using the Atlassian hitbox", ({
     clientX,
     expectedLeft,
