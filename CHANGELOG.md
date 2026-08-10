@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.3.0 — 2026-08-11
+
+### English
+
+- Added persistent folding for heading sections and nested list branches, with hidden-row count badges and clear hover feedback.
+- Preserved fold state in Markdown files without exposing internal markers in note previews.
+- Refined row dragging with list-marker previews, stable section boundaries, smooth handle-area scrolling, and accurate terminal empty-row drop targets.
+- Kept the viewport stable while folding, unfolding, and moving content across long notes.
+- Improved Backspace behavior when joining task-list paragraphs and avoided unnecessary startup registry rewrites.
+
+### 简体中文
+
+- 为标题章节和多层列表分支增加可持久化的折叠功能，并显示隐藏行数徽标和明确的悬浮反馈。
+- 将折叠状态保存在 Markdown 文件中，同时避免内部标记出现在便签摘要里。
+- 完善行拖动体验，包括列表标记预览、稳定的章节边界、手柄区域平滑滚动和准确的末尾空行落点。
+- 在折叠、展开以及长便签跨区域移动内容时保持视口稳定。
+- 改进任务列表段落的退格合并行为，并避免重复写入开机启动注册表。
+
 ## v1.2.0 — 2026-08-10
 
 ### English
