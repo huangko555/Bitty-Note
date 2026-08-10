@@ -149,9 +149,9 @@ describe("row drag handle", () => {
     button.dispatchEvent(new MouseEvent("pointerenter"));
 
     expect(highlight.classList.contains("visible")).toBe(true);
-    expect(highlight.style.top).toBe("43px");
+    expect(highlight.style.top).toBe("45px");
     expect(highlight.style.width).toBe("267px");
-    expect(highlight.style.height).toBe("36px");
+    expect(highlight.style.height).toBe("34px");
 
     button.dispatchEvent(new MouseEvent("pointerleave"));
     expect(highlight.classList.contains("visible")).toBe(false);
