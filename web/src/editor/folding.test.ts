@@ -30,9 +30,11 @@ describe("folding", () => {
     });
 
     const button = host.querySelector<HTMLButtonElement>(".fold-toggle")!;
+    expect(button.classList.contains("is-collapsed")).toBe(false);
     button.click();
 
     expect(view.state.doc.firstChild?.attrs.collapsed).toBe(true);
+    expect(host.querySelector(".fold-toggle")?.classList.contains("is-collapsed")).toBe(true);
     expect(host.querySelector("p")?.classList.contains("is-folded-content")).toBe(true);
     expect(serializeMarkdown(view.state.doc)).toContain("# <!-- bitty-folded --> 标题");
   });

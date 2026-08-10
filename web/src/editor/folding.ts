@@ -32,7 +32,7 @@ function foldButton(
     const button = document.createElement("button");
     button.type = "button";
     button.tabIndex = -1;
-    button.className = "fold-toggle";
+    button.className = `fold-toggle${owner.attrs.collapsed ? " is-collapsed" : ""}`;
     button.dataset.editorControl = "true";
     button.setAttribute("contenteditable", "false");
     button.setAttribute("aria-label", owner.attrs.collapsed ? t("expandContent") : t("collapseContent"));
