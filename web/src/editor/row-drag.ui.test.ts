@@ -207,6 +207,29 @@ describe("row drag handle", () => {
     expect(highlight.classList.contains("visible")).toBe(true);
   });
 
+  it("scrolls the editor when the wheel is used over the drag handle", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const doc = noteSchema.nodes.doc.create(null, [
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("可滚动内容")),
+    ]);
+    view = new EditorView(host, {
+      state: EditorState.create({ doc, plugins: [rowDragPlugin()] }),
+    });
+    const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
+    host.scrollTop = 12;
+    const wheel = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      deltaY: 36,
+    });
+
+    handle.dispatchEvent(wheel);
+
+    expect(host.scrollTop).toBe(48);
+    expect(wheel.defaultPrevented).toBe(true);
+  });
+
   it("snaps a heading dragged over section content to the section bottom", () => {
     const host = document.createElement("div");
     document.body.append(host);

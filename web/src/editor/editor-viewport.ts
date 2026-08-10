@@ -28,6 +28,20 @@ export function autoScrollForPointer(
   else if (clientY > viewport.bottom - edgeSize) host.scrollTop += step;
 }
 
+export function scrollForWheel(
+  host: HTMLElement,
+  deltaY: number,
+  deltaMode: number,
+  lineSize = 16,
+): void {
+  const multiplier = deltaMode === WheelEvent.DOM_DELTA_LINE
+    ? lineSize
+    : deltaMode === WheelEvent.DOM_DELTA_PAGE
+      ? host.getBoundingClientRect().height
+      : 1;
+  host.scrollTop += deltaY * multiplier;
+}
+
 export function preserveViewportDuring<T>(
   host: HTMLElement,
   change: () => T,

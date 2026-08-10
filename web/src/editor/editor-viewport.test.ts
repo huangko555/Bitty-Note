@@ -4,6 +4,7 @@ import {
   alignDocumentBoundary,
   autoScrollForPointer,
   preserveViewportDuring,
+  scrollForWheel,
 } from "./editor-viewport";
 
 function viewport(top: number, bottom: number): DOMRect {
@@ -51,5 +52,16 @@ describe("editor viewport", () => {
       host.scrollTop = 500;
     });
     expect(host.scrollTop).toBe(100);
+  });
+
+  it("normalizes line and page wheel deltas", () => {
+    const host = document.createElement("div");
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(viewport(0, 200));
+    host.scrollTop = 10;
+
+    scrollForWheel(host, 2, WheelEvent.DOM_DELTA_LINE);
+    expect(host.scrollTop).toBe(42);
+    scrollForWheel(host, 1, WheelEvent.DOM_DELTA_PAGE);
+    expect(host.scrollTop).toBe(242);
   });
 });

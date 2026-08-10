@@ -10,6 +10,7 @@ import {
   alignDocumentBoundary,
   autoScrollForPointer,
   preserveViewportDuring,
+  scrollForWheel,
 } from "./editor-viewport";
 import { noteSchema } from "./schema";
 import { t } from "../i18n";
@@ -818,6 +819,7 @@ class RowDragHandleView {
     this.handle.addEventListener("pointerenter", this.onHandleEnter);
     this.handle.addEventListener("pointerleave", this.onHandleLeave);
     this.handle.addEventListener("pointerdown", this.onDragStart);
+    this.handle.addEventListener("wheel", this.onHandleWheel, { passive: false });
     this.handle.addEventListener("lostpointercapture", this.onLostPointerCapture);
   }
 
@@ -844,6 +846,7 @@ class RowDragHandleView {
     this.handle.removeEventListener("pointerenter", this.onHandleEnter);
     this.handle.removeEventListener("pointerleave", this.onHandleLeave);
     this.handle.removeEventListener("pointerdown", this.onDragStart);
+    this.handle.removeEventListener("wheel", this.onHandleWheel);
     this.handle.removeEventListener("lostpointercapture", this.onLostPointerCapture);
     this.highlight.remove();
     this.handle.remove();
@@ -1013,6 +1016,13 @@ class RowDragHandleView {
       side = event.clientY < headerRect.top + lineHeight / 2 ? "before" : "after";
     }
     this.positionDropTarget(row, side, row.header);
+  };
+
+  private readonly onHandleWheel = (event: WheelEvent): void => {
+    if (event.deltaY === 0) return;
+    scrollForWheel(this.host, event.deltaY, event.deltaMode);
+    event.preventDefault();
+    event.stopPropagation();
   };
 
   private readonly onDragEnd = (event: PointerEvent): void => {
