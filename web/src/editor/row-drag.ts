@@ -1204,7 +1204,9 @@ class RowDragHandleView {
   private showPreview(row: RowDescriptor, clientX: number, clientY: number): void {
     const path = findNodePath(this.view.state.doc, row.node);
     const count = path ? draggedRowCount(this.view.state.doc, path) : 1;
-    this.previewText.textContent = row.header.textContent?.trim() || t("dragPreviewEmpty");
+    const text = row.header.textContent?.trim() || t("dragPreviewEmpty");
+    this.previewText.textContent = text;
+    this.previewText.style.width = "";
     if (row.node.type === noteSchema.nodes.heading) {
       this.previewMeta.textContent = t("dragPreviewSection", { count });
     } else if (count > 1) {
@@ -1213,7 +1215,25 @@ class RowDragHandleView {
       this.previewMeta.textContent = "";
     }
     this.preview.classList.add("visible");
+    this.truncatePreviewText(text);
     this.positionPreview(clientX, clientY);
+  }
+
+  private truncatePreviewText(text: string): void {
+    const availableWidth = this.previewText.clientWidth;
+    if (availableWidth <= 0 || this.previewText.scrollWidth <= availableWidth) return;
+
+    this.previewText.style.width = `${availableWidth}px`;
+    const characters = Array.from(text);
+    let low = 0;
+    let high = characters.length;
+    while (low < high) {
+      const length = Math.ceil((low + high) / 2);
+      this.previewText.textContent = `${characters.slice(0, length).join("")}...`;
+      if (this.previewText.scrollWidth <= availableWidth) low = length;
+      else high = length - 1;
+    }
+    this.previewText.textContent = `${characters.slice(0, low).join("")}...`;
   }
 
   private positionPreview(clientX: number, clientY: number): void {
