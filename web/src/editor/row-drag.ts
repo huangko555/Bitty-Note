@@ -22,6 +22,9 @@ export type RowDropSide = "before" | "after" | "inside";
 type ListKind = "bullet" | "ordered" | "task";
 type DocumentEndAnchorEdge = "top" | "bottom";
 const DELETE_TARGET_HIT_PADDING = 6;
+const FEEDBACK_LEFT_INSET = 3;
+const FEEDBACK_RIGHT_INSET = 12;
+const MIN_FEEDBACK_WIDTH = 24;
 
 interface RowDescriptor {
   node: ProseMirrorNode;
@@ -1225,7 +1228,7 @@ class RowDragHandleView {
     const hostRect = this.host.getBoundingClientRect();
     const headerRect = rowHeaderVerticalRect(row.header);
     const lineHeight = Number.parseFloat(getComputedStyle(row.header).lineHeight) || 21;
-    this.handle.style.left = `${hostRect.left + 3}px`;
+    this.handle.style.left = `${hostRect.left + FEEDBACK_LEFT_INSET}px`;
     this.handle.style.top = `${headerRect.top + Math.max(0, (lineHeight - 22) / 2)}px`;
     if (headerRect.bottom < hostRect.top || headerRect.top > hostRect.bottom) {
       this.handle.classList.remove("visible");
@@ -1279,13 +1282,11 @@ class RowDragHandleView {
   private positionHighlight(row: RowDescriptor): void {
     const hostRect = this.host.getBoundingClientRect();
     const blockRect = draggedBlockVerticalRect(this.view, row);
-    const left = hostRect.left + 3;
+    const left = hostRect.left + FEEDBACK_LEFT_INSET;
     const top = Math.max(hostRect.top, blockRect.top - 2);
+    const right = hostRect.right - FEEDBACK_RIGHT_INSET;
     const bottom = Math.min(hostRect.bottom, blockRect.bottom + 2);
-    this.highlight.style.left = `${left}px`;
-    this.highlight.style.top = `${top}px`;
-    this.highlight.style.width = `${Math.max(24, hostRect.right - left - 12)}px`;
-    this.highlight.style.height = `${Math.max(0, bottom - top)}px`;
+    this.setHighlightRect(left, top, right, bottom);
   }
 
   private positionFoldHighlight(row: RowDescriptor): void {
@@ -1294,13 +1295,20 @@ class RowDragHandleView {
     const blockRect = draggedBlockVerticalRect(this.view, row);
     const toggleBottom = row.header.querySelector<HTMLElement>(".fold-toggle")
       ?.getBoundingClientRect().bottom ?? headerRect.bottom;
-    const left = hostRect.left + 3;
+    const left = hostRect.left + FEEDBACK_LEFT_INSET;
     const top = Math.max(hostRect.top, headerRect.bottom, toggleBottom);
-    const right = Math.min(hostRect.right - 12, row.header.getBoundingClientRect().right);
+    const right = Math.min(
+      hostRect.right - FEEDBACK_RIGHT_INSET,
+      row.header.getBoundingClientRect().right,
+    );
     const bottom = Math.min(hostRect.bottom, blockRect.bottom + 2);
+    this.setHighlightRect(left, top, right, bottom);
+  }
+
+  private setHighlightRect(left: number, top: number, right: number, bottom: number): void {
     this.highlight.style.left = `${left}px`;
     this.highlight.style.top = `${top}px`;
-    this.highlight.style.width = `${Math.max(24, right - left)}px`;
+    this.highlight.style.width = `${Math.max(MIN_FEEDBACK_WIDTH, right - left)}px`;
     this.highlight.style.height = `${Math.max(0, bottom - top)}px`;
   }
 
@@ -1345,16 +1353,16 @@ class RowDragHandleView {
       const contentLeft = row.node.type === noteSchema.nodes.list_item
         ? this.listFeedbackLeft(row)
         : Math.min(rowBounds.left, headerBounds.left) - 8;
-      const left = Math.max(hostRect.left + 3, contentLeft);
+      const left = Math.max(hostRect.left + FEEDBACK_LEFT_INSET, contentLeft);
       const top = Math.max(hostRect.top, headerRect.top - 3);
-      const right = hostRect.right - 12;
+      const right = hostRect.right - FEEDBACK_RIGHT_INSET;
       const bottom = Math.min(
         hostRect.bottom,
         draggedBlockVerticalRect(this.view, row).bottom + 3,
       );
       this.insideIndicator.style.left = `${left}px`;
       this.insideIndicator.style.top = `${top}px`;
-      this.insideIndicator.style.width = `${Math.max(24, right - left)}px`;
+      this.insideIndicator.style.width = `${Math.max(MIN_FEEDBACK_WIDTH, right - left)}px`;
       this.insideIndicator.style.height = `${Math.max(0, bottom - top)}px`;
       this.insideIndicator.classList.add("visible");
       return;
@@ -1369,10 +1377,7 @@ class RowDragHandleView {
         ? draggedBlockVerticalRect(this.view, row).bottom
         : visualRect.bottom;
     const left = this.dropIndicatorLeft(row);
-    this.indicator.style.left = `${left}px`;
-    this.indicator.style.top = `${top - 1}px`;
-    this.indicator.style.width = `${Math.max(24, hostRect.right - left - 12)}px`;
-    this.indicator.classList.add("visible");
+    this.showDropIndicator(left, top, hostRect.right - FEEDBACK_RIGHT_INSET);
   }
 
   private headingInsertButton(row: RowDescriptor): HTMLElement | null {
@@ -1410,17 +1415,21 @@ class RowDragHandleView {
 
   private dropIndicatorLeft(row: RowDescriptor | null): number {
     const editorRect = this.view.dom.getBoundingClientRect();
-    const sourceRow = this.source;
-    const source = sourceRow?.node;
-    if (!source) return editorRect.left;
-    if (source.type === noteSchema.nodes.heading) return editorRect.left;
-    if (row?.node.type === noteSchema.nodes.list_item) {
+    if (
+      this.source
+      && this.source.node.type !== noteSchema.nodes.heading
+      && row?.node.type === noteSchema.nodes.list_item
+    ) {
       return this.listFeedbackLeft(row);
     }
-    if (source.type === noteSchema.nodes.list_item) {
-      return editorRect.left;
-    }
     return editorRect.left;
+  }
+
+  private showDropIndicator(left: number, top: number, right: number): void {
+    this.indicator.style.left = `${left}px`;
+    this.indicator.style.top = `${top - 1}px`;
+    this.indicator.style.width = `${Math.max(MIN_FEEDBACK_WIDTH, right - left)}px`;
+    this.indicator.classList.add("visible");
   }
 
   private listFeedbackLeft(row: RowDescriptor): number {
@@ -1504,10 +1513,7 @@ class RowDragHandleView {
     const anchorRect = anchor.getBoundingClientRect();
     const top = edge === "top" ? anchorRect.top : anchorRect.bottom;
     const left = this.dropIndicatorLeft(null);
-    this.indicator.style.left = `${left}px`;
-    this.indicator.style.top = `${top - 1}px`;
-    this.indicator.style.width = `${Math.max(24, hostRect.right - left - 12)}px`;
-    this.indicator.classList.add("visible");
+    this.showDropIndicator(left, top, hostRect.right - FEEDBACK_RIGHT_INSET);
   }
 
   private terminalEmptyTailAt(clientX: number, clientY: number): TerminalEmptyTail | null {
@@ -1586,10 +1592,7 @@ class RowDragHandleView {
     const hostRect = this.host.getBoundingClientRect();
     const left = this.listFeedbackLeft(row);
     const top = unshiftedVerticalRect(this.source.header).bottom;
-    this.indicator.style.left = `${left}px`;
-    this.indicator.style.top = `${top - 1}px`;
-    this.indicator.style.width = `${Math.max(24, hostRect.right - left - 12)}px`;
-    this.indicator.classList.add("visible");
+    this.showDropIndicator(left, top, hostRect.right - FEEDBACK_RIGHT_INSET);
     this.reparentLevel = desiredLevel;
   }
 
