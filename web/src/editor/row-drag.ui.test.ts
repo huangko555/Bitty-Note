@@ -177,6 +177,37 @@ describe("row drag handle", () => {
     expect(highlight.style.height).toBe("29px");
   });
 
+  it("keeps the handle available when the final folded heading contains the terminal blank line", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const doc = noteSchema.nodes.doc.create(null, [
+      noteSchema.nodes.heading.create({ level: 1 }, noteSchema.text("末标题")),
+      noteSchema.nodes.paragraph.create(),
+    ]);
+    view = new EditorView(host, {
+      state: EditorState.create({
+        doc,
+        plugins: [foldingPlugin(), rowDragPlugin(), rowInsertPlugin()],
+      }),
+    });
+    host.querySelector<HTMLButtonElement>(".fold-toggle")!.click();
+
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    const heading = view.dom.querySelector("h1")!;
+    vi.spyOn(heading, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 25));
+    vi.spyOn(view, "posAtCoords").mockReturnValue({ pos: 1, inside: 0 });
+
+    host.dispatchEvent(new MouseEvent("pointermove", {
+      bubbles: true,
+      clientX: 100,
+      clientY: 30,
+    }));
+
+    expect(host.querySelector(".is-terminal-empty-line.is-folded-content")).not.toBeNull();
+    expect(host.querySelector(".block-drag-handle")?.classList.contains("visible")).toBe(true);
+  });
+
   it("highlights a list item and its indented children as one block", () => {
     const host = document.createElement("div");
     document.body.append(host);

@@ -1524,6 +1524,7 @@ class RowDragHandleView {
     );
     if (!terminalEmptyLine) return null;
     const lineRect = rowHeaderVerticalRect(terminalEmptyLine);
+    if (lineRect.bottom <= lineRect.top) return null;
     if (clientY < lineRect.bottom) return null;
     const terminalBlank = terminalBlankTextblock(this.view.state.doc);
     const rowPosition = terminalBlank
