@@ -260,6 +260,11 @@ describe("row drag handle", () => {
       const sourceDom = paragraphs[0]!;
       const emptyDom = paragraphs[2]!;
       expect(emptyDom.classList.contains("is-terminal-empty-line")).toBe(true);
+      const posAtDOM = view.posAtDOM.bind(view);
+      vi.spyOn(view, "posAtDOM").mockImplementation((node, offset, bias) => {
+        if (node === emptyDom) throw new Error("terminal empty DOM maps to a node boundary");
+        return posAtDOM(node, offset, bias);
+      });
       vi.spyOn(sourceDom, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 22));
       vi.spyOn(emptyDom, "getBoundingClientRect").mockReturnValue(rect(80, 60, 200, 44));
       if (kind === "list") {

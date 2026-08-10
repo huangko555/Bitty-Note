@@ -77,7 +77,9 @@ function lastLineIsBlank(doc: EditorState["doc"]): boolean {
   return Boolean(node?.isTextblock && node.content.size === 0);
 }
 
-function lastBlankTextblock(doc: EditorState["doc"]): { from: number; to: number } | null {
+export function terminalBlankTextblock(
+  doc: EditorState["doc"],
+): { from: number; to: number } | null {
   let last: { from: number; to: number; empty: boolean } | null = null;
   doc.descendants((node, position) => {
     if (node.isTextblock) {
@@ -104,7 +106,7 @@ function decorations(doc: EditorState["doc"], onInsert?: () => void): Decoration
   doc.forEach((node, position) => {
     if (node.type === noteSchema.nodes.heading && position > 0) positions.add(position);
   });
-  const terminalBlank = lastBlankTextblock(doc);
+  const terminalBlank = terminalBlankTextblock(doc);
   const items: Decoration[] = terminalBlank
     ? [Decoration.node(
       terminalBlank.from,

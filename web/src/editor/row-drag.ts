@@ -13,6 +13,7 @@ import {
   scrollForWheel,
 } from "./editor-viewport";
 import { noteSchema } from "./schema";
+import { terminalBlankTextblock } from "./row-insert";
 import { t } from "../i18n";
 
 export type RowDropSide = "before" | "after" | "inside";
@@ -1494,15 +1495,11 @@ class RowDragHandleView {
     if (!terminalEmptyLine) return null;
     const lineRect = rowHeaderVerticalRect(terminalEmptyLine);
     if (clientY < lineRect.bottom || clientY > hostRect.bottom) return null;
-    try {
-      const rowPosition = rowPositionAt(
-        this.view,
-        this.view.posAtDOM(terminalEmptyLine, 0),
-      );
-      return rowPosition === null ? null : { element: terminalEmptyLine, rowPosition };
-    } catch {
-      return null;
-    }
+    const terminalBlank = terminalBlankTextblock(this.view.state.doc);
+    const rowPosition = terminalBlank
+      ? rowPositionAt(this.view, terminalBlank.from + 1)
+      : null;
+    return rowPosition === null ? null : { element: terminalEmptyLine, rowPosition };
   }
 
   private documentEndAnchor(clientX: number, clientY: number): HTMLElement | null {
