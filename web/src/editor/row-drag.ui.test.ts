@@ -154,6 +154,27 @@ describe("row drag handle", () => {
 
     button.dispatchEvent(new MouseEvent("pointerleave"));
     expect(highlight.classList.contains("visible")).toBe(false);
+
+    button.click();
+    vi.spyOn(view.dom.querySelector("h1")!, "getBoundingClientRect")
+      .mockReturnValue(rect(80, 20, 200, 25));
+    const collapsedButton = host.querySelector<HTMLButtonElement>(".fold-toggle")!;
+    collapsedButton.dispatchEvent(new MouseEvent("pointerenter"));
+    expect(highlight.classList.contains("visible")).toBe(true);
+    expect(highlight.style.top).toBe("18px");
+    expect(highlight.style.height).toBe("29px");
+
+    collapsedButton.dispatchEvent(new MouseEvent("pointerleave"));
+    vi.spyOn(view, "posAtCoords").mockReturnValue({ pos: 1, inside: 0 });
+    host.dispatchEvent(new MouseEvent("pointermove", {
+      bubbles: true,
+      clientX: 100,
+      clientY: 30,
+    }));
+    host.querySelector<HTMLElement>(".block-drag-handle")!
+      .dispatchEvent(new MouseEvent("pointerenter"));
+    expect(highlight.classList.contains("visible")).toBe(true);
+    expect(highlight.style.height).toBe("29px");
   });
 
   it("highlights a list item and its indented children as one block", () => {

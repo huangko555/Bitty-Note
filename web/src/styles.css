@@ -266,9 +266,11 @@ h1 { margin: 0; font-size: 23px; font-weight: 500; letter-spacing: -.025em; }
 h1.has-fold-toggle, .has-fold-toggle > p:first-child, .has-fold-toggle > .task-content > p:first-child { box-sizing: border-box; padding-right: 28px; }
 .has-fold-toggle > p:first-child, .has-fold-toggle > .task-content > p:first-child { position: relative; }
 .ProseMirror .fold-toggle { position: absolute; z-index: 3; top: 50%; right: 0; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; color: var(--muted); background: transparent; cursor: pointer; transform: translateY(-50%); transition: none; animation: none; }
+.ProseMirror .fold-toggle:hover { color: var(--ink); }
 .fold-toggle:active:not(:disabled) { transform: translateY(-50%); }
 .fold-toggle .lucide-icon { width: 15px; height: 15px; transform: none; transition: none; animation: none; }
 .ProseMirror .fold-toggle-count { display: block; width: 20px; height: 20px; border-radius: 50%; color: var(--muted); background: color-mix(in srgb, var(--muted) 32%, var(--paper)); font-family: "Bitty UI", sans-serif; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 20px; text-align: center; }
+.ProseMirror .fold-toggle:hover .fold-toggle-count { color: var(--ink); background: color-mix(in srgb, var(--muted) 45%, var(--paper)); }
 .is-folded-content { display: none !important; }
 .is-collapsed-list-item:not(.task-list-item) > :not(:first-child) { display: none; }
 .task-list-item.is-collapsed-list-item > .task-content > :not(:first-child) { display: none; }

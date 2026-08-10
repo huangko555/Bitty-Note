@@ -725,6 +725,7 @@ function draggedBlockVerticalRect(
     return { top: headerRect.top, bottom: unshiftedVerticalRect(row.dom).bottom };
   }
   if (row.node.type !== noteSchema.nodes.heading) return headerRect;
+  if (row.node.attrs.collapsed) return headerRect;
 
   const sourcePath = findNodePath(view.state.doc, row.node);
   if (!sourcePath) return headerRect;
