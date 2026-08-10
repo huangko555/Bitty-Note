@@ -35,6 +35,7 @@ describe("folding", () => {
 
     expect(view.state.doc.firstChild?.attrs.collapsed).toBe(true);
     expect(host.querySelector(".fold-toggle")?.classList.contains("is-collapsed")).toBe(true);
+    expect(host.querySelector(".fold-toggle-count")?.textContent).toBe("1");
     expect(host.querySelector("p")?.classList.contains("is-folded-content")).toBe(true);
     expect(serializeMarkdown(view.state.doc)).toContain("# <!-- bitty-folded --> 标题");
   });
@@ -66,6 +67,7 @@ describe("folding", () => {
 
     const parentDom = host.querySelector("li")!;
     expect(parentDom.classList.contains("is-collapsed-list-item")).toBe(true);
+    expect(parentDom.querySelector(".fold-toggle-count")?.textContent).toBe("1");
     expect(parentDom.querySelector(":scope > p")?.textContent).toContain("父项");
   });
 

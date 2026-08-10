@@ -1,5 +1,4 @@
 import createLucideElement from "lucide/dist/esm/createElement.mjs";
-import ChevronDown from "lucide/dist/esm/icons/chevron-down.mjs";
 import ChevronUp from "lucide/dist/esm/icons/chevron-up.mjs";
 import { type Node as ProseMirrorNode } from "prosemirror-model";
 import { Plugin, TextSelection } from "prosemirror-state";
@@ -24,9 +23,34 @@ function foldable(node: ProseMirrorNode, doc: ProseMirrorNode, index = -1): bool
     && headingSectionEnd(doc, index) > index + 1;
 }
 
+function contentRowCount(node: ProseMirrorNode): number {
+  let listItems = 0;
+  node.descendants((descendant) => {
+    if (descendant.type === noteSchema.nodes.list_item) listItems += 1;
+  });
+  return listItems || 1;
+}
+
+function hiddenRowCount(owner: ProseMirrorNode, doc: ProseMirrorNode, index = -1): number {
+  if (owner.type === noteSchema.nodes.heading) {
+    let count = 0;
+    for (let childIndex = index + 1; childIndex < headingSectionEnd(doc, index); childIndex += 1) {
+      count += contentRowCount(doc.child(childIndex));
+    }
+    return count;
+  }
+
+  let count = 0;
+  for (let childIndex = 1; childIndex < owner.childCount; childIndex += 1) {
+    count += contentRowCount(owner.child(childIndex));
+  }
+  return count;
+}
+
 function foldButton(
   ownerPosition: number,
   owner: ProseMirrorNode,
+  hiddenCount: number,
 ): (view: EditorView) => HTMLElement {
   return (view) => {
     const button = document.createElement("button");
@@ -35,12 +59,22 @@ function foldButton(
     button.className = `fold-toggle${owner.attrs.collapsed ? " is-collapsed" : ""}`;
     button.dataset.editorControl = "true";
     button.setAttribute("contenteditable", "false");
-    button.setAttribute("aria-label", owner.attrs.collapsed ? t("expandContent") : t("collapseContent"));
-    button.title = owner.attrs.collapsed ? t("expandContent") : t("collapseContent");
-    button.append(createLucideElement(owner.attrs.collapsed ? ChevronDown : ChevronUp, {
-      class: "lucide-icon",
-      "aria-hidden": "true",
-    }));
+    const label = owner.attrs.collapsed
+      ? t("expandContentCount", { count: hiddenCount })
+      : t("collapseContent");
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    if (owner.attrs.collapsed) {
+      const count = document.createElement("span");
+      count.className = "fold-toggle-count";
+      count.textContent = hiddenCount > 9 ? "9+" : String(hiddenCount);
+      button.append(count);
+    } else {
+      button.append(createLucideElement(ChevronUp, {
+        class: "lucide-icon",
+        "aria-hidden": "true",
+      }));
+    }
     button.addEventListener("mousedown", (event) => event.preventDefault());
     button.addEventListener("click", (event) => {
       event.preventDefault();
@@ -109,7 +143,7 @@ function foldingDecorations(doc: ProseMirrorNode): DecorationSet {
       ));
       decorations.push(Decoration.widget(
         topLevelPosition + node.nodeSize - 1,
-        foldButton(topLevelPosition, node),
+        foldButton(topLevelPosition, node, hiddenRowCount(node, doc, index)),
         { side: 1 },
       ));
       if (node.attrs.collapsed) {
@@ -140,7 +174,7 @@ function foldingDecorations(doc: ProseMirrorNode): DecorationSet {
     ));
     decorations.push(Decoration.widget(
       position + node.firstChild!.nodeSize,
-      foldButton(position, node),
+      foldButton(position, node, hiddenRowCount(node, doc)),
       { side: 1 },
     ));
     return true;

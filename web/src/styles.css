@@ -270,6 +270,7 @@ h1.has-fold-toggle, .has-fold-toggle > p:first-child, .has-fold-toggle > .task-c
 .fold-toggle:hover { background: rgb(112 107 87 / 8%); }
 .fold-toggle:active:not(:disabled) { transform: translateY(-50%); }
 .fold-toggle .lucide-icon { width: 15px; height: 15px; transform: none; transition: none; animation: none; }
+.ProseMirror .fold-toggle-count { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; color: #fff; background: #339cff; font-size: 10px; font-weight: 600; line-height: 1; }
 .is-folded-content { display: none !important; }
 .is-collapsed-list-item:not(.task-list-item) > :not(:first-child) { display: none; }
 .task-list-item.is-collapsed-list-item > .task-content > :not(:first-child) { display: none; }
