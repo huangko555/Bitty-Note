@@ -1292,8 +1292,10 @@ class RowDragHandleView {
     const hostRect = this.host.getBoundingClientRect();
     const headerRect = rowHeaderVerticalRect(row.header);
     const blockRect = draggedBlockVerticalRect(this.view, row);
+    const toggleBottom = row.header.querySelector<HTMLElement>(".fold-toggle")
+      ?.getBoundingClientRect().bottom ?? headerRect.bottom;
     const left = hostRect.left + 3;
-    const top = Math.max(hostRect.top, headerRect.bottom);
+    const top = Math.max(hostRect.top, headerRect.bottom, toggleBottom);
     const right = Math.min(hostRect.right - 12, row.header.getBoundingClientRect().right);
     const bottom = Math.min(hostRect.bottom, blockRect.bottom + 2);
     this.highlight.style.left = `${left}px`;

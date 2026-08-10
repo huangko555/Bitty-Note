@@ -146,12 +146,13 @@ describe("row drag handle", () => {
 
     const button = host.querySelector<HTMLButtonElement>(".fold-toggle")!;
     const highlight = host.querySelector<HTMLElement>(".block-row-handle-highlight")!;
+    vi.spyOn(button, "getBoundingClientRect").mockReturnValue(rect(270, 19, 28, 28));
     button.dispatchEvent(new MouseEvent("pointerenter"));
 
     expect(highlight.classList.contains("visible")).toBe(true);
-    expect(highlight.style.top).toBe("45px");
+    expect(highlight.style.top).toBe("47px");
     expect(highlight.style.width).toBe("267px");
-    expect(highlight.style.height).toBe("34px");
+    expect(highlight.style.height).toBe("32px");
 
     button.dispatchEvent(new MouseEvent("pointerleave"));
     expect(highlight.classList.contains("visible")).toBe(false);
@@ -217,6 +218,41 @@ describe("row drag handle", () => {
     expect(highlight.style.left).toBe("13px");
     expect(highlight.style.top).toBe("18px");
     expect(highlight.style.height).toBe("74px");
+  });
+
+  it("starts a list fold highlight below the toggle click box", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const paragraph = (text: string) => noteSchema.nodes.paragraph.create(
+      null,
+      noteSchema.text(text),
+    );
+    const child = noteSchema.nodes.list_item.create({ checked: null }, paragraph("子项"));
+    const parent = noteSchema.nodes.list_item.create(
+      { checked: null },
+      [paragraph("父项"), noteSchema.nodes.bullet_list.create(null, child)],
+    );
+    const doc = noteSchema.nodes.doc.create(
+      null,
+      noteSchema.nodes.bullet_list.create(null, parent),
+    );
+    view = new EditorView(host, {
+      state: EditorState.create({ doc, plugins: [rowDragPlugin(), foldingPlugin()] }),
+    });
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    const listItem = view.dom.querySelector("li")!;
+    const parentParagraph = listItem.querySelector(":scope > p")!;
+    vi.spyOn(listItem, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 70));
+    vi.spyOn(parentParagraph, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 22));
+    const button = parentParagraph.querySelector<HTMLButtonElement>(".fold-toggle")!;
+    vi.spyOn(button, "getBoundingClientRect").mockReturnValue(rect(270, 17, 28, 28));
+
+    button.dispatchEvent(new MouseEvent("pointerenter"));
+
+    const highlight = host.querySelector<HTMLElement>(".block-row-handle-highlight")!;
+    expect(highlight.classList.contains("visible")).toBe(true);
+    expect(highlight.style.top).toBe("45px");
+    expect(highlight.style.height).toBe("47px");
   });
 
   it("moves the active handle and highlight with their source while scrolling", () => {
