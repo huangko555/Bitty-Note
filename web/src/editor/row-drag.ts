@@ -28,6 +28,11 @@ interface RowDescriptor {
   header: HTMLElement;
 }
 
+interface TerminalEmptyTail {
+  element: HTMLElement;
+  rowPosition: number;
+}
+
 function nodeAtPath(node: ProseMirrorNode, path: readonly number[]): ProseMirrorNode {
   let current = node;
   for (const index of path) current = current.child(index);
@@ -615,10 +620,34 @@ export function moveRowToDocumentEnd(
   dispatch: ((transaction: Transaction) => void) | undefined,
   sourcePosition: number,
 ): boolean {
+  return moveRowToTopLevelBoundary(state, dispatch, sourcePosition, null);
+}
+
+function moveRowBeforeTrailingRow(
+  state: EditorState,
+  dispatch: ((transaction: Transaction) => void) | undefined,
+  sourcePosition: number,
+  trailingPosition: number,
+): boolean {
+  return moveRowToTopLevelBoundary(state, dispatch, sourcePosition, trailingPosition);
+}
+
+function moveRowToTopLevelBoundary(
+  state: EditorState,
+  dispatch: ((transaction: Transaction) => void) | undefined,
+  sourcePosition: number,
+  trailingPosition: number | null,
+): boolean {
   const source = state.doc.nodeAt(sourcePosition);
   if (!source) return false;
   const sourcePath = findNodePath(state.doc, source);
   if (!sourcePath || !isDraggableRowAtPath(state.doc, sourcePath)) return false;
+  const trailing = trailingPosition === null ? null : state.doc.nodeAt(trailingPosition);
+  const trailingPath = trailing ? findNodePath(state.doc, trailing) : null;
+  if (
+    trailingPosition !== null
+    && (!trailing || !trailingPath || pathIsWithinDraggedBlock(state.doc, sourcePath, trailingPath))
+  ) return false;
   const selectionAnchor = {
     parent: state.selection.$anchor.parent,
     offset: state.selection.$anchor.parentOffset,
@@ -647,7 +676,10 @@ export function moveRowToDocumentEnd(
     nextDoc = removeRowAtPath(state.doc, sourcePath);
     appended = [rootNodeForSource(source, sourceKind).node];
   }
-  nextDoc = insertNodesAtPath(nextDoc, [], nextDoc.childCount, appended);
+  const nextTrailingPath = trailing ? findNodePath(nextDoc, trailing) : null;
+  if (trailing && !nextTrailingPath) return false;
+  const insertionIndex = nextTrailingPath?.[0] ?? nextDoc.childCount;
+  nextDoc = insertNodesAtPath(nextDoc, [], insertionIndex, appended);
   return dispatchMovedDocument(
     state,
     dispatch,
@@ -770,6 +802,7 @@ class RowDragHandleView {
   private visualAnchor: HTMLElement | null = null;
   private endTarget = false;
   private endAnchorEdge: DocumentEndAnchorEdge = "top";
+  private endBeforePosition: number | null = null;
   private reparentLevel: number | null = null;
   private startX = 0;
   private startY = 0;
@@ -893,7 +926,11 @@ class RowDragHandleView {
       if (this.target && this.reparentLevel !== null) {
         this.positionReparentTarget(this.target, this.reparentLevel);
       } else if (this.endTarget && this.visualAnchor) {
-        this.positionDocumentEndTarget(this.visualAnchor, this.endAnchorEdge);
+        this.positionDocumentEndTarget(
+          this.visualAnchor,
+          this.endAnchorEdge,
+          this.endBeforePosition,
+        );
       } else {
         this.positionDropTarget(this.target, this.side, this.visualAnchor);
       }
@@ -953,7 +990,11 @@ class RowDragHandleView {
 
     const terminalEmptyTail = this.terminalEmptyTailAt(event.clientX, event.clientY);
     if (terminalEmptyTail) {
-      this.positionDocumentEndTarget(terminalEmptyTail, "line-end");
+      this.positionDocumentEndTarget(
+        terminalEmptyTail.element,
+        "line-end",
+        terminalEmptyTail.rowPosition,
+      );
       return;
     }
 
@@ -1053,6 +1094,7 @@ class RowDragHandleView {
     const targetNode = this.target?.node ?? null;
     const side = this.side;
     const movesToEnd = this.endTarget;
+    const endBeforePosition = this.endBeforePosition;
     const pointerX = event.clientX;
     const pointerY = event.clientY;
     this.updateDeleteTarget(pointerX, pointerY);
@@ -1073,7 +1115,14 @@ class RowDragHandleView {
       });
     } else if (shouldMove) {
       const moved = movesToEnd
-        ? moveRowToDocumentEnd(this.view.state, this.view.dispatch, sourcePosition)
+        ? endBeforePosition === null
+          ? moveRowToDocumentEnd(this.view.state, this.view.dispatch, sourcePosition)
+          : moveRowBeforeTrailingRow(
+            this.view.state,
+            this.view.dispatch,
+            sourcePosition,
+            endBeforePosition,
+          )
         : moveRow(
           this.view.state,
           this.view.dispatch,
@@ -1144,6 +1193,7 @@ class RowDragHandleView {
       this.visualAnchor = null;
       this.endTarget = false;
       this.endAnchorEdge = "top";
+      this.endBeforePosition = null;
       this.reparentLevel = null;
       this.indicator.classList.remove("visible");
       this.insideIndicator.classList.remove("visible");
@@ -1236,6 +1286,7 @@ class RowDragHandleView {
     this.visualAnchor = effectiveVisualAnchor;
     this.endTarget = false;
     this.endAnchorEdge = "top";
+    this.endBeforePosition = null;
     this.reparentLevel = null;
     this.indicator.classList.remove("visible");
     this.insideIndicator.classList.remove("visible");
@@ -1401,20 +1452,27 @@ class RowDragHandleView {
   private positionDocumentEndTarget(
     anchor: HTMLElement,
     edge: DocumentEndAnchorEdge = "top",
+    beforePosition: number | null = null,
   ): void {
     this.target = null;
     this.side = "after";
     this.visualAnchor = anchor;
     this.endTarget = true;
     this.endAnchorEdge = edge;
+    this.endBeforePosition = beforePosition;
     this.reparentLevel = null;
     this.indicator.classList.remove("visible");
     this.insideIndicator.classList.remove("visible");
-    if (!this.source || !moveRowToDocumentEnd(
-      this.view.state,
-      undefined,
-      this.source.position,
-    )) return;
+    if (!this.source) return;
+    const canMove = beforePosition === null
+      ? moveRowToDocumentEnd(this.view.state, undefined, this.source.position)
+      : moveRowBeforeTrailingRow(
+        this.view.state,
+        undefined,
+        this.source.position,
+        beforePosition,
+      );
+    if (!canMove) return;
     const hostRect = this.host.getBoundingClientRect();
     const anchorRect = edge === "line-end"
       ? rowHeaderVerticalRect(anchor)
@@ -1427,7 +1485,7 @@ class RowDragHandleView {
     this.indicator.classList.add("visible");
   }
 
-  private terminalEmptyTailAt(clientX: number, clientY: number): HTMLElement | null {
+  private terminalEmptyTailAt(clientX: number, clientY: number): TerminalEmptyTail | null {
     const hostRect = this.host.getBoundingClientRect();
     if (clientX < hostRect.left || clientX > hostRect.right) return null;
     const terminalEmptyLine = this.view.dom.querySelector<HTMLElement>(
@@ -1436,9 +1494,16 @@ class RowDragHandleView {
     if (!terminalEmptyLine) return null;
     const fullRect = unshiftedVerticalRect(terminalEmptyLine);
     const lineRect = rowHeaderVerticalRect(terminalEmptyLine);
-    return clientY >= lineRect.bottom && clientY <= fullRect.bottom
-      ? terminalEmptyLine
-      : null;
+    if (clientY < lineRect.bottom || clientY > fullRect.bottom) return null;
+    try {
+      const rowPosition = rowPositionAt(
+        this.view,
+        this.view.posAtDOM(terminalEmptyLine, 0),
+      );
+      return rowPosition === null ? null : { element: terminalEmptyLine, rowPosition };
+    } catch {
+      return null;
+    }
   }
 
   private documentEndAnchor(clientX: number, clientY: number): HTMLElement | null {

@@ -239,6 +239,7 @@ describe("row drag handle", () => {
       const host = document.createElement("div");
       document.body.append(host);
       const source = noteSchema.nodes.paragraph.create(null, noteSchema.text("移动内容"));
+      const retained = noteSchema.nodes.paragraph.create(null, noteSchema.text("保留内容"));
       const empty = noteSchema.nodes.paragraph.create();
       const finalNode = kind === "paragraph"
         ? empty
@@ -246,7 +247,7 @@ describe("row drag handle", () => {
           null,
           noteSchema.nodes.list_item.create({ checked: null }, empty),
         );
-      const doc = noteSchema.nodes.doc.create(null, [source, finalNode]);
+      const doc = noteSchema.nodes.doc.create(null, [source, retained, finalNode]);
       view = new EditorView(host, {
         state: EditorState.create({
           doc,
@@ -257,7 +258,7 @@ describe("row drag handle", () => {
       vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 180));
       const paragraphs = view.dom.querySelectorAll("p");
       const sourceDom = paragraphs[0]!;
-      const emptyDom = paragraphs[1]!;
+      const emptyDom = paragraphs[2]!;
       expect(emptyDom.classList.contains("is-terminal-empty-line")).toBe(true);
       vi.spyOn(sourceDom, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 22));
       vi.spyOn(emptyDom, "getBoundingClientRect").mockReturnValue(rect(80, 60, 200, 44));
@@ -303,7 +304,10 @@ describe("row drag handle", () => {
       const indicator = host.querySelector<HTMLElement>(".block-drop-indicator")!;
       expect(indicator.classList.contains("visible")).toBe(true);
       expect(indicator.style.top).toBe("80px");
-      window.dispatchEvent(pointerEvent("pointercancel", 95));
+      window.dispatchEvent(pointerEvent("pointerup", 95));
+      expect(view.state.doc.child(0).textContent).toBe("保留内容");
+      expect(view.state.doc.child(1).textContent).toBe("移动内容");
+      expect(view.state.doc.lastChild?.textContent).toBe("");
     },
   );
 
