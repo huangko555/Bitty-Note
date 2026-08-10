@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.3.2 — 2026-08-11
+
+### English
+
+- Kept fold controls out of drag-preview text and made the preview count show only the additional rows moving with the selected row.
+
+### 简体中文
+
+- 避免折叠控件文字混入拖动预览，并将预览数量改为随当前行一起移动的额外行数。
+
 ## v1.3.1 — 2026-08-11
 
 ### English
