@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   alignDocumentBoundary,
   autoScrollForPointer,
+  preserveVisualAnchorDuring,
   preserveViewportDuring,
   scrollForWheel,
 } from "./editor-viewport";
@@ -52,6 +53,25 @@ describe("editor viewport", () => {
       host.scrollTop = 500;
     });
     expect(host.scrollTop).toBe(100);
+  });
+
+  it("keeps a semantic visual anchor stable after layout changes", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    host.scrollTop = 240;
+    const locateAnchorTop = () => 100 - host.scrollTop;
+    let frame: FrameRequestCallback | null = null;
+
+    preserveVisualAnchorDuring(host, locateAnchorTop, () => {
+      host.scrollTop = 220;
+    }, (callback) => {
+      frame = callback;
+      return 1;
+    });
+    (frame as unknown as FrameRequestCallback)(0);
+
+    expect(host.scrollTop).toBe(240);
+    host.remove();
   });
 
   it("normalizes line and page wheel deltas", () => {

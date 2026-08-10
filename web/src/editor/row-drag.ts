@@ -1492,9 +1492,8 @@ class RowDragHandleView {
       ".is-terminal-empty-line",
     );
     if (!terminalEmptyLine) return null;
-    const fullRect = unshiftedVerticalRect(terminalEmptyLine);
     const lineRect = rowHeaderVerticalRect(terminalEmptyLine);
-    if (clientY < lineRect.bottom || clientY > fullRect.bottom) return null;
+    if (clientY < lineRect.bottom || clientY > hostRect.bottom) return null;
     try {
       const rowPosition = rowPositionAt(
         this.view,

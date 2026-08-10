@@ -6,6 +6,7 @@ import { Plugin, TextSelection } from "prosemirror-state";
 import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
 
 import { t } from "../i18n";
+import { preserveVisualAnchorDuring } from "./editor-viewport";
 import { noteSchema } from "./schema";
 
 function headingSectionEnd(doc: ProseMirrorNode, headingIndex: number): number {
@@ -80,7 +81,16 @@ function foldButton(
           transaction.setSelection(TextSelection.create(transaction.doc, caret));
         }
       }
-      view.dispatch(transaction);
+      const host = view.dom.parentElement;
+      const locateOwnerTop = (): number | null => {
+        const ownerDom = view.nodeDOM(ownerPosition);
+        return ownerDom instanceof HTMLElement ? ownerDom.getBoundingClientRect().top : null;
+      };
+      if (host) {
+        preserveVisualAnchorDuring(host, locateOwnerTop, () => view.dispatch(transaction));
+      } else {
+        view.dispatch(transaction);
+      }
     });
     return button;
   };

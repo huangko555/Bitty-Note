@@ -273,7 +273,9 @@ describe("row drag handle", () => {
       });
       vi.spyOn(view, "posAtCoords").mockImplementation(({ top }) => top < 50
         ? { pos: 1, inside: 0 }
-        : { pos: emptyPosition + 1, inside: emptyPosition });
+        : top <= 104
+          ? { pos: emptyPosition + 1, inside: emptyPosition }
+          : null);
       const pointerEvent = (type: string, y: number) => {
         const event = new MouseEvent(type, {
           bubbles: true,
@@ -300,11 +302,11 @@ describe("row drag handle", () => {
         hasPointerCapture: { value: vi.fn(() => false) },
       });
       handle.dispatchEvent(pointerEvent("pointerdown", 30));
-      window.dispatchEvent(pointerEvent("pointermove", 95));
+      window.dispatchEvent(pointerEvent("pointermove", 140));
       const indicator = host.querySelector<HTMLElement>(".block-drop-indicator")!;
       expect(indicator.classList.contains("visible")).toBe(true);
       expect(indicator.style.top).toBe("80px");
-      window.dispatchEvent(pointerEvent("pointerup", 95));
+      window.dispatchEvent(pointerEvent("pointerup", 140));
       expect(view.state.doc.child(0).textContent).toBe("保留内容");
       expect(view.state.doc.child(1).textContent).toBe("移动内容");
       expect(view.state.doc.lastChild?.textContent).toBe("");

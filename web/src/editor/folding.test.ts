@@ -1,6 +1,6 @@
 import { EditorState } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { foldingPlugin } from "./folding";
 import { serializeMarkdown } from "./markdown";
@@ -65,5 +65,49 @@ describe("folding", () => {
     const parentDom = host.querySelector("li")!;
     expect(parentDom.classList.contains("is-collapsed-list-item")).toBe(true);
     expect(parentDom.querySelector(":scope > p")?.textContent).toContain("父项");
+  });
+
+  it("keeps the editor viewport stable across repeated fold toggles", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const doc = noteSchema.nodes.doc.create(null, [
+      noteSchema.nodes.heading.create(
+        { level: 1, collapsed: false },
+        noteSchema.text("标题"),
+      ),
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("正文一")),
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("正文二")),
+    ]);
+    const mockHeadingRect = () => {
+      const heading = host.querySelector("h1");
+      if (!heading) return;
+      vi.spyOn(heading, "getBoundingClientRect").mockImplementation(() => ({
+        top: 100 - host.scrollTop,
+        bottom: 122 - host.scrollTop,
+      }) as DOMRect);
+    };
+    let editor!: EditorView;
+    editor = new EditorView(host, {
+      state: EditorState.create({ doc, plugins: [foldingPlugin()] }),
+      dispatchTransaction: (transaction) => {
+        editor.updateState(editor.state.apply(transaction));
+        mockHeadingRect();
+        // WebView scroll anchoring can adjust the viewport after folded DOM changes.
+        host.scrollTop -= 20;
+      },
+    });
+    view = editor;
+    host.scrollTop = 240;
+    mockHeadingRect();
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+
+    for (let count = 0; count < 4; count += 1) {
+      host.querySelector<HTMLButtonElement>(".fold-toggle")!.click();
+    }
+
+    expect(host.scrollTop).toBe(240);
   });
 });

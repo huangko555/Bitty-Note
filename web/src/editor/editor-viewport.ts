@@ -52,6 +52,23 @@ export function preserveViewportDuring<T>(
   return result;
 }
 
+export function preserveVisualAnchorDuring<T>(
+  host: HTMLElement,
+  locateAnchorTop: () => number | null,
+  change: () => T,
+  requestFrame: (callback: FrameRequestCallback) => number = window.requestAnimationFrame.bind(window),
+): T {
+  const before = locateAnchorTop();
+  const result = change();
+  if (before === null) return result;
+  requestFrame(() => {
+    if (!host.isConnected) return;
+    const after = locateAnchorTop();
+    if (after !== null) host.scrollTop += after - before;
+  });
+  return result;
+}
+
 export function alignDocumentBoundary(
   host: HTMLElement,
   locateBoundary: () => number | null,
