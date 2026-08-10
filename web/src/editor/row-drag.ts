@@ -1242,7 +1242,10 @@ class RowDragHandleView {
   private showPreview(row: RowDescriptor, clientX: number, clientY: number): void {
     const path = findNodePath(this.view.state.doc, row.node);
     const count = path ? draggedRowCount(this.view.state.doc, path) : 1;
-    const text = row.header.textContent?.trim() || t("dragPreviewEmpty");
+    const headerNode = row.node.type === noteSchema.nodes.list_item
+      ? row.node.firstChild
+      : row.node;
+    const text = headerNode?.textContent.trim() || t("dragPreviewEmpty");
     this.previewText.textContent = text;
     this.previewText.style.width = "";
     if (row.node.type === noteSchema.nodes.heading) {

@@ -208,6 +208,45 @@ describe("row drag handle", () => {
     expect(host.querySelector(".block-drag-handle")?.classList.contains("visible")).toBe(true);
   });
 
+  it("does not include the folded row count in the drag preview text", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const doc = noteSchema.nodes.doc.create(null, [
+      noteSchema.nodes.heading.create({ level: 1 }, noteSchema.text("章节")),
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("正文")),
+    ]);
+    view = new EditorView(host, {
+      state: EditorState.create({ doc, plugins: [foldingPlugin(), rowDragPlugin()] }),
+    });
+    host.querySelector<HTMLButtonElement>(".fold-toggle")!.click();
+
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    const heading = view.dom.querySelector("h1")!;
+    vi.spyOn(heading, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 25));
+    vi.spyOn(view, "posAtCoords").mockReturnValue({ pos: 1, inside: 0 });
+    expect(host.querySelector(".fold-toggle-count")?.textContent).toBe("1");
+    host.dispatchEvent(new MouseEvent("pointermove", {
+      bubbles: true,
+      clientX: 100,
+      clientY: 30,
+    }));
+    const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
+    Object.defineProperties(handle, {
+      setPointerCapture: { value: vi.fn() },
+      hasPointerCapture: { value: vi.fn(() => false) },
+    });
+
+    handle.dispatchEvent(new MouseEvent("pointerdown", {
+      bubbles: true,
+      button: 0,
+      clientX: 100,
+      clientY: 30,
+    }));
+
+    expect(host.querySelector(".block-drag-preview-text")?.textContent).toBe("章节");
+  });
+
   it("highlights a list item and its indented children as one block", () => {
     const host = document.createElement("div");
     document.body.append(host);
