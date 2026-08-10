@@ -230,6 +230,80 @@ describe("row drag handle", () => {
     expect(wheel.defaultPrevented).toBe(true);
   });
 
+  it.each(["paragraph", "list"] as const)(
+    "keeps a terminal empty %s row to one line and treats its tail as the end zone",
+    (kind) => {
+      const host = document.createElement("div");
+      document.body.append(host);
+      const source = noteSchema.nodes.paragraph.create(null, noteSchema.text("移动内容"));
+      const empty = noteSchema.nodes.paragraph.create();
+      const finalNode = kind === "paragraph"
+        ? empty
+        : noteSchema.nodes.bullet_list.create(
+          null,
+          noteSchema.nodes.list_item.create({ checked: null }, empty),
+        );
+      const doc = noteSchema.nodes.doc.create(null, [source, finalNode]);
+      view = new EditorView(host, {
+        state: EditorState.create({
+          doc,
+          plugins: [rowDragPlugin(), rowInsertPlugin()],
+        }),
+      });
+      vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 180));
+      vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 180));
+      const paragraphs = view.dom.querySelectorAll("p");
+      const sourceDom = paragraphs[0]!;
+      const emptyDom = paragraphs[1]!;
+      expect(emptyDom.classList.contains("is-terminal-empty-line")).toBe(true);
+      vi.spyOn(sourceDom, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 22));
+      vi.spyOn(emptyDom, "getBoundingClientRect").mockReturnValue(rect(80, 60, 200, 44));
+      if (kind === "list") {
+        vi.spyOn(view.dom.querySelector("li")!, "getBoundingClientRect")
+          .mockReturnValue(rect(80, 60, 200, 44));
+      }
+      let emptyPosition = -1;
+      doc.descendants((node, position) => {
+        if (node === empty) emptyPosition = position;
+        return emptyPosition < 0;
+      });
+      vi.spyOn(view, "posAtCoords").mockImplementation(({ top }) => top < 50
+        ? { pos: 1, inside: 0 }
+        : { pos: emptyPosition + 1, inside: emptyPosition });
+      const pointerEvent = (type: string, y: number) => {
+        const event = new MouseEvent(type, {
+          bubbles: true,
+          button: 0,
+          clientX: 100,
+          clientY: y,
+        });
+        Object.defineProperty(event, "pointerId", { value: 32 });
+        return event;
+      };
+
+      host.dispatchEvent(pointerEvent("pointermove", 70));
+      const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
+      const highlight = host.querySelector<HTMLElement>(".block-row-handle-highlight")!;
+      handle.dispatchEvent(new MouseEvent("pointerenter"));
+      expect(highlight.style.height).toBe("25px");
+
+      host.dispatchEvent(pointerEvent("pointermove", 95));
+      expect(handle.classList.contains("visible")).toBe(false);
+
+      host.dispatchEvent(pointerEvent("pointermove", 30));
+      Object.defineProperties(handle, {
+        setPointerCapture: { value: vi.fn() },
+        hasPointerCapture: { value: vi.fn(() => false) },
+      });
+      handle.dispatchEvent(pointerEvent("pointerdown", 30));
+      window.dispatchEvent(pointerEvent("pointermove", 95));
+      const indicator = host.querySelector<HTMLElement>(".block-drop-indicator")!;
+      expect(indicator.classList.contains("visible")).toBe(true);
+      expect(indicator.style.top).toBe("80px");
+      window.dispatchEvent(pointerEvent("pointercancel", 95));
+    },
+  );
+
   it("snaps a heading dragged over section content to the section bottom", () => {
     const host = document.createElement("div");
     document.body.append(host);

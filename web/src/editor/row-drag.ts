@@ -18,6 +18,7 @@ import { t } from "../i18n";
 export type RowDropSide = "before" | "after" | "inside";
 
 type ListKind = "bullet" | "ordered" | "task";
+type DocumentEndAnchorEdge = "top" | "bottom" | "line-end";
 const DELETE_TARGET_HIT_PADDING = 6;
 
 interface RowDescriptor {
@@ -690,6 +691,13 @@ function unshiftedVerticalRect(element: HTMLElement): { top: number; bottom: num
   return { top: rect.top - shift, bottom: rect.bottom - shift };
 }
 
+function rowHeaderVerticalRect(element: HTMLElement): { top: number; bottom: number } {
+  const rect = unshiftedVerticalRect(element);
+  if (!element.classList.contains("is-terminal-empty-line")) return rect;
+  const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight) || 21;
+  return { top: rect.top, bottom: Math.min(rect.bottom, rect.top + lineHeight) };
+}
+
 function topLevelNodePosition(root: ProseMirrorNode, index: number): number {
   let position = 0;
   for (let childIndex = 0; childIndex < index; childIndex += 1) {
@@ -702,8 +710,11 @@ function draggedBlockVerticalRect(
   view: EditorView,
   row: RowDescriptor,
 ): { top: number; bottom: number } {
-  const headerRect = unshiftedVerticalRect(row.header);
+  const headerRect = rowHeaderVerticalRect(row.header);
   if (row.node.type === noteSchema.nodes.list_item) {
+    if (row.header.classList.contains("is-terminal-empty-line") && row.node.childCount === 1) {
+      return headerRect;
+    }
     return { top: headerRect.top, bottom: unshiftedVerticalRect(row.dom).bottom };
   }
   if (row.node.type !== noteSchema.nodes.heading) return headerRect;
@@ -758,7 +769,7 @@ class RowDragHandleView {
   private side: RowDropSide = "after";
   private visualAnchor: HTMLElement | null = null;
   private endTarget = false;
-  private endAnchorAtTop = true;
+  private endAnchorEdge: DocumentEndAnchorEdge = "top";
   private reparentLevel: number | null = null;
   private startX = 0;
   private startY = 0;
@@ -859,6 +870,10 @@ class RowDragHandleView {
   private readonly onHoverMove = (event: PointerEvent): void => {
     if (this.source) return;
     if (event.target instanceof Node && this.handle.contains(event.target)) return;
+    if (this.terminalEmptyTailAt(event.clientX, event.clientY)) {
+      this.hide();
+      return;
+    }
     const row = rowAt(this.view, event.clientX, event.clientY);
     if (!row) {
       this.hide();
@@ -878,7 +893,7 @@ class RowDragHandleView {
       if (this.target && this.reparentLevel !== null) {
         this.positionReparentTarget(this.target, this.reparentLevel);
       } else if (this.endTarget && this.visualAnchor) {
-        this.positionDocumentEndTarget(this.visualAnchor, this.endAnchorAtTop);
+        this.positionDocumentEndTarget(this.visualAnchor, this.endAnchorEdge);
       } else {
         this.positionDropTarget(this.target, this.side, this.visualAnchor);
       }
@@ -936,6 +951,12 @@ class RowDragHandleView {
     }
     autoScrollForPointer(this.host, event.clientY);
 
+    const terminalEmptyTail = this.terminalEmptyTailAt(event.clientX, event.clientY);
+    if (terminalEmptyTail) {
+      this.positionDocumentEndTarget(terminalEmptyTail, "line-end");
+      return;
+    }
+
     const insertTarget = this.rowInsertTarget(event.clientX, event.clientY);
     if (insertTarget) {
       if (insertTarget.position >= this.view.state.doc.content.size) {
@@ -964,7 +985,7 @@ class RowDragHandleView {
     if (!row) {
       const endAnchor = this.documentEndAnchor(event.clientX, event.clientY);
       if (endAnchor) {
-        this.positionDocumentEndTarget(endAnchor, false);
+        this.positionDocumentEndTarget(endAnchor, "bottom");
         return;
       }
       this.positionDropTarget(null, "after");
@@ -1001,7 +1022,7 @@ class RowDragHandleView {
         return;
       }
     }
-    const headerRect = unshiftedVerticalRect(row.header);
+    const headerRect = rowHeaderVerticalRect(row.header);
     const lineHeight = Number.parseFloat(getComputedStyle(row.header).lineHeight) || 21;
     let side: RowDropSide;
     if (
@@ -1076,8 +1097,10 @@ class RowDragHandleView {
       && pointerY >= hostRect.top
       && pointerY <= hostRect.bottom
     ) {
-      const row = rowAt(this.view, pointerX, pointerY);
-      if (row) this.show(row);
+      if (!this.terminalEmptyTailAt(pointerX, pointerY)) {
+        const row = rowAt(this.view, pointerX, pointerY);
+        if (row) this.show(row);
+      }
     }
   };
 
@@ -1120,7 +1143,7 @@ class RowDragHandleView {
       this.target = null;
       this.visualAnchor = null;
       this.endTarget = false;
-      this.endAnchorAtTop = true;
+      this.endAnchorEdge = "top";
       this.reparentLevel = null;
       this.indicator.classList.remove("visible");
       this.insideIndicator.classList.remove("visible");
@@ -1154,7 +1177,7 @@ class RowDragHandleView {
 
   private positionHandle(row: RowDescriptor): void {
     const hostRect = this.host.getBoundingClientRect();
-    const headerRect = unshiftedVerticalRect(row.header);
+    const headerRect = rowHeaderVerticalRect(row.header);
     const lineHeight = Number.parseFloat(getComputedStyle(row.header).lineHeight) || 21;
     this.handle.style.left = `${hostRect.left + 3}px`;
     this.handle.style.top = `${headerRect.top + Math.max(0, (lineHeight - 22) / 2)}px`;
@@ -1212,7 +1235,7 @@ class RowDragHandleView {
     this.side = side;
     this.visualAnchor = effectiveVisualAnchor;
     this.endTarget = false;
-    this.endAnchorAtTop = true;
+    this.endAnchorEdge = "top";
     this.reparentLevel = null;
     this.indicator.classList.remove("visible");
     this.insideIndicator.classList.remove("visible");
@@ -1235,7 +1258,7 @@ class RowDragHandleView {
     const hostRect = this.host.getBoundingClientRect();
     const headerBounds = row.header.getBoundingClientRect();
     const rowBounds = row.dom.getBoundingClientRect();
-    const headerRect = unshiftedVerticalRect(row.header);
+    const headerRect = rowHeaderVerticalRect(row.header);
     if (side === "inside") {
       const contentLeft = row.node.type === noteSchema.nodes.list_item
         ? this.listFeedbackLeft(row)
@@ -1254,7 +1277,9 @@ class RowDragHandleView {
       this.insideIndicator.classList.add("visible");
       return;
     }
-    const visualRect = unshiftedVerticalRect(effectiveVisualAnchor ?? row.header);
+    const visualRect = effectiveVisualAnchor === row.header
+      ? rowHeaderVerticalRect(row.header)
+      : unshiftedVerticalRect(effectiveVisualAnchor ?? row.header);
     const top = side === "before"
       ? visualRect.top
       : visualRect.bottom;
@@ -1373,12 +1398,15 @@ class RowDragHandleView {
     return unshiftedVerticalRect(row.header).bottom;
   }
 
-  private positionDocumentEndTarget(anchor: HTMLElement, atTop = true): void {
+  private positionDocumentEndTarget(
+    anchor: HTMLElement,
+    edge: DocumentEndAnchorEdge = "top",
+  ): void {
     this.target = null;
     this.side = "after";
     this.visualAnchor = anchor;
     this.endTarget = true;
-    this.endAnchorAtTop = atTop;
+    this.endAnchorEdge = edge;
     this.reparentLevel = null;
     this.indicator.classList.remove("visible");
     this.insideIndicator.classList.remove("visible");
@@ -1388,13 +1416,29 @@ class RowDragHandleView {
       this.source.position,
     )) return;
     const hostRect = this.host.getBoundingClientRect();
-    const anchorRect = anchor.getBoundingClientRect();
-    const top = atTop ? anchorRect.top : anchorRect.bottom;
+    const anchorRect = edge === "line-end"
+      ? rowHeaderVerticalRect(anchor)
+      : anchor.getBoundingClientRect();
+    const top = edge === "top" ? anchorRect.top : anchorRect.bottom;
     const left = this.dropIndicatorLeft(null);
     this.indicator.style.left = `${left}px`;
     this.indicator.style.top = `${top - 1}px`;
     this.indicator.style.width = `${Math.max(24, hostRect.right - left - 12)}px`;
     this.indicator.classList.add("visible");
+  }
+
+  private terminalEmptyTailAt(clientX: number, clientY: number): HTMLElement | null {
+    const hostRect = this.host.getBoundingClientRect();
+    if (clientX < hostRect.left || clientX > hostRect.right) return null;
+    const terminalEmptyLine = this.view.dom.querySelector<HTMLElement>(
+      ".is-terminal-empty-line",
+    );
+    if (!terminalEmptyLine) return null;
+    const fullRect = unshiftedVerticalRect(terminalEmptyLine);
+    const lineRect = rowHeaderVerticalRect(terminalEmptyLine);
+    return clientY >= lineRect.bottom && clientY <= fullRect.bottom
+      ? terminalEmptyLine
+      : null;
   }
 
   private documentEndAnchor(clientX: number, clientY: number): HTMLElement | null {
