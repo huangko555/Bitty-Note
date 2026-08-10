@@ -218,6 +218,8 @@ describe("row drag handle", () => {
     });
     const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
     host.scrollTop = 12;
+    const scrollBy = vi.fn();
+    Object.defineProperty(host, "scrollBy", { value: scrollBy });
     const wheel = new WheelEvent("wheel", {
       bubbles: true,
       cancelable: true,
@@ -226,7 +228,8 @@ describe("row drag handle", () => {
 
     handle.dispatchEvent(wheel);
 
-    expect(host.scrollTop).toBe(48);
+    expect(scrollBy).toHaveBeenCalledWith({ top: 36, behavior: "smooth" });
+    expect(host.scrollTop).toBe(12);
     expect(wheel.defaultPrevented).toBe(true);
   });
 

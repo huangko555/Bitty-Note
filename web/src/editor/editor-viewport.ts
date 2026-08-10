@@ -39,7 +39,7 @@ export function scrollForWheel(
     : deltaMode === WheelEvent.DOM_DELTA_PAGE
       ? host.getBoundingClientRect().height
       : 1;
-  host.scrollTop += deltaY * multiplier;
+  host.scrollBy({ top: deltaY * multiplier, behavior: "smooth" });
 }
 
 export function preserveViewportDuring<T>(

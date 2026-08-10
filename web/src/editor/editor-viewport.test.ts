@@ -57,11 +57,13 @@ describe("editor viewport", () => {
   it("normalizes line and page wheel deltas", () => {
     const host = document.createElement("div");
     vi.spyOn(host, "getBoundingClientRect").mockReturnValue(viewport(0, 200));
-    host.scrollTop = 10;
+    const scrollBy = vi.fn();
+    Object.defineProperty(host, "scrollBy", { value: scrollBy });
 
     scrollForWheel(host, 2, WheelEvent.DOM_DELTA_LINE);
-    expect(host.scrollTop).toBe(42);
     scrollForWheel(host, 1, WheelEvent.DOM_DELTA_PAGE);
-    expect(host.scrollTop).toBe(242);
+
+    expect(scrollBy).toHaveBeenNthCalledWith(1, { top: 32, behavior: "smooth" });
+    expect(scrollBy).toHaveBeenNthCalledWith(2, { top: 200, behavior: "smooth" });
   });
 });
