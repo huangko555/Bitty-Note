@@ -154,7 +154,7 @@ describe("row drag handle", () => {
     handle.dispatchEvent(new MouseEvent("pointerenter"));
 
     expect(highlight.classList.contains("visible")).toBe(true);
-    expect(highlight.style.left).toBe("55.1px");
+    expect(highlight.style.left).toBe("13px");
     expect(highlight.style.top).toBe("18px");
     expect(highlight.style.height).toBe("74px");
   });
@@ -353,15 +353,94 @@ describe("row drag handle", () => {
 
     expect(indicator.classList.contains("visible")).toBe(false);
     expect(insideIndicator.classList.contains("visible")).toBe(true);
-    expect(insideIndicator.style.left).toBe("55.1px");
+    expect(insideIndicator.style.left).toBe("49.6px");
     expect(insideIndicator.style.top).toBe("17px");
     expect(insideIndicator.style.height).toBe("76px");
     window.dispatchEvent(pointerEvent("pointercancel", 31));
   });
 
+  it("uses one guide-line inset for a shared heading and list boundary", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const paragraph = (text: string) => noteSchema.nodes.paragraph.create(
+      null,
+      noteSchema.text(text),
+    );
+    const item = (text: string, checked: boolean | null) =>
+      noteSchema.nodes.list_item.create({ checked }, paragraph(text));
+    const doc = noteSchema.nodes.doc.create(null, [
+      noteSchema.nodes.heading.create({ level: 1 }, noteSchema.text("标题")),
+      noteSchema.nodes.bullet_list.create(null, item("圆点", null)),
+      noteSchema.nodes.ordered_list.create({ order: 1 }, item("序号", null)),
+      noteSchema.nodes.bullet_list.create(null, item("勾选目标", false)),
+      noteSchema.nodes.bullet_list.create(null, item("勾选源", false)),
+    ]);
+    view = new EditorView(host, {
+      state: EditorState.create({ doc, plugins: [rowDragPlugin()] }),
+    });
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 240));
+    vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 240));
+    const heading = view.dom.querySelector("h1")!;
+    vi.spyOn(heading, "getBoundingClientRect").mockReturnValue(rect(10, 20, 300, 22));
+    const lists = view.dom.querySelectorAll("ul, ol");
+    const listItems = view.dom.querySelectorAll("li");
+    const paragraphs = view.dom.querySelectorAll("p");
+    [60, 100, 140, 180].forEach((top, index) => {
+      vi.spyOn(lists[index]!, "getBoundingClientRect")
+        .mockReturnValue(rect(10, top, 300, 22));
+      vi.spyOn(listItems[index]!, "getBoundingClientRect")
+        .mockReturnValue(rect(40.4, top, 269.6, 22));
+      vi.spyOn(paragraphs[index]!, "getBoundingClientRect")
+        .mockReturnValue(rect(40.4, top, 269.6, 22));
+    });
+    const positions = new Map<string, number>();
+    doc.descendants((node, position) => {
+      if (node.type === noteSchema.nodes.heading || node.type === noteSchema.nodes.list_item) {
+        positions.set(node.textContent, position);
+      }
+      return true;
+    });
+    vi.spyOn(view, "posAtCoords").mockImplementation(({ top }) => {
+      const text = top < 50 ? "标题"
+        : top < 90 ? "圆点"
+          : top < 130 ? "序号"
+            : top < 170 ? "勾选目标"
+              : "勾选源";
+      const position = positions.get(text)!;
+      return { pos: position + 1, inside: position };
+    });
+    const pointerEvent = (type: string, y: number) => {
+      const event = new MouseEvent(type, {
+        bubbles: true,
+        button: 0,
+        clientX: 100,
+        clientY: y,
+      });
+      Object.defineProperty(event, "pointerId", { value: 31 });
+      return event;
+    };
+    host.dispatchEvent(pointerEvent("pointermove", 190));
+    const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
+    const indicator = host.querySelector<HTMLElement>(".block-drop-indicator")!;
+    Object.defineProperties(handle, {
+      setPointerCapture: { value: vi.fn() },
+      hasPointerCapture: { value: vi.fn(() => false) },
+    });
+    handle.dispatchEvent(pointerEvent("pointerdown", 190));
+
+    const leftEdges = [39, 61, 101, 141].map((y) => {
+      window.dispatchEvent(pointerEvent("pointermove", y));
+      expect(indicator.classList.contains("visible")).toBe(true);
+      return indicator.style.left;
+    });
+
+    expect(leftEdges).toEqual(["10px", "10px", "10px", "10px"]);
+    window.dispatchEvent(pointerEvent("pointercancel", 141));
+  });
+
   it.each([
-    { clientX: 80, expectedLeft: "49.1px", level: "B" },
-    { clientX: 50, expectedLeft: "19.1px", level: "A" },
+    { clientX: 80, expectedLeft: 39.6, level: "B" },
+    { clientX: 50, expectedLeft: 9.6, level: "A" },
   ])("reparents the last item to the $level level using the Atlassian hitbox", ({
     clientX,
     expectedLeft,
@@ -430,7 +509,7 @@ describe("row drag handle", () => {
     window.dispatchEvent(pointerEvent("pointermove", clientX, 82));
 
     expect(indicator.classList.contains("visible")).toBe(true);
-    expect(indicator.style.left).toBe(expectedLeft);
+    expect(Number.parseFloat(indicator.style.left)).toBeCloseTo(expectedLeft, 5);
     window.dispatchEvent(pointerEvent("pointerup", clientX, 82));
 
     const rootList = view.state.doc.firstChild!;
