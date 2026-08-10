@@ -234,7 +234,7 @@ describe("row drag handle", () => {
   });
 
   it.each(["paragraph", "list"] as const)(
-    "keeps a terminal empty %s row to one line and treats its tail as the end zone",
+    "keeps a terminal empty %s row to one line and treats its tail as ordinary after",
     (kind) => {
       const host = document.createElement("div");
       document.body.append(host);
@@ -315,8 +315,20 @@ describe("row drag handle", () => {
       expect(indicator.style.top).toBe("80px");
       window.dispatchEvent(pointerEvent("pointerup", 185));
       expect(view.state.doc.child(0).textContent).toBe("保留内容");
-      expect(view.state.doc.child(1).textContent).toBe("移动内容");
-      expect(view.state.doc.lastChild?.textContent).toBe("");
+      if (kind === "paragraph") {
+        expect(view.state.doc.child(1).content.size).toBe(0);
+        expect(view.state.doc.child(2).textContent).toBe("移动内容");
+      } else {
+        const list = view.state.doc.child(1);
+        expect(list.childCount).toBe(2);
+        expect(list.child(0).firstChild?.content.size).toBe(0);
+        expect(list.child(1).textContent).toBe("移动内容");
+      }
+      let emptyTextblocks = 0;
+      view.state.doc.descendants((node) => {
+        if (node.isTextblock && node.content.size === 0) emptyTextblocks += 1;
+      });
+      expect(emptyTextblocks).toBe(1);
     },
   );
 

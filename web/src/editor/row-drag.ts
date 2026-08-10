@@ -19,7 +19,7 @@ import { t } from "../i18n";
 export type RowDropSide = "before" | "after" | "inside";
 
 type ListKind = "bullet" | "ordered" | "task";
-type DocumentEndAnchorEdge = "top" | "bottom" | "line-end";
+type DocumentEndAnchorEdge = "top" | "bottom";
 const DELETE_TARGET_HIT_PADDING = 6;
 
 interface RowDescriptor {
@@ -621,34 +621,10 @@ export function moveRowToDocumentEnd(
   dispatch: ((transaction: Transaction) => void) | undefined,
   sourcePosition: number,
 ): boolean {
-  return moveRowToTopLevelBoundary(state, dispatch, sourcePosition, null);
-}
-
-function moveRowBeforeTrailingRow(
-  state: EditorState,
-  dispatch: ((transaction: Transaction) => void) | undefined,
-  sourcePosition: number,
-  trailingPosition: number,
-): boolean {
-  return moveRowToTopLevelBoundary(state, dispatch, sourcePosition, trailingPosition);
-}
-
-function moveRowToTopLevelBoundary(
-  state: EditorState,
-  dispatch: ((transaction: Transaction) => void) | undefined,
-  sourcePosition: number,
-  trailingPosition: number | null,
-): boolean {
   const source = state.doc.nodeAt(sourcePosition);
   if (!source) return false;
   const sourcePath = findNodePath(state.doc, source);
   if (!sourcePath || !isDraggableRowAtPath(state.doc, sourcePath)) return false;
-  const trailing = trailingPosition === null ? null : state.doc.nodeAt(trailingPosition);
-  const trailingPath = trailing ? findNodePath(state.doc, trailing) : null;
-  if (
-    trailingPosition !== null
-    && (!trailing || !trailingPath || pathIsWithinDraggedBlock(state.doc, sourcePath, trailingPath))
-  ) return false;
   const selectionAnchor = {
     parent: state.selection.$anchor.parent,
     offset: state.selection.$anchor.parentOffset,
@@ -677,10 +653,7 @@ function moveRowToTopLevelBoundary(
     nextDoc = removeRowAtPath(state.doc, sourcePath);
     appended = [rootNodeForSource(source, sourceKind).node];
   }
-  const nextTrailingPath = trailing ? findNodePath(nextDoc, trailing) : null;
-  if (trailing && !nextTrailingPath) return false;
-  const insertionIndex = nextTrailingPath?.[0] ?? nextDoc.childCount;
-  nextDoc = insertNodesAtPath(nextDoc, [], insertionIndex, appended);
+  nextDoc = insertNodesAtPath(nextDoc, [], nextDoc.childCount, appended);
   return dispatchMovedDocument(
     state,
     dispatch,
@@ -803,7 +776,6 @@ class RowDragHandleView {
   private visualAnchor: HTMLElement | null = null;
   private endTarget = false;
   private endAnchorEdge: DocumentEndAnchorEdge = "top";
-  private endBeforePosition: number | null = null;
   private reparentLevel: number | null = null;
   private startX = 0;
   private startY = 0;
@@ -927,11 +899,7 @@ class RowDragHandleView {
       if (this.target && this.reparentLevel !== null) {
         this.positionReparentTarget(this.target, this.reparentLevel);
       } else if (this.endTarget && this.visualAnchor) {
-        this.positionDocumentEndTarget(
-          this.visualAnchor,
-          this.endAnchorEdge,
-          this.endBeforePosition,
-        );
+        this.positionDocumentEndTarget(this.visualAnchor, this.endAnchorEdge);
       } else {
         this.positionDropTarget(this.target, this.side, this.visualAnchor);
       }
@@ -991,11 +959,8 @@ class RowDragHandleView {
 
     const terminalEmptyTail = this.terminalEmptyTailAt(event.clientX, event.clientY);
     if (terminalEmptyTail) {
-      this.positionDocumentEndTarget(
-        terminalEmptyTail.element,
-        "line-end",
-        terminalEmptyTail.rowPosition,
-      );
+      const terminalRow = rowAtPosition(this.view, terminalEmptyTail.rowPosition);
+      this.positionDropTarget(terminalRow, "after", terminalEmptyTail.element);
       return;
     }
 
@@ -1095,7 +1060,6 @@ class RowDragHandleView {
     const targetNode = this.target?.node ?? null;
     const side = this.side;
     const movesToEnd = this.endTarget;
-    const endBeforePosition = this.endBeforePosition;
     const pointerX = event.clientX;
     const pointerY = event.clientY;
     this.updateDeleteTarget(pointerX, pointerY);
@@ -1116,14 +1080,7 @@ class RowDragHandleView {
       });
     } else if (shouldMove) {
       const moved = movesToEnd
-        ? endBeforePosition === null
-          ? moveRowToDocumentEnd(this.view.state, this.view.dispatch, sourcePosition)
-          : moveRowBeforeTrailingRow(
-            this.view.state,
-            this.view.dispatch,
-            sourcePosition,
-            endBeforePosition,
-          )
+        ? moveRowToDocumentEnd(this.view.state, this.view.dispatch, sourcePosition)
         : moveRow(
           this.view.state,
           this.view.dispatch,
@@ -1194,7 +1151,6 @@ class RowDragHandleView {
       this.visualAnchor = null;
       this.endTarget = false;
       this.endAnchorEdge = "top";
-      this.endBeforePosition = null;
       this.reparentLevel = null;
       this.indicator.classList.remove("visible");
       this.insideIndicator.classList.remove("visible");
@@ -1287,7 +1243,6 @@ class RowDragHandleView {
     this.visualAnchor = effectiveVisualAnchor;
     this.endTarget = false;
     this.endAnchorEdge = "top";
-    this.endBeforePosition = null;
     this.reparentLevel = null;
     this.indicator.classList.remove("visible");
     this.insideIndicator.classList.remove("visible");
@@ -1453,31 +1408,22 @@ class RowDragHandleView {
   private positionDocumentEndTarget(
     anchor: HTMLElement,
     edge: DocumentEndAnchorEdge = "top",
-    beforePosition: number | null = null,
   ): void {
     this.target = null;
     this.side = "after";
     this.visualAnchor = anchor;
     this.endTarget = true;
     this.endAnchorEdge = edge;
-    this.endBeforePosition = beforePosition;
     this.reparentLevel = null;
     this.indicator.classList.remove("visible");
     this.insideIndicator.classList.remove("visible");
-    if (!this.source) return;
-    const canMove = beforePosition === null
-      ? moveRowToDocumentEnd(this.view.state, undefined, this.source.position)
-      : moveRowBeforeTrailingRow(
-        this.view.state,
-        undefined,
-        this.source.position,
-        beforePosition,
-      );
-    if (!canMove) return;
+    if (!this.source || !moveRowToDocumentEnd(
+      this.view.state,
+      undefined,
+      this.source.position,
+    )) return;
     const hostRect = this.host.getBoundingClientRect();
-    const anchorRect = edge === "line-end"
-      ? rowHeaderVerticalRect(anchor)
-      : anchor.getBoundingClientRect();
+    const anchorRect = anchor.getBoundingClientRect();
     const top = edge === "top" ? anchorRect.top : anchorRect.bottom;
     const left = this.dropIndicatorLeft(null);
     this.indicator.style.left = `${left}px`;
