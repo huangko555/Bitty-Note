@@ -855,7 +855,7 @@ class RowDragHandleView {
         this.foldHovered = null;
         this.highlight.classList.remove("visible");
       } else {
-        this.positionHighlight(this.foldHovered);
+        this.positionFoldHighlight(this.foldHovered);
         return;
       }
     }
@@ -922,7 +922,7 @@ class RowDragHandleView {
         this.positionDropTarget(this.target, this.side, this.visualAnchor);
       }
     } else if (this.foldHovered) {
-      this.positionHighlight(this.foldHovered);
+      this.positionFoldHighlight(this.foldHovered);
     } else if (this.hovered) {
       this.positionHandle(this.hovered);
       if (this.highlight.classList.contains("visible")) this.positionHighlight(this.hovered);
@@ -939,8 +939,13 @@ class RowDragHandleView {
     }
     const row = rowAtPosition(this.view, position);
     if (!row) return;
+    if (row.node.attrs.collapsed) {
+      this.foldHovered = null;
+      this.highlight.classList.remove("visible");
+      return;
+    }
     this.foldHovered = row;
-    this.positionHighlight(row);
+    this.positionFoldHighlight(row);
     this.highlight.classList.add("visible");
   };
 
@@ -1280,6 +1285,20 @@ class RowDragHandleView {
     this.highlight.style.left = `${left}px`;
     this.highlight.style.top = `${top}px`;
     this.highlight.style.width = `${Math.max(24, hostRect.right - left - 12)}px`;
+    this.highlight.style.height = `${Math.max(0, bottom - top)}px`;
+  }
+
+  private positionFoldHighlight(row: RowDescriptor): void {
+    const hostRect = this.host.getBoundingClientRect();
+    const headerRect = rowHeaderVerticalRect(row.header);
+    const blockRect = draggedBlockVerticalRect(this.view, row);
+    const left = hostRect.left + 3;
+    const top = Math.max(hostRect.top, headerRect.bottom - 2);
+    const right = Math.min(hostRect.right - 12, row.header.getBoundingClientRect().right);
+    const bottom = Math.min(hostRect.bottom, blockRect.bottom + 2);
+    this.highlight.style.left = `${left}px`;
+    this.highlight.style.top = `${top}px`;
+    this.highlight.style.width = `${Math.max(24, right - left)}px`;
     this.highlight.style.height = `${Math.max(0, bottom - top)}px`;
   }
 

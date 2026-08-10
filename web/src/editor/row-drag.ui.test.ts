@@ -149,8 +149,9 @@ describe("row drag handle", () => {
     button.dispatchEvent(new MouseEvent("pointerenter"));
 
     expect(highlight.classList.contains("visible")).toBe(true);
-    expect(highlight.style.top).toBe("18px");
-    expect(highlight.style.height).toBe("61px");
+    expect(highlight.style.top).toBe("43px");
+    expect(highlight.style.width).toBe("267px");
+    expect(highlight.style.height).toBe("36px");
 
     button.dispatchEvent(new MouseEvent("pointerleave"));
     expect(highlight.classList.contains("visible")).toBe(false);
@@ -160,9 +161,7 @@ describe("row drag handle", () => {
       .mockReturnValue(rect(80, 20, 200, 25));
     const collapsedButton = host.querySelector<HTMLButtonElement>(".fold-toggle")!;
     collapsedButton.dispatchEvent(new MouseEvent("pointerenter"));
-    expect(highlight.classList.contains("visible")).toBe(true);
-    expect(highlight.style.top).toBe("18px");
-    expect(highlight.style.height).toBe("29px");
+    expect(highlight.classList.contains("visible")).toBe(false);
 
     collapsedButton.dispatchEvent(new MouseEvent("pointerleave"));
     vi.spyOn(view, "posAtCoords").mockReturnValue({ pos: 1, inside: 0 });
