@@ -51,7 +51,7 @@
   --accent-deep: #8e6710;
   --editor-blue: #456fc4;
   --editor-structure-color: var(--ink);
-  --block-hover-surface: color-mix(in srgb, #706b57 8%, var(--paper));
+  --block-hover-surface: rgb(112 107 87 / 8%);
   --danger: #bc4b42;
   --focus-ring: color-mix(in srgb, var(--accent) 34%, transparent);
   --shadow: 0 12px 36px rgb(32 30 24 / 14%);
@@ -266,7 +266,7 @@ h1 { margin: 0; font-size: 23px; font-weight: 500; letter-spacing: -.025em; }
 h1.has-fold-toggle, .has-fold-toggle > p:first-child, .has-fold-toggle > .task-content > p:first-child { box-sizing: border-box; padding-right: 28px; }
 .has-fold-toggle > p:first-child, .has-fold-toggle > .task-content > p:first-child { position: relative; }
 .ProseMirror .fold-toggle { position: absolute; z-index: 3; top: 50%; right: 0; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; color: var(--muted); background: transparent; cursor: pointer; transform: translateY(-50%); transition: none; animation: none; }
-.ProseMirror .fold-toggle::before { content: ""; position: absolute; inset: 2px; border-radius: 7px; background: transparent; pointer-events: none; transform: translateY(-2px); }
+.ProseMirror .fold-toggle::before { content: ""; position: absolute; z-index: -1; inset: 2px; border-radius: 7px; background: transparent; pointer-events: none; transform: translateY(-2px); }
 .ProseMirror .fold-toggle:hover::before { background: var(--block-hover-surface); }
 .fold-toggle:active:not(:disabled) { transform: translateY(-50%); }
 .fold-toggle .lucide-icon { width: 15px; height: 15px; transform: none; transition: none; animation: none; }
