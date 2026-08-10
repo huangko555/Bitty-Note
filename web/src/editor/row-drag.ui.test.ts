@@ -84,6 +84,7 @@ describe("row drag handle", () => {
     expect(preview.classList.contains("visible")).toBe(true);
     expect(preview.firstElementChild?.classList.contains("block-drag-preview-handle")).toBe(true);
     expect(preview.querySelector(".block-drag-preview-text")?.textContent).toBe("缩进内容");
+    expect(preview.querySelector(".block-drag-preview-meta")?.textContent).toBe("");
     expect(preview.style.left).toBe("96px");
     expect(preview.style.top).toBe("32px");
     window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, button: 0 }));
@@ -213,7 +214,10 @@ describe("row drag handle", () => {
     document.body.append(host);
     const doc = noteSchema.nodes.doc.create(null, [
       noteSchema.nodes.heading.create({ level: 1 }, noteSchema.text("章节")),
-      noteSchema.nodes.paragraph.create(null, noteSchema.text("正文")),
+      ...[1, 2, 3, 4].map((index) => noteSchema.nodes.paragraph.create(
+        null,
+        noteSchema.text(`正文${index}`),
+      )),
     ]);
     view = new EditorView(host, {
       state: EditorState.create({ doc, plugins: [foldingPlugin(), rowDragPlugin()] }),
@@ -225,7 +229,7 @@ describe("row drag handle", () => {
     const heading = view.dom.querySelector("h1")!;
     vi.spyOn(heading, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 25));
     vi.spyOn(view, "posAtCoords").mockReturnValue({ pos: 1, inside: 0 });
-    expect(host.querySelector(".fold-toggle-count")?.textContent).toBe("1");
+    expect(host.querySelector(".fold-toggle-count")?.textContent).toBe("4");
     host.dispatchEvent(new MouseEvent("pointermove", {
       bubbles: true,
       clientX: 100,
@@ -245,6 +249,7 @@ describe("row drag handle", () => {
     }));
 
     expect(host.querySelector(".block-drag-preview-text")?.textContent).toBe("章节");
+    expect(host.querySelector(".block-drag-preview-meta")?.textContent).toBe("+4 rows");
   });
 
   it("highlights a list item and its indented children as one block", () => {

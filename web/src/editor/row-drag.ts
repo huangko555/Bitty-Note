@@ -1242,16 +1242,17 @@ class RowDragHandleView {
   private showPreview(row: RowDescriptor, clientX: number, clientY: number): void {
     const path = findNodePath(this.view.state.doc, row.node);
     const count = path ? draggedRowCount(this.view.state.doc, path) : 1;
+    const additionalCount = Math.max(0, count - 1);
     const headerNode = row.node.type === noteSchema.nodes.list_item
       ? row.node.firstChild
       : row.node;
     const text = headerNode?.textContent.trim() || t("dragPreviewEmpty");
     this.previewText.textContent = text;
     this.previewText.style.width = "";
-    if (row.node.type === noteSchema.nodes.heading) {
-      this.previewMeta.textContent = t("dragPreviewSection", { count });
-    } else if (count > 1) {
-      this.previewMeta.textContent = t("dragPreviewItems", { count });
+    if (row.node.type === noteSchema.nodes.heading && additionalCount > 0) {
+      this.previewMeta.textContent = t("dragPreviewSection", { count: additionalCount });
+    } else if (additionalCount > 0) {
+      this.previewMeta.textContent = t("dragPreviewItems", { count: additionalCount });
     } else {
       this.previewMeta.textContent = "";
     }
