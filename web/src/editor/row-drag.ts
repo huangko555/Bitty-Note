@@ -1217,7 +1217,7 @@ class RowDragHandleView {
   }
 
   private positionPreview(clientX: number, clientY: number): void {
-    this.preview.style.left = `${clientX - 18}px`;
+    this.preview.style.left = `${clientX - 4}px`;
     this.preview.style.top = `${clientY - 18}px`;
   }
 

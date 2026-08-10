@@ -83,7 +83,7 @@ describe("row drag handle", () => {
     expect(preview.classList.contains("visible")).toBe(true);
     expect(preview.firstElementChild?.classList.contains("block-drag-preview-handle")).toBe(true);
     expect(preview.querySelector(".block-drag-preview-text")?.textContent).toBe("缩进内容");
-    expect(preview.style.left).toBe("82px");
+    expect(preview.style.left).toBe("96px");
     expect(preview.style.top).toBe("32px");
     window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, button: 0 }));
     expect(highlight.classList.contains("visible")).toBe(false);
