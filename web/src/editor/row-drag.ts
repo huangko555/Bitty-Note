@@ -12,6 +12,7 @@ import {
   preserveViewportDuring,
   scrollForWheel,
 } from "./editor-viewport";
+import { FOLD_HOVER_EVENT, type FoldHoverDetail } from "./folding";
 import { noteSchema } from "./schema";
 import { terminalBlankTextblock } from "./row-insert";
 import { t } from "../i18n";
@@ -770,6 +771,7 @@ class RowDragHandleView {
   private readonly previewMeta: HTMLSpanElement;
   private readonly deleteTarget: HTMLDivElement;
   private hovered: RowDescriptor | null = null;
+  private foldHovered: RowDescriptor | null = null;
   private source: RowDescriptor | null = null;
   private target: RowDescriptor | null = null;
   private side: RowDropSide = "after";
@@ -837,6 +839,7 @@ class RowDragHandleView {
     this.host.addEventListener("pointermove", this.onHoverMove);
     this.host.addEventListener("pointerleave", this.onHoverLeave);
     this.host.addEventListener("scroll", this.onScroll, { passive: true });
+    this.view.dom.addEventListener(FOLD_HOVER_EVENT, this.onFoldHover);
     this.handle.addEventListener("pointerenter", this.onHandleEnter);
     this.handle.addEventListener("pointerleave", this.onHandleLeave);
     this.handle.addEventListener("pointerdown", this.onDragStart);
@@ -846,6 +849,15 @@ class RowDragHandleView {
 
   update(): void {
     if (this.source) return;
+    if (this.foldHovered) {
+      if (!this.foldHovered.header.isConnected) {
+        this.foldHovered = null;
+        this.highlight.classList.remove("visible");
+      } else {
+        this.positionHighlight(this.foldHovered);
+        return;
+      }
+    }
     if (!this.hovered?.header.isConnected) {
       this.hide();
       return;
@@ -864,6 +876,7 @@ class RowDragHandleView {
     this.host.removeEventListener("pointermove", this.onHoverMove);
     this.host.removeEventListener("pointerleave", this.onHoverLeave);
     this.host.removeEventListener("scroll", this.onScroll);
+    this.view.dom.removeEventListener(FOLD_HOVER_EVENT, this.onFoldHover);
     this.handle.removeEventListener("pointerenter", this.onHandleEnter);
     this.handle.removeEventListener("pointerleave", this.onHandleLeave);
     this.handle.removeEventListener("pointerdown", this.onDragStart);
@@ -907,10 +920,27 @@ class RowDragHandleView {
       } else {
         this.positionDropTarget(this.target, this.side, this.visualAnchor);
       }
+    } else if (this.foldHovered) {
+      this.positionHighlight(this.foldHovered);
     } else if (this.hovered) {
       this.positionHandle(this.hovered);
       if (this.highlight.classList.contains("visible")) this.positionHighlight(this.hovered);
     }
+  };
+
+  private readonly onFoldHover = (event: Event): void => {
+    if (this.source) return;
+    const { position, visible } = (event as CustomEvent<FoldHoverDetail>).detail;
+    if (!visible) {
+      this.foldHovered = null;
+      this.highlight.classList.remove("visible");
+      return;
+    }
+    const row = rowAtPosition(this.view, position);
+    if (!row) return;
+    this.foldHovered = row;
+    this.positionHighlight(row);
+    this.highlight.classList.add("visible");
   };
 
   private readonly onHandleEnter = (): void => {
@@ -1018,7 +1048,6 @@ class RowDragHandleView {
       && this.source.node.type === noteSchema.nodes.heading
       && row.node.type !== noteSchema.nodes.heading
     ) {
-      const visualAnchor = row.header;
       const ownerIndex = headingOwnerIndex(this.view.state.doc, targetPath);
       if (ownerIndex !== null) {
         row = rowAtPosition(
@@ -1029,7 +1058,7 @@ class RowDragHandleView {
           this.positionDropTarget(null, "after");
           return;
         }
-        this.positionDropTarget(row, "after", visualAnchor);
+        this.positionDropTarget(row, "after", row.header);
         return;
       }
     }
@@ -1182,7 +1211,7 @@ class RowDragHandleView {
   }
 
   private clearHovered(): void {
-    this.highlight.classList.remove("visible");
+    if (!this.foldHovered) this.highlight.classList.remove("visible");
     this.hovered = null;
   }
 
@@ -1313,7 +1342,10 @@ class RowDragHandleView {
       : unshiftedVerticalRect(effectiveVisualAnchor ?? row.header);
     const top = side === "before"
       ? visualRect.top
-      : visualRect.bottom;
+      : this.source?.node.type === noteSchema.nodes.heading
+        && row.node.type === noteSchema.nodes.heading
+        ? draggedBlockVerticalRect(this.view, row).bottom
+        : visualRect.bottom;
     const left = this.dropIndicatorLeft(row);
     this.indicator.style.left = `${left}px`;
     this.indicator.style.top = `${top - 1}px`;

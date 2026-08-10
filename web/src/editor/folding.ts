@@ -8,6 +8,13 @@ import { t } from "../i18n";
 import { preserveVisualAnchorDuring } from "./editor-viewport";
 import { noteSchema } from "./schema";
 
+export const FOLD_HOVER_EVENT = "bitty-fold-hover";
+
+export interface FoldHoverDetail {
+  position: number;
+  visible: boolean;
+}
+
 function headingSectionEnd(doc: ProseMirrorNode, headingIndex: number): number {
   let index = headingIndex + 1;
   while (index < doc.childCount && doc.child(index).type !== noteSchema.nodes.heading) {
@@ -75,10 +82,18 @@ function foldButton(
         "aria-hidden": "true",
       }));
     }
+    const setHoverVisible = (visible: boolean): void => {
+      view.dom.dispatchEvent(new CustomEvent<FoldHoverDetail>(FOLD_HOVER_EVENT, {
+        detail: { position: ownerPosition, visible },
+      }));
+    };
+    button.addEventListener("pointerenter", () => setHoverVisible(true));
+    button.addEventListener("pointerleave", () => setHoverVisible(false));
     button.addEventListener("mousedown", (event) => event.preventDefault());
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
+      setHoverVisible(false);
       const node = view.state.doc.nodeAt(ownerPosition);
       if (!node || node.type !== owner.type) return;
       const collapsing = !node.attrs.collapsed;

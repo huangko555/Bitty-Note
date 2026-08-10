@@ -2,6 +2,7 @@ import { EditorState } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { foldingPlugin } from "./folding";
 import { rowDragPlugin } from "./row-drag";
 import { rowInsertPlugin } from "./row-insert";
 import { noteSchema } from "./schema";
@@ -122,6 +123,37 @@ describe("row drag handle", () => {
     expect(highlight.classList.contains("visible")).toBe(true);
     expect(highlight.style.top).toBe("18px");
     expect(highlight.style.height).toBe("61px");
+  });
+
+  it("highlights the complete affected block when a fold toggle is hovered", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const doc = noteSchema.nodes.doc.create(null, [
+      noteSchema.nodes.heading.create({ level: 1 }, noteSchema.text("章节")),
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("章节正文")),
+      noteSchema.nodes.heading.create({ level: 1 }, noteSchema.text("下一章节")),
+    ]);
+    view = new EditorView(host, {
+      state: EditorState.create({ doc, plugins: [rowDragPlugin(), foldingPlugin()] }),
+    });
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    const headings = view.dom.querySelectorAll("h1");
+    const paragraph = view.dom.querySelector("p")!;
+    vi.spyOn(headings[0]!, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 25));
+    vi.spyOn(paragraph, "getBoundingClientRect").mockReturnValue(rect(80, 55, 200, 22));
+    vi.spyOn(headings[1]!, "getBoundingClientRect").mockReturnValue(rect(80, 90, 200, 25));
+
+    const button = host.querySelector<HTMLButtonElement>(".fold-toggle")!;
+    const highlight = host.querySelector<HTMLElement>(".block-row-handle-highlight")!;
+    button.dispatchEvent(new MouseEvent("pointerenter"));
+
+    expect(highlight.classList.contains("visible")).toBe(true);
+    expect(highlight.style.top).toBe("18px");
+    expect(highlight.style.height).toBe("61px");
+
+    button.dispatchEvent(new MouseEvent("pointerleave"));
+    expect(highlight.classList.contains("visible")).toBe(false);
   });
 
   it("highlights a list item and its indented children as one block", () => {
@@ -355,7 +387,8 @@ describe("row drag handle", () => {
       heading("源标题"),
       paragraph("源正文"),
       heading("目标标题"),
-      paragraph("目标正文"),
+      paragraph("目标正文一"),
+      paragraph("目标正文二"),
       heading("末尾标题"),
     ]);
     view = new EditorView(host, {
@@ -369,10 +402,11 @@ describe("row drag handle", () => {
     vi.spyOn(paragraphs[0]!, "getBoundingClientRect").mockReturnValue(rect(80, 50, 200, 22));
     vi.spyOn(headings[1]!, "getBoundingClientRect").mockReturnValue(rect(80, 90, 200, 22));
     vi.spyOn(paragraphs[1]!, "getBoundingClientRect").mockReturnValue(rect(80, 120, 200, 22));
-    vi.spyOn(headings[2]!, "getBoundingClientRect").mockReturnValue(rect(80, 160, 200, 22));
+    vi.spyOn(paragraphs[2]!, "getBoundingClientRect").mockReturnValue(rect(80, 150, 200, 22));
+    vi.spyOn(headings[2]!, "getBoundingClientRect").mockReturnValue(rect(80, 190, 200, 22));
     let targetPosition = -1;
     doc.descendants((node, position) => {
-      if (node.type === noteSchema.nodes.paragraph && node.textContent === "目标正文") {
+      if (node.type === noteSchema.nodes.paragraph && node.textContent === "目标正文一") {
         targetPosition = position;
         return false;
       }
@@ -408,7 +442,9 @@ describe("row drag handle", () => {
     window.dispatchEvent(pointerEvent("pointermove", 130));
 
     expect(indicator.classList.contains("visible")).toBe(true);
-    expect(indicator.style.top).toBe("141px");
+    expect(indicator.style.top).toBe("171px");
+    window.dispatchEvent(pointerEvent("pointermove", 160));
+    expect(indicator.style.top).toBe("171px");
     window.dispatchEvent(pointerEvent("pointercancel", 130));
   });
 
