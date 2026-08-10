@@ -2,7 +2,7 @@ import { history, redo, undo } from "prosemirror-history";
 import { EditorState, TextSelection, type Transaction } from "prosemirror-state";
 import { describe, expect, it } from "vitest";
 
-import { deleteRow, moveRow } from "./row-drag";
+import { deleteRow, moveRow, moveRowToDocumentEnd } from "./row-drag";
 import { noteSchema } from "./schema";
 
 function paragraph(text: string) {
@@ -67,6 +67,23 @@ function moved(
   )).toBe(true);
   return next;
 }
+
+it("moves a row to the document end without changing its block type", () => {
+  const doc = noteSchema.nodes.doc.create(null, [
+    paragraph("移动"),
+    heading("标题"),
+    paragraph("正文"),
+  ]);
+  const state = EditorState.create({ doc });
+  let next = state;
+
+  expect(moveRowToDocumentEnd(state, (transaction) => {
+    next = state.apply(transaction);
+  }, rowPosition(doc, "移动"))).toBe(true);
+
+  expect(next.doc.lastChild?.type).toBe(noteSchema.nodes.paragraph);
+  expect(next.doc.lastChild?.textContent).toBe("移动");
+});
 
 describe("row dragging", () => {
   it("deletes a row through history so it can be undone and redone", () => {
@@ -289,6 +306,21 @@ describe("row dragging", () => {
     expect(Array.from({ length: childList.childCount }, (_, index) =>
       childList.child(index).firstChild?.textContent,
     )).toEqual(["子项一", "子项二", "移动项"]);
+  });
+
+  it("expands a collapsed list target when content is dropped inside", () => {
+    const nested = bulletList([item("原子项")]);
+    const parent = noteSchema.nodes.list_item.create(
+      { checked: null, collapsed: true },
+      [paragraph("父项"), nested],
+    );
+    const doc = noteSchema.nodes.doc.create(null, bulletList([parent, item("移动项")]));
+
+    const next = moved(doc, "移动项", "父项", "inside");
+    const movedParent = next.doc.firstChild?.firstChild;
+
+    expect(movedParent?.attrs.collapsed).toBe(false);
+    expect(movedParent?.lastChild?.lastChild?.firstChild?.textContent).toBe("移动项");
   });
 
   it("preserves the source list type when it creates a new child list", () => {

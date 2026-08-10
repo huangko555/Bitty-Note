@@ -27,6 +27,35 @@ describe("strict Markdown mode selection", () => {
     if (parsed.mode === "wysiwyg") expect(serializeMarkdown(parsed.doc)).toBe(source);
   });
 
+  it("round-trips folded headings and list items as invisible Bitty comments", () => {
+    const source = "# <!-- bitty-folded --> 标题\n\n正文\n\n- <!-- bitty-folded --> 父项\n  - 子项\n";
+    const parsed = parseMarkdown(source);
+
+    expect(parsed.mode).toBe("wysiwyg");
+    if (parsed.mode === "wysiwyg") {
+      expect(parsed.doc.firstChild?.attrs.collapsed).toBe(true);
+      expect(parsed.doc.lastChild?.firstChild?.attrs.collapsed).toBe(true);
+      const saved = serializeMarkdown(parsed.doc);
+      expect(saved.match(/<!-- bitty-folded -->/g)).toHaveLength(2);
+      const reopened = parseMarkdown(saved);
+      expect(reopened.mode).toBe("wysiwyg");
+      if (reopened.mode === "wysiwyg") {
+        expect(reopened.doc.firstChild?.textContent).toBe("标题");
+        expect(reopened.doc.firstChild?.attrs.collapsed).toBe(true);
+        expect(reopened.doc.lastChild?.firstChild?.attrs.collapsed).toBe(true);
+      }
+    }
+  });
+
+  it("drops a folded marker when its owner has no child content", () => {
+    const parsed = parseMarkdown("# <!-- bitty-folded --> 空标题\n");
+    expect(parsed.mode).toBe("wysiwyg");
+    if (parsed.mode === "wysiwyg") {
+      expect(parsed.doc.firstChild?.attrs.collapsed).toBe(false);
+      expect(serializeMarkdown(parsed.doc)).toBe("# 空标题\n");
+    }
+  });
+
   it.each([
     ["## 二级标题\n", "二级"],
     ["[链接](https://example.com)\n", "link"],

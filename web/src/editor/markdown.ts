@@ -12,6 +12,9 @@ import { t } from "../i18n";
 
 const EMPTY_PARAGRAPH_MARKER = "<!-- bitty-empty-line -->";
 const EMPTY_PARAGRAPH_SENTINEL = "BITTY_EMPTY_PARAGRAPH";
+export const FOLDED_MARKER = "<!-- bitty-folded -->";
+const FOLDED_SENTINEL = "BITTY_FOLDED_ROW_7F4D";
+const FOLDED_MARKER_PATTERN = /^(\s*(?:#\s+|(?:[-+*]|\d+[.)])\s+(?:\[[ xX]\]\s+)?))<!-- bitty-folded -->\s?/gm;
 
 const inspector = new MarkdownIt("commonmark", {
   html: true,
@@ -60,6 +63,7 @@ const serializer = new MarkdownSerializer(
     },
     heading(state, node) {
       state.write("# ");
+      if (node.attrs.collapsed) state.write(`${FOLDED_MARKER} `);
       state.renderInline(node);
       state.closeBlock(node);
     },
@@ -78,6 +82,7 @@ const serializer = new MarkdownSerializer(
       });
     },
     list_item(state, node) {
+      if (node.attrs.collapsed) state.write(`${FOLDED_MARKER} `);
       state.renderContent(node);
     },
     raw_block(state, node) {
@@ -117,6 +122,10 @@ export type MarkdownParseResult =
 
 function normalizeNewlines(markdown: string): string {
   return markdown.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
+}
+
+function protectFoldedMarkers(markdown: string): string {
+  return markdown.replace(FOLDED_MARKER_PATTERN, `$1${FOLDED_SENTINEL}`);
 }
 
 function withoutFinalNewlines(markdown: string): string {
@@ -197,21 +206,79 @@ function parseRenderedBlock(markdown: string): ProseMirrorNode[] {
     markdown.replaceAll(EMPTY_PARAGRAPH_MARKER, EMPTY_PARAGRAPH_SENTINEL),
   );
   const parsed = ProseMirrorDOMParser.fromSchema(noteSchema).parse(container);
-  const restoreEmptyListParagraphs = (node: ProseMirrorNode): ProseMirrorNode => {
+  const restoreMetadata = (node: ProseMirrorNode): ProseMirrorNode => {
     if (
       node.type === noteSchema.nodes.paragraph
       && node.textContent === EMPTY_PARAGRAPH_SENTINEL
     ) {
       return noteSchema.nodes.paragraph.create(node.attrs);
     }
+    if (
+      node.type === noteSchema.nodes.heading
+      && node.textContent.startsWith(FOLDED_SENTINEL)
+    ) {
+      return node.type.create(
+        { ...node.attrs, collapsed: true },
+        node.content.cut(FOLDED_SENTINEL.length),
+        node.marks,
+      );
+    }
     if (!node.childCount) return node;
     const children: ProseMirrorNode[] = [];
-    node.forEach((child) => children.push(restoreEmptyListParagraphs(child)));
+    node.forEach((child) => children.push(restoreMetadata(child)));
+    if (
+      node.type === noteSchema.nodes.list_item
+      && children[0]?.textContent.startsWith(FOLDED_SENTINEL)
+    ) {
+      const paragraph = children[0]!;
+      children[0] = paragraph.copy(paragraph.content.cut(FOLDED_SENTINEL.length));
+      return node.type.create(
+        { ...node.attrs, collapsed: true },
+        Fragment.fromArray(children),
+        node.marks,
+      );
+    }
     return node.copy(Fragment.fromArray(children));
   };
   const nodes: ProseMirrorNode[] = [];
-  parsed.forEach((node) => nodes.push(restoreEmptyListParagraphs(node)));
+  parsed.forEach((node) => nodes.push(restoreMetadata(node)));
   return nodes;
+}
+
+function removeEmptyCollapsedStates(doc: ProseMirrorNode): ProseMirrorNode {
+  const normalizeNode = (node: ProseMirrorNode): ProseMirrorNode => {
+    if (!node.childCount) return node;
+    const children: ProseMirrorNode[] = [];
+    node.forEach((child) => children.push(normalizeNode(child)));
+    const collapsed = node.type === noteSchema.nodes.list_item
+      && node.attrs.collapsed
+      && children.length <= 1
+      ? false
+      : node.attrs.collapsed;
+    return node.type.create(
+      collapsed === node.attrs.collapsed ? node.attrs : { ...node.attrs, collapsed },
+      Fragment.fromArray(children),
+      node.marks,
+    );
+  };
+  const children: ProseMirrorNode[] = [];
+  doc.forEach((child) => children.push(normalizeNode(child)));
+  for (let index = 0; index < children.length; index += 1) {
+    const node = children[index]!;
+    if (
+      node.type === noteSchema.nodes.heading
+      && node.attrs.collapsed
+      && (index === children.length - 1
+        || children[index + 1]?.type === noteSchema.nodes.heading)
+    ) {
+      children[index] = node.type.create(
+        { ...node.attrs, collapsed: false },
+        node.content,
+        node.marks,
+      );
+    }
+  }
+  return doc.copy(Fragment.fromArray(children));
 }
 
 export function serializeMarkdown(doc: ProseMirrorNode): string {
@@ -220,7 +287,7 @@ export function serializeMarkdown(doc: ProseMirrorNode): string {
 }
 
 export function parseMarkdown(source: string): MarkdownParseResult {
-  const markdown = normalizeNewlines(source);
+  const markdown = protectFoldedMarkers(normalizeNewlines(source));
   if (!markdown) {
     return {
       mode: "wysiwyg",
@@ -246,8 +313,9 @@ export function parseMarkdown(source: string): MarkdownParseResult {
       nodes.push(...parseRenderedBlock(block));
     }
   }
-  const doc = noteSchema.topNodeType.createAndFill(null, nodes)
+  const parsedDoc = noteSchema.topNodeType.createAndFill(null, nodes)
     ?? noteSchema.topNodeType.createAndFill()!;
+  const doc = removeEmptyCollapsedStates(parsedDoc);
   return { mode: "wysiwyg", doc, markdown: serializeMarkdown(doc) };
 }
 

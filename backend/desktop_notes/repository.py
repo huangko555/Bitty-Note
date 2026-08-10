@@ -15,6 +15,7 @@ from .models import NoteSummary, OpenedNote, SaveResult
 
 _INVALID_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _EMPTY_LINE_MARKER = "<!-- bitty-empty-line -->"
+_FOLDED_MARKER = "<!-- bitty-folded -->"
 _MARKDOWN_MARKERS = re.compile(
     r"^(?:#{1,6}\s+|[-+*]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)|"
     r"(\*\*|__|~~|(?<!\*)\*(?!\*)|(?<!_)_(?!_))"
@@ -60,6 +61,7 @@ def _plain_preview(text: str) -> str:
     preview_lines: list[str] = []
     for raw_line in text.splitlines():
         line = _MARKDOWN_MARKERS.sub("", raw_line.strip()).strip()
+        line = line.replace(_FOLDED_MARKER, "").strip()
         if line == _EMPTY_LINE_MARKER:
             continue
         if line:

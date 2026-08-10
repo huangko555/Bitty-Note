@@ -19,6 +19,7 @@ import { findWrapping } from "prosemirror-transform";
 import { EditorView } from "prosemirror-view";
 
 import { listNormalizationPlugin } from "./list-normalization";
+import { foldingPlugin } from "./folding";
 import { parseMarkdown, parseSupportedFragment, serializeMarkdown } from "./markdown";
 import { rowDragPlugin } from "./row-drag";
 import { rowInsertPlugin } from "./row-insert";
@@ -172,6 +173,26 @@ export function exitEmptyListItem(
     if ($from.node(depth).type === noteSchema.nodes.list_item) {
       return liftListItem(noteSchema.nodes.list_item)(state, dispatch);
     }
+  }
+  return false;
+}
+
+export function liftListItemAtStart(
+  state: EditorState,
+  dispatch?: (tr: Transaction) => void,
+): boolean {
+  const { $from, empty } = state.selection;
+  if (
+    !empty
+    || $from.parent.type !== noteSchema.nodes.paragraph
+    || $from.parentOffset !== 0
+  ) {
+    return false;
+  }
+  for (let depth = $from.depth - 1; depth > 0; depth -= 1) {
+    if ($from.node(depth).type !== noteSchema.nodes.list_item) continue;
+    if ($from.index(depth) !== 0) return false;
+    return liftListItem(noteSchema.nodes.list_item)(state, dispatch);
   }
   return false;
 }
@@ -655,6 +676,7 @@ class RichEditor implements EditorController {
         plugins: [
           inputRulePlugin(),
           listNormalizationPlugin(),
+          foldingPlugin(),
           history(),
           rowDragPlugin(),
           rowInsertPlugin(callbacks.onInsertBlankLine),
@@ -663,7 +685,11 @@ class RichEditor implements EditorController {
             "Mod-y": redo,
             "Mod-Shift-z": redo,
             Enter: splitCurrentListItem,
-            Backspace: chainCommands(exitEmptyListItem, joinEmptyParagraphAfterList),
+            Backspace: chainCommands(
+              exitEmptyListItem,
+              liftListItemAtStart,
+              joinEmptyParagraphAfterList,
+            ),
             Tab: chainCommands(
               sinkListItemAcrossTypes,
               sinkListItem(noteSchema.nodes.list_item),

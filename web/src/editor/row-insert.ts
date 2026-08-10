@@ -92,7 +92,15 @@ function lastBlankTextblock(doc: EditorState["doc"]): { from: number; to: number
 
 function decorations(doc: EditorState["doc"], onInsert?: () => void): DecorationSet {
   const positions = new Set<number>();
-  if (!lastLineIsBlank(doc)) positions.add(doc.content.size);
+  let finalHeadingCollapsed = false;
+  for (let index = doc.childCount - 1; index >= 0; index -= 1) {
+    const node = doc.child(index);
+    if (node.type === noteSchema.nodes.heading) {
+      finalHeadingCollapsed = Boolean(node.attrs.collapsed && index < doc.childCount - 1);
+      break;
+    }
+  }
+  if (!lastLineIsBlank(doc) && !finalHeadingCollapsed) positions.add(doc.content.size);
   doc.forEach((node, position) => {
     if (node.type === noteSchema.nodes.heading && position > 0) positions.add(position);
   });

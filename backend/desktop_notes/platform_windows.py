@@ -240,10 +240,18 @@ def set_autostart(enabled: bool) -> None:
         command = f'"{pythonw}" -m desktop_notes.main'
     try:
         with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER, _APP_RUN_KEY, 0, winreg.KEY_SET_VALUE
+            winreg.HKEY_CURRENT_USER,
+            _APP_RUN_KEY,
+            0,
+            winreg.KEY_QUERY_VALUE | winreg.KEY_SET_VALUE,
         ) as key:
             if enabled:
-                winreg.SetValueEx(key, _APP_RUN_NAME, 0, winreg.REG_SZ, command)
+                try:
+                    current_command, _kind = winreg.QueryValueEx(key, _APP_RUN_NAME)
+                except FileNotFoundError:
+                    current_command = None
+                if current_command != command:
+                    winreg.SetValueEx(key, _APP_RUN_NAME, 0, winreg.REG_SZ, command)
                 try:
                     winreg.DeleteValue(key, _LEGACY_APP_RUN_NAME)
                 except FileNotFoundError:

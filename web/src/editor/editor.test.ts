@@ -7,6 +7,7 @@ import {
   exitEmptyListItem,
   handleWindowEditorHistoryShortcut,
   joinEmptyParagraphAfterList,
+  liftListItemAtStart,
   sinkListItemAcrossTypes,
   type ListKind,
   toggleList,
@@ -441,6 +442,17 @@ describe("list keyboard behavior", () => {
 
   it("leaves a non-empty list item to the normal Backspace behavior", () => {
     expect(exitEmptyListItem(listState("内容"))).toBe(false);
+  });
+
+  it("removes list indentation from a non-empty item at its start", () => {
+    const state = listState("内容");
+    let next = state;
+
+    expect(liftListItemAtStart(state, (transaction) => {
+      next = state.apply(transaction);
+    })).toBe(true);
+    expect(next.doc.firstChild?.type).toBe(noteSchema.nodes.paragraph);
+    expect(next.doc.firstChild?.textContent).toBe("内容");
   });
 
   it("returns to the previous list item from the empty paragraph after a list", () => {

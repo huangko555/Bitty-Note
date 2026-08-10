@@ -167,8 +167,9 @@ main { min-height: 0; flex: 1; }
 .settings-title { display: flex; align-items: baseline; gap: 12px; }
 .settings-title > span { color: var(--muted); font-family: "Bitty UI", sans-serif; font-size: 12px; font-weight: 400; line-height: 1; }
 .settings-actions { display: flex; align-items: center; gap: 6px; }
-.button.compact-button { position: relative; display: inline-grid; place-items: center; width: 36px; height: 36px; min-height: 36px; padding: 0; border-radius: 12px; }
-.compact-button .lucide-icon { width: 16px; height: 16px; }
+.button.compact-button { position: relative; display: inline-grid; place-items: center; width: 36px; height: 36px; min-height: 36px; padding: 0; border-radius: 12px; line-height: 0; }
+.compact-button .lucide-icon { width: 16px; height: 16px; transform-box: view-box; transform-origin: center; }
+.github-button .lucide-icon { transform: translateY(.5px); }
 .update-dot { display: none; position: absolute; top: 1px; right: 1px; width: 10px; height: 10px; border: 1.5px solid var(--paper); border-radius: 50%; background: var(--danger); pointer-events: none; }
 .update-indicator { position: relative; }
 .update-indicator.has-update .update-dot { display: block; }
@@ -259,9 +260,18 @@ h1 { margin: 0; font-size: 23px; font-weight: 500; letter-spacing: -.025em; }
 .task-list-item.is-checked > .task-content > p:first-child { text-decoration-line: line-through; text-decoration-color: currentColor; text-decoration-thickness: 1px; }
 .row-insert-button { display: grid; place-items: center; width: 100%; height: 1.55em; padding: 0; border: 0; border-radius: var(--radius-compact); color: transparent; background: transparent; cursor: pointer; }
 .row-insert-button.is-terminal { margin-bottom: .775em; }
-.row-insert-button:hover, .row-insert-button:focus-visible { color: var(--muted); background: rgb(112 107 87 / 8%); }
-.row-insert-button:active { color: var(--ink); background: rgb(112 107 87 / 13%); transform: scale(.99); }
+.row-insert-button:hover, .row-insert-button:focus-visible { color: #339cff; background: rgb(112 107 87 / 8%); }
+.row-insert-button:active { color: #339cff; background: rgb(112 107 87 / 13%); transform: scale(.99); }
 .row-insert-button .lucide-icon { width: 12px; height: 12px; stroke-width: 2; }
+h1.has-fold-toggle, .has-fold-toggle > p:first-child, .has-fold-toggle > .task-content > p:first-child { box-sizing: border-box; padding-right: 28px; }
+.has-fold-toggle > p:first-child, .has-fold-toggle > .task-content > p:first-child { position: relative; }
+.fold-toggle { position: absolute; z-index: 3; top: 50%; right: 0; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; color: var(--muted); background: transparent; cursor: pointer; transform: translateY(-50%); }
+.fold-toggle:hover { color: var(--ink); background: rgb(112 107 87 / 8%); }
+.fold-toggle .lucide-icon { width: 15px; height: 15px; transition: transform .12s ease; transform-box: view-box; transform-origin: center; }
+.fold-toggle.is-expanded .lucide-icon { transform: rotate(90deg); }
+.is-folded-content { display: none !important; }
+.is-collapsed-list-item:not(.task-list-item) > :not(:first-child) { display: none; }
+.task-list-item.is-collapsed-list-item > .task-content > :not(:first-child) { display: none; }
 .block-row-handle-highlight { position: fixed; z-index: 0; display: none; border-radius: var(--radius-control); background: rgb(112 107 87 / 8%); pointer-events: none; }
 .block-row-handle-highlight.visible { display: block; }
 .block-drag-handle { position: fixed; z-index: 8; display: none; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 8px; color: var(--muted); background: transparent; cursor: grab; }

@@ -3,6 +3,7 @@ import { EditorView } from "prosemirror-view";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { rowDragPlugin } from "./row-drag";
+import { rowInsertPlugin } from "./row-insert";
 import { noteSchema } from "./schema";
 
 function rect(left: number, top: number, width: number, height: number): DOMRect {
@@ -277,7 +278,7 @@ describe("row drag handle", () => {
     window.dispatchEvent(pointerEvent("pointercancel", 130));
   });
 
-  it("places a list drop indicator below the row instead of below its children", () => {
+  it("hides a list drop indicator when the row is already at that boundary", () => {
     const host = document.createElement("div");
     document.body.append(host);
     const paragraph = (text: string) => noteSchema.nodes.paragraph.create(
@@ -341,8 +342,7 @@ describe("row drag handle", () => {
     handle.dispatchEvent(pointerEvent("pointerdown", 120));
     window.dispatchEvent(pointerEvent("pointermove", 40));
 
-    expect(indicator.classList.contains("visible")).toBe(true);
-    expect(indicator.style.top).toBe("41px");
+    expect(indicator.classList.contains("visible")).toBe(false);
     expect(insideIndicator.classList.contains("visible")).toBe(false);
     window.dispatchEvent(pointerEvent("pointercancel", 40));
 
@@ -497,6 +497,72 @@ describe("row drag handle", () => {
     expect(handle.classList.contains("is-dragging")).toBe(false);
   });
 
+  it("uses the top of a heading insert button as a drop boundary", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const heading = (text: string) => noteSchema.nodes.heading.create(
+      { level: 1 },
+      noteSchema.text(text),
+    );
+    const paragraph = (text: string) => noteSchema.nodes.paragraph.create(
+      null,
+      noteSchema.text(text),
+    );
+    const doc = noteSchema.nodes.doc.create(null, [
+      heading("甲"),
+      paragraph("甲正文"),
+      heading("乙"),
+      paragraph("移动"),
+    ]);
+    view = new EditorView(host, {
+      state: EditorState.create({ doc, plugins: [rowDragPlugin(), rowInsertPlugin()] }),
+    });
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 220));
+    vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(40, 0, 260, 220));
+    const paragraphs = view.dom.querySelectorAll("p");
+    vi.spyOn(paragraphs[1]!, "getBoundingClientRect").mockReturnValue(rect(80, 120, 200, 22));
+    let sourcePosition = -1;
+    doc.descendants((node, position) => {
+      if (node.type === noteSchema.nodes.paragraph && node.textContent === "移动") {
+        sourcePosition = position;
+        return false;
+      }
+      return sourcePosition < 0;
+    });
+    vi.spyOn(view, "posAtCoords").mockReturnValue({
+      pos: sourcePosition + 1,
+      inside: sourcePosition,
+    });
+    const insertButton = view.dom.querySelector<HTMLElement>(".row-insert-button:not(.is-terminal)")!;
+    vi.spyOn(insertButton, "getBoundingClientRect").mockReturnValue(rect(40, 70, 260, 22));
+
+    const pointerEvent = (type: string, y: number) => {
+      const event = new MouseEvent(type, {
+        bubbles: true,
+        button: 0,
+        clientX: 100,
+        clientY: y,
+      });
+      Object.defineProperty(event, "pointerId", { value: 21 });
+      return event;
+    };
+    host.dispatchEvent(pointerEvent("pointermove", 130));
+    const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
+    Object.defineProperties(handle, {
+      setPointerCapture: { value: vi.fn() },
+      hasPointerCapture: { value: vi.fn(() => false) },
+    });
+    handle.dispatchEvent(pointerEvent("pointerdown", 130));
+    window.dispatchEvent(pointerEvent("pointermove", 75));
+
+    const indicator = host.querySelector<HTMLElement>(".block-drop-indicator")!;
+    expect(indicator.classList.contains("visible")).toBe(true);
+    expect(indicator.style.top).toBe("69px");
+    window.dispatchEvent(pointerEvent("pointerup", 75));
+    expect(Array.from(view.state.doc.content.content, (node) => node.textContent))
+      .toEqual(["甲", "甲正文", "移动", "乙"]);
+  });
+
   it("keeps the handle visible under the pointer after a successful drop", () => {
     const host = document.createElement("div");
     document.body.append(host);
@@ -571,9 +637,12 @@ describe("row drag handle", () => {
     vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
     vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
     const paragraphs = Array.from(view.dom.querySelectorAll("p"));
-    paragraphs.forEach((paragraph, index) => {
+    paragraphs.forEach((paragraph) => {
       vi.spyOn(paragraph, "getBoundingClientRect")
-        .mockReturnValue(rect(80, 20 + index * 30, 200, 22));
+        .mockImplementation(() => {
+          const current = Array.from(view!.dom.querySelectorAll("p")).indexOf(paragraph);
+          return rect(80, 20 + current * 30 - host.scrollTop, 200, 22);
+        });
     });
     vi.spyOn(view, "posAtCoords").mockImplementation(({ top }) => {
       if (top < 45) return { pos: 1, inside: 0 };
@@ -608,8 +677,7 @@ describe("row drag handle", () => {
     window.dispatchEvent(pointerEvent("pointerup", 21));
 
     expect(view.state.doc.textContent).toBe("末尾开头中间");
-    expect(host.scrollTop).toBe(0);
-    host.scrollTop = 900;
+    expect(host.scrollTop).toBe(900);
     expect(restoreFrame).not.toBeNull();
     (restoreFrame as unknown as FrameRequestCallback)(0);
     expect(host.scrollTop).toBe(0);

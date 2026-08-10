@@ -1,7 +1,7 @@
 import { Schema, type DOMOutputSpec, type NodeSpec } from "prosemirror-model";
 
 const listItem: NodeSpec = {
-  attrs: { checked: { default: null } },
+  attrs: { checked: { default: null }, collapsed: { default: false } },
   content: "paragraph block*",
   defining: true,
   parseDOM: [
@@ -9,17 +9,28 @@ const listItem: NodeSpec = {
       tag: "li.task-list-item",
       getAttrs: (dom) => ({
         checked: Boolean((dom as HTMLElement).querySelector("input")?.checked),
+        collapsed: (dom as HTMLElement).dataset.collapsed === "true",
       }),
     },
-    { tag: "li", getAttrs: () => ({ checked: null }) },
+    {
+      tag: "li",
+      getAttrs: (dom) => ({
+        checked: null,
+        collapsed: (dom as HTMLElement).dataset.collapsed === "true",
+      }),
+    },
   ],
   toDOM(node): DOMOutputSpec {
-    if (typeof node.attrs.checked !== "boolean") return ["li", 0];
+    const collapsed = node.attrs.collapsed ? "true" : undefined;
+    if (typeof node.attrs.checked !== "boolean") {
+      return ["li", { "data-collapsed": collapsed }, 0];
+    }
     return [
       "li",
       {
         class: `task-list-item${node.attrs.checked ? " is-checked" : ""}`,
         "data-checked": String(node.attrs.checked),
+        "data-collapsed": collapsed,
       },
       [
         "span",
@@ -50,12 +61,22 @@ export const noteSchema = new Schema({
       toDOM: () => ["p", 0],
     },
     heading: {
-      attrs: { level: { default: 1 } },
+      attrs: { level: { default: 1 }, collapsed: { default: false } },
       content: "inline*",
       group: "block",
       defining: true,
-      parseDOM: [{ tag: "h1", attrs: { level: 1 } }],
-      toDOM: () => ["h1", 0],
+      parseDOM: [{
+        tag: "h1",
+        getAttrs: (dom) => ({
+          level: 1,
+          collapsed: (dom as HTMLElement).dataset.collapsed === "true",
+        }),
+      }],
+      toDOM: (node) => [
+        "h1",
+        { "data-collapsed": node.attrs.collapsed ? "true" : undefined },
+        0,
+      ],
     },
     ordered_list: {
       attrs: { order: { default: 1 } },

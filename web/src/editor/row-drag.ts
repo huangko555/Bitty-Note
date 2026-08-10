@@ -6,6 +6,11 @@ import { Plugin, TextSelection, type EditorState, type Transaction } from "prose
 import { type EditorView } from "prosemirror-view";
 
 import { normalizeListDocument } from "./list-normalization";
+import {
+  alignDocumentBoundary,
+  autoScrollForPointer,
+  preserveViewportDuring,
+} from "./editor-viewport";
 import { noteSchema } from "./schema";
 import { t } from "../i18n";
 
@@ -215,13 +220,20 @@ function listItemForKind(
   kind: ListKind,
   sourceKind: ListKind | null,
 ): ProseMirrorNode {
+  if (source.type === noteSchema.nodes.list_item && sourceKind === kind) return source;
   const content = source.type === noteSchema.nodes.list_item
     ? source.content
     : source;
   const checked = kind === "task"
     ? sourceKind === "task" ? Boolean(source.attrs.checked) : false
     : null;
-  return noteSchema.nodes.list_item.create({ checked }, content);
+  return noteSchema.nodes.list_item.create(
+    {
+      ...(source.type === noteSchema.nodes.list_item ? source.attrs : {}),
+      checked,
+    },
+    content,
+  );
 }
 
 function rootNodeForSource(
@@ -526,6 +538,19 @@ export function moveRow(
     : findNodePath(nextDoc, target);
   if (!nextTargetPath) return false;
 
+  if (side === "inside" && target.attrs.collapsed) {
+    const nextTarget = nodeAtPath(nextDoc, nextTargetPath);
+    nextDoc = replaceNodeAtPath(
+      nextDoc,
+      nextTargetPath,
+      nextTarget.type.create(
+        { ...nextTarget.attrs, collapsed: false },
+        nextTarget.content,
+        nextTarget.marks,
+      ),
+    );
+  }
+
   let selectedNode: ProseMirrorNode;
   if (target.type === noteSchema.nodes.list_item) {
     const nextTarget = nodeAtPath(nextDoc, nextTargetPath);
@@ -581,6 +606,53 @@ export function moveRow(
   }
 
   return dispatchMovedDocument(state, dispatch, nextDoc, selectionAnchor, selectionHead);
+}
+
+export function moveRowToDocumentEnd(
+  state: EditorState,
+  dispatch: ((transaction: Transaction) => void) | undefined,
+  sourcePosition: number,
+): boolean {
+  const source = state.doc.nodeAt(sourcePosition);
+  if (!source) return false;
+  const sourcePath = findNodePath(state.doc, source);
+  if (!sourcePath || !isDraggableRowAtPath(state.doc, sourcePath)) return false;
+  const selectionAnchor = {
+    parent: state.selection.$anchor.parent,
+    offset: state.selection.$anchor.parentOffset,
+  };
+  const selectionHead = {
+    parent: state.selection.$head.parent,
+    offset: state.selection.$head.parentOffset,
+  };
+
+  let nextDoc: ProseMirrorNode;
+  let appended: ProseMirrorNode[];
+  if (source.type === noteSchema.nodes.heading) {
+    const start = sourcePath[0]!;
+    const end = headingSectionEndIndex(state.doc, start);
+    appended = [];
+    for (let index = start; index < end; index += 1) appended.push(state.doc.child(index));
+    const children: ProseMirrorNode[] = [];
+    state.doc.forEach((child) => children.push(child));
+    children.splice(start, end - start);
+    nextDoc = copyWithChildren(state.doc, children);
+  } else {
+    let sourceKind: ListKind | null = null;
+    if (source.type === noteSchema.nodes.list_item) {
+      sourceKind = listItemKind(nodeAtPath(state.doc, sourcePath.slice(0, -1)), source);
+    }
+    nextDoc = removeRowAtPath(state.doc, sourcePath);
+    appended = [rootNodeForSource(source, sourceKind).node];
+  }
+  nextDoc = insertNodesAtPath(nextDoc, [], nextDoc.childCount, appended);
+  return dispatchMovedDocument(
+    state,
+    dispatch,
+    nextDoc,
+    selectionAnchor,
+    selectionHead,
+  );
 }
 
 function rowPositionAt(view: EditorView, documentPosition: number): number | null {
@@ -683,6 +755,9 @@ class RowDragHandleView {
   private source: RowDescriptor | null = null;
   private target: RowDescriptor | null = null;
   private side: RowDropSide = "after";
+  private visualAnchor: HTMLElement | null = null;
+  private endTarget = false;
+  private endAnchorAtTop = true;
   private reparentLevel: number | null = null;
   private startX = 0;
   private startY = 0;
@@ -799,8 +874,10 @@ class RowDragHandleView {
       this.positionHighlight(this.source);
       if (this.target && this.reparentLevel !== null) {
         this.positionReparentTarget(this.target, this.reparentLevel);
+      } else if (this.endTarget && this.visualAnchor) {
+        this.positionDocumentEndTarget(this.visualAnchor, this.endAnchorAtTop);
       } else {
-        this.positionDropTarget(this.target, this.side);
+        this.positionDropTarget(this.target, this.side, this.visualAnchor);
       }
     } else if (this.hovered) {
       this.positionHandle(this.hovered);
@@ -854,9 +931,22 @@ class RowDragHandleView {
       this.positionDropTarget(null, "after");
       return;
     }
-    const hostRect = this.host.getBoundingClientRect();
-    if (event.clientY < hostRect.top + 34) this.host.scrollTop -= 18;
-    else if (event.clientY > hostRect.bottom - 34) this.host.scrollTop += 18;
+    autoScrollForPointer(this.host, event.clientY);
+
+    const insertTarget = this.rowInsertTarget(event.clientX, event.clientY);
+    if (insertTarget) {
+      if (insertTarget.position >= this.view.state.doc.content.size) {
+        this.positionDocumentEndTarget(insertTarget.button);
+      } else {
+        const insertRow = rowAtPosition(this.view, insertTarget.position);
+        if (insertRow?.node.type === noteSchema.nodes.heading) {
+          this.positionDropTarget(insertRow, "before", insertTarget.button);
+        } else {
+          this.positionDropTarget(null, "after");
+        }
+      }
+      return;
+    }
 
     let row = rowAt(this.view, event.clientX, event.clientY);
     if (row?.node === this.source.node) {
@@ -869,6 +959,11 @@ class RowDragHandleView {
       return;
     }
     if (!row) {
+      const endAnchor = this.documentEndAnchor(event.clientX, event.clientY);
+      if (endAnchor) {
+        this.positionDocumentEndTarget(endAnchor, false);
+        return;
+      }
       this.positionDropTarget(null, "after");
       return;
     }
@@ -888,6 +983,7 @@ class RowDragHandleView {
       && this.source.node.type === noteSchema.nodes.heading
       && row.node.type !== noteSchema.nodes.heading
     ) {
+      const visualAnchor = row.header;
       const ownerIndex = headingOwnerIndex(this.view.state.doc, targetPath);
       if (ownerIndex !== null) {
         row = rowAtPosition(
@@ -898,7 +994,7 @@ class RowDragHandleView {
           this.positionDropTarget(null, "after");
           return;
         }
-        this.positionDropTarget(row, "after");
+        this.positionDropTarget(row, "after", visualAnchor);
         return;
       }
     }
@@ -916,13 +1012,16 @@ class RowDragHandleView {
     } else {
       side = event.clientY < headerRect.top + lineHeight / 2 ? "before" : "after";
     }
-    this.positionDropTarget(row, side);
+    this.positionDropTarget(row, side, row.header);
   };
 
   private readonly onDragEnd = (event: PointerEvent): void => {
     const sourcePosition = this.source?.position;
+    const sourceNode = this.source?.node ?? null;
     const targetPosition = this.target?.position;
+    const targetNode = this.target?.node ?? null;
     const side = this.side;
+    const movesToEnd = this.endTarget;
     const pointerX = event.clientX;
     const pointerY = event.clientY;
     this.updateDeleteTarget(pointerX, pointerY);
@@ -930,7 +1029,7 @@ class RowDragHandleView {
       && this.moved
       && this.deleteTarget.classList.contains("is-armed");
     const shouldMove = sourcePosition !== undefined
-      && targetPosition !== undefined
+      && (targetPosition !== undefined || movesToEnd)
       && this.moved
       && !shouldDelete;
 
@@ -938,27 +1037,25 @@ class RowDragHandleView {
     // reconcile the old native caret after ProseMirror has rendered the move.
     this.finishDrag(event.pointerId);
     if (shouldDelete) {
-      const scrollTop = this.host.scrollTop;
-      deleteRow(this.view.state, this.view.dispatch, sourcePosition);
-      // Deleting a row must not make ProseMirror reveal the remapped selection.
-      // The browser may still clamp this value when the document becomes shorter.
-      this.host.scrollTop = scrollTop;
+      preserveViewportDuring(this.host, () => {
+        deleteRow(this.view.state, this.view.dispatch, sourcePosition);
+      });
     } else if (shouldMove) {
-      const scrollTop = this.host.scrollTop;
-      const moved = moveRow(
-        this.view.state,
-        this.view.dispatch,
-        sourcePosition,
-        targetPosition,
-        side,
-      );
-      if (moved) {
-        // The viewport already represents the drop location after drag auto-scroll.
-        // Keep it stable while WebView reconciles the remapped native selection.
-        this.host.scrollTop = scrollTop;
-        window.requestAnimationFrame(() => {
-          this.host.scrollTop = scrollTop;
-        });
+      const moved = movesToEnd
+        ? moveRowToDocumentEnd(this.view.state, this.view.dispatch, sourcePosition)
+        : moveRow(
+          this.view.state,
+          this.view.dispatch,
+          sourcePosition,
+          targetPosition!,
+          side,
+        );
+      if (moved && sourceNode) {
+        alignDocumentBoundary(
+          this.host,
+          () => this.dropBoundary(sourceNode, targetNode, side, movesToEnd),
+          pointerY,
+        );
       }
     }
 
@@ -1011,6 +1108,9 @@ class RowDragHandleView {
       this.activePointerId = null;
       this.source = null;
       this.target = null;
+      this.visualAnchor = null;
+      this.endTarget = false;
+      this.endAnchorAtTop = true;
       this.reparentLevel = null;
       this.indicator.classList.remove("visible");
       this.insideIndicator.classList.remove("visible");
@@ -1089,20 +1189,39 @@ class RowDragHandleView {
     this.highlight.style.height = `${Math.max(0, bottom - top)}px`;
   }
 
-  private positionDropTarget(row: RowDescriptor | null, side: RowDropSide): void {
+  private positionDropTarget(
+    row: RowDescriptor | null,
+    side: RowDropSide,
+    visualAnchor: HTMLElement | null = row?.header ?? null,
+  ): void {
     this.target = row;
     this.side = side;
+    this.visualAnchor = visualAnchor;
+    this.endTarget = false;
+    this.endAnchorAtTop = true;
     this.reparentLevel = null;
     this.indicator.classList.remove("visible");
     this.insideIndicator.classList.remove("visible");
     if (!row) {
       return;
     }
+    if (
+      this.source
+      && !moveRow(
+        this.view.state,
+        undefined,
+        this.source.position,
+        row.position,
+        side,
+      )
+    ) {
+      this.target = null;
+      return;
+    }
     const hostRect = this.host.getBoundingClientRect();
     const headerBounds = row.header.getBoundingClientRect();
     const rowBounds = row.dom.getBoundingClientRect();
     const headerRect = unshiftedVerticalRect(row.header);
-    const rowRect = unshiftedVerticalRect(row.dom);
     if (side === "inside") {
       const left = Math.max(hostRect.left + 3, Math.min(rowBounds.left, headerBounds.left) - 8);
       const top = Math.max(hostRect.top, headerRect.top - 3);
@@ -1118,18 +1237,143 @@ class RowDragHandleView {
       this.insideIndicator.classList.add("visible");
       return;
     }
-    const sourceMovesSection = this.source?.node.type === noteSchema.nodes.heading;
+    const visualRect = unshiftedVerticalRect(visualAnchor ?? row.header);
     const top = side === "before"
-      ? headerRect.top
-      : sourceMovesSection && row.node.type === noteSchema.nodes.heading
-        ? draggedBlockVerticalRect(this.view, row).bottom
-        : !sourceMovesSection && row.node.type === noteSchema.nodes.list_item
-          ? headerRect.bottom
-          : row.dom === row.header ? headerRect.bottom : rowRect.bottom;
-    this.indicator.style.left = `${headerBounds.left}px`;
+      ? visualRect.top
+      : visualRect.bottom;
+    const left = this.dropIndicatorLeft(row);
+    this.indicator.style.left = `${left}px`;
     this.indicator.style.top = `${top - 1}px`;
-    this.indicator.style.width = `${Math.max(24, hostRect.right - headerBounds.left - 12)}px`;
+    this.indicator.style.width = `${Math.max(24, hostRect.right - left - 12)}px`;
     this.indicator.classList.add("visible");
+  }
+
+  private rowInsertTarget(
+    clientX: number,
+    clientY: number,
+  ): { button: HTMLElement; position: number } | null {
+    const hostRect = this.host.getBoundingClientRect();
+    const buttons = Array.from(
+      this.view.dom.querySelectorAll<HTMLElement>(".row-insert-button"),
+    );
+    for (const button of buttons) {
+      const rect = button.getBoundingClientRect();
+      const terminal = button.classList.contains("is-terminal");
+      const horizontalHit = clientX >= hostRect.left && clientX <= hostRect.right;
+      const verticalHit = terminal
+        ? clientY >= rect.top && clientY <= hostRect.bottom
+        : clientY >= rect.top && clientY <= rect.bottom;
+      if (!horizontalHit || !verticalHit) continue;
+      try {
+        return { button, position: this.view.posAtDOM(button, 0) };
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  private dropIndicatorLeft(row: RowDescriptor | null): number {
+    const editorRect = this.view.dom.getBoundingClientRect();
+    const source = this.source?.node;
+    if (!source) return editorRect.left;
+    if (source.type === noteSchema.nodes.heading) return editorRect.left;
+    if (row?.node.type === noteSchema.nodes.list_item) {
+      return row.header.getBoundingClientRect().left;
+    }
+    if (source.type === noteSchema.nodes.list_item) {
+      const fontSize = Number.parseFloat(getComputedStyle(this.view.dom).fontSize) || 16;
+      return editorRect.left + fontSize * 1.9;
+    }
+    return editorRect.left;
+  }
+
+  private dropBoundary(
+    source: ProseMirrorNode,
+    target: ProseMirrorNode | null,
+    side: RowDropSide,
+    documentEnd: boolean,
+  ): number | null {
+    const movedPath = findNodePath(this.view.state.doc, source);
+    if (movedPath) {
+      const movedRow = rowAtPosition(
+        this.view,
+        nodePositionAtPath(this.view.state.doc, movedPath),
+      );
+      if (movedRow) return unshiftedVerticalRect(movedRow.header).top;
+    }
+    if (documentEnd) {
+      return null;
+    }
+    if (!target) return null;
+    const targetPath = findNodePath(this.view.state.doc, target);
+    if (!targetPath) return null;
+    const row = rowAtPosition(
+      this.view,
+      nodePositionAtPath(this.view.state.doc, targetPath),
+    );
+    if (!row) return null;
+    if (side === "before") return unshiftedVerticalRect(row.header).top;
+    if (side === "inside") return draggedBlockVerticalRect(this.view, row).bottom;
+    if (
+      source.type === noteSchema.nodes.heading
+      && target.type === noteSchema.nodes.list_item
+      && targetPath.length > 2
+    ) {
+      const topLevelDom = this.view.nodeDOM(
+        topLevelNodePosition(this.view.state.doc, targetPath[0]!),
+      );
+      return topLevelDom instanceof HTMLElement
+        ? unshiftedVerticalRect(topLevelDom).bottom
+        : null;
+    }
+    if (
+      target.type === noteSchema.nodes.list_item
+      || (source.type === noteSchema.nodes.heading
+        && target.type === noteSchema.nodes.heading)
+    ) {
+      return draggedBlockVerticalRect(this.view, row).bottom;
+    }
+    return unshiftedVerticalRect(row.header).bottom;
+  }
+
+  private positionDocumentEndTarget(anchor: HTMLElement, atTop = true): void {
+    this.target = null;
+    this.side = "after";
+    this.visualAnchor = anchor;
+    this.endTarget = true;
+    this.endAnchorAtTop = atTop;
+    this.reparentLevel = null;
+    this.indicator.classList.remove("visible");
+    this.insideIndicator.classList.remove("visible");
+    if (!this.source || !moveRowToDocumentEnd(
+      this.view.state,
+      undefined,
+      this.source.position,
+    )) return;
+    const hostRect = this.host.getBoundingClientRect();
+    const anchorRect = anchor.getBoundingClientRect();
+    const top = atTop ? anchorRect.top : anchorRect.bottom;
+    const left = this.dropIndicatorLeft(null);
+    this.indicator.style.left = `${left}px`;
+    this.indicator.style.top = `${top - 1}px`;
+    this.indicator.style.width = `${Math.max(24, hostRect.right - left - 12)}px`;
+    this.indicator.classList.add("visible");
+  }
+
+  private documentEndAnchor(clientX: number, clientY: number): HTMLElement | null {
+    const hostRect = this.host.getBoundingClientRect();
+    if (clientX < hostRect.left || clientX > hostRect.right) return null;
+    const children = Array.from(this.view.dom.children).reverse();
+    for (const child of children) {
+      if (!(child instanceof HTMLElement) || child.classList.contains("row-insert-button")) {
+        continue;
+      }
+      const rect = child.getBoundingClientRect();
+      if (rect.height <= 0) continue;
+      return clientY >= rect.bottom ? child : null;
+    }
+    return null;
   }
 
   private reparentTarget(

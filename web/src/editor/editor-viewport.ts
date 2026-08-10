@@ -1,0 +1,58 @@
+const CARET_MARGIN = 8;
+
+export function keepRectVisible(
+  host: HTMLElement,
+  target: Pick<DOMRect, "top" | "bottom">,
+  bottomInset = 0,
+): void {
+  const viewport = host.getBoundingClientRect();
+  const lowerOverflow = target.bottom
+    - (viewport.bottom - bottomInset - CARET_MARGIN);
+  if (lowerOverflow > 0) {
+    host.scrollTop += lowerOverflow;
+    return;
+  }
+
+  const upperOverflow = viewport.top + CARET_MARGIN - target.top;
+  if (upperOverflow > 0) host.scrollTop -= upperOverflow;
+}
+
+export function autoScrollForPointer(
+  host: HTMLElement,
+  clientY: number,
+  edgeSize = 34,
+  step = 18,
+): void {
+  const viewport = host.getBoundingClientRect();
+  if (clientY < viewport.top + edgeSize) host.scrollTop -= step;
+  else if (clientY > viewport.bottom - edgeSize) host.scrollTop += step;
+}
+
+export function preserveViewportDuring<T>(
+  host: HTMLElement,
+  change: () => T,
+): T {
+  const scrollTop = host.scrollTop;
+  const result = change();
+  host.scrollTop = scrollTop;
+  return result;
+}
+
+export function alignDocumentBoundary(
+  host: HTMLElement,
+  locateBoundary: () => number | null,
+  preferredClientY: number,
+  requestFrame: (callback: FrameRequestCallback) => number = window.requestAnimationFrame.bind(window),
+): void {
+  requestFrame(() => {
+    if (!host.isConnected) return;
+    const boundary = locateBoundary();
+    if (boundary === null) return;
+    const viewport = host.getBoundingClientRect();
+    const preferred = Math.max(
+      viewport.top + CARET_MARGIN,
+      Math.min(preferredClientY, viewport.bottom - CARET_MARGIN),
+    );
+    host.scrollTop = Math.max(0, host.scrollTop + boundary - preferred);
+  });
+}

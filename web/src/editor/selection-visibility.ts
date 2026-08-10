@@ -1,5 +1,3 @@
-const CARET_MARGIN = 8;
-
 interface SelectionVisibilityTarget {
   ensureSelectionVisible(bottomInset: number): void;
 }
@@ -135,19 +133,4 @@ export function createSelectionVisibilityCoordinator(
   };
 }
 
-export function keepRectVisible(
-  host: HTMLElement,
-  target: Pick<DOMRect, "top" | "bottom">,
-  bottomInset = 0,
-): void {
-  const viewport = host.getBoundingClientRect();
-  const lowerOverflow = target.bottom
-    - (viewport.bottom - bottomInset - CARET_MARGIN);
-  if (lowerOverflow > 0) {
-    host.scrollTop += lowerOverflow;
-    return;
-  }
-
-  const upperOverflow = viewport.top + CARET_MARGIN - target.top;
-  if (upperOverflow > 0) host.scrollTop -= upperOverflow;
-}
+export { keepRectVisible } from "./editor-viewport";

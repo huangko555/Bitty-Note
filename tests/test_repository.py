@@ -47,6 +47,16 @@ def test_note_previews_hide_empty_line_markers(tmp_path: Path) -> None:
     assert repository.list_archived_notes()[0].preview == "标题 正文"
 
 
+def test_note_previews_hide_folded_markers(tmp_path: Path) -> None:
+    repository = NotesRepository(tmp_path)
+    note = repository.create_note("记录")
+    (tmp_path / note.name).write_text(
+        "# <!-- bitty-folded --> 标题\n- <!-- bitty-folded --> 父项\n  - 子项",
+        encoding="utf-8",
+    )
+
+    assert repository.list_notes()[0].preview == "标题 父项 子项"
+
 def test_save_detects_external_change_before_overwrite(tmp_path: Path) -> None:
     repository = NotesRepository(tmp_path)
     opened = repository.create_note("记录")
