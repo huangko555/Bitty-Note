@@ -266,10 +266,12 @@ describe("row drag handle", () => {
         return posAtDOM(node, offset, bias);
       });
       vi.spyOn(sourceDom, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 22));
-      vi.spyOn(emptyDom, "getBoundingClientRect").mockReturnValue(rect(80, 60, 200, 44));
+      vi.spyOn(emptyDom, "getBoundingClientRect").mockReturnValue(rect(80, 60, 200, 120));
       if (kind === "list") {
         vi.spyOn(view.dom.querySelector("li")!, "getBoundingClientRect")
-          .mockReturnValue(rect(80, 60, 200, 44));
+          .mockReturnValue(rect(80, 60, 200, 120));
+        vi.spyOn(view.dom.querySelector("ul")!, "getBoundingClientRect")
+          .mockReturnValue(rect(50, 60, 230, 120));
       }
       let emptyPosition = -1;
       doc.descendants((node, position) => {
@@ -307,11 +309,11 @@ describe("row drag handle", () => {
         hasPointerCapture: { value: vi.fn(() => false) },
       });
       handle.dispatchEvent(pointerEvent("pointerdown", 30));
-      window.dispatchEvent(pointerEvent("pointermove", 140));
+      window.dispatchEvent(pointerEvent("pointermove", 185));
       const indicator = host.querySelector<HTMLElement>(".block-drop-indicator")!;
       expect(indicator.classList.contains("visible")).toBe(true);
       expect(indicator.style.top).toBe("80px");
-      window.dispatchEvent(pointerEvent("pointerup", 140));
+      window.dispatchEvent(pointerEvent("pointerup", 185));
       expect(view.state.doc.child(0).textContent).toBe("保留内容");
       expect(view.state.doc.child(1).textContent).toBe("移动内容");
       expect(view.state.doc.lastChild?.textContent).toBe("");
