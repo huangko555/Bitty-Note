@@ -1,5 +1,6 @@
 import createLucideElement from "lucide/dist/esm/createElement.mjs";
 import ChevronDown from "lucide/dist/esm/icons/chevron-down.mjs";
+import ChevronUp from "lucide/dist/esm/icons/chevron-up.mjs";
 import { type Node as ProseMirrorNode } from "prosemirror-model";
 import { Plugin, TextSelection } from "prosemirror-state";
 import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
@@ -30,12 +31,12 @@ function foldButton(
     const button = document.createElement("button");
     button.type = "button";
     button.tabIndex = -1;
-    button.className = `fold-toggle${owner.attrs.collapsed ? "" : " is-expanded"}`;
+    button.className = "fold-toggle";
     button.dataset.editorControl = "true";
     button.setAttribute("contenteditable", "false");
     button.setAttribute("aria-label", owner.attrs.collapsed ? t("expandContent") : t("collapseContent"));
     button.title = owner.attrs.collapsed ? t("expandContent") : t("collapseContent");
-    button.append(createLucideElement(ChevronDown, {
+    button.append(createLucideElement(owner.attrs.collapsed ? ChevronDown : ChevronUp, {
       class: "lucide-icon",
       "aria-hidden": "true",
     }));
@@ -79,8 +80,7 @@ function foldButton(
           transaction.setSelection(TextSelection.create(transaction.doc, caret));
         }
       }
-      view.dispatch(transaction.scrollIntoView());
-      view.focus();
+      view.dispatch(transaction);
     });
     return button;
   };

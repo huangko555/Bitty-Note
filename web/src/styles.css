@@ -267,8 +267,7 @@ h1.has-fold-toggle, .has-fold-toggle > p:first-child, .has-fold-toggle > .task-c
 .has-fold-toggle > p:first-child, .has-fold-toggle > .task-content > p:first-child { position: relative; }
 .fold-toggle { position: absolute; z-index: 3; top: 50%; right: 0; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; color: var(--muted); background: transparent; cursor: pointer; transform: translateY(-50%); }
 .fold-toggle:hover { color: var(--ink); background: rgb(112 107 87 / 8%); }
-.fold-toggle .lucide-icon { width: 15px; height: 15px; transition: transform .12s ease; transform-box: view-box; transform-origin: center; }
-.fold-toggle.is-expanded .lucide-icon { transform: rotate(180deg); }
+.fold-toggle .lucide-icon { width: 15px; height: 15px; }
 .is-folded-content { display: none !important; }
 .is-collapsed-list-item:not(.task-list-item) > :not(:first-child) { display: none; }
 .task-list-item.is-collapsed-list-item > .task-content > :not(:first-child) { display: none; }
