@@ -1194,9 +1194,13 @@ class RowDragHandleView {
     side: RowDropSide,
     visualAnchor: HTMLElement | null = row?.header ?? null,
   ): void {
+    const effectiveVisualAnchor = row?.node.type === noteSchema.nodes.heading
+      && side === "before"
+      ? this.headingInsertButton(row) ?? visualAnchor
+      : visualAnchor;
     this.target = row;
     this.side = side;
-    this.visualAnchor = visualAnchor;
+    this.visualAnchor = effectiveVisualAnchor;
     this.endTarget = false;
     this.endAnchorAtTop = true;
     this.reparentLevel = null;
@@ -1237,7 +1241,7 @@ class RowDragHandleView {
       this.insideIndicator.classList.add("visible");
       return;
     }
-    const visualRect = unshiftedVerticalRect(visualAnchor ?? row.header);
+    const visualRect = unshiftedVerticalRect(effectiveVisualAnchor ?? row.header);
     const top = side === "before"
       ? visualRect.top
       : visualRect.bottom;
@@ -1246,6 +1250,14 @@ class RowDragHandleView {
     this.indicator.style.top = `${top - 1}px`;
     this.indicator.style.width = `${Math.max(24, hostRect.right - left - 12)}px`;
     this.indicator.classList.add("visible");
+  }
+
+  private headingInsertButton(row: RowDescriptor): HTMLElement | null {
+    const previous = row.dom.previousElementSibling;
+    return previous instanceof HTMLElement
+      && previous.classList.contains("row-insert-button")
+      ? previous
+      : null;
   }
 
   private rowInsertTarget(

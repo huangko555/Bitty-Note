@@ -229,6 +229,44 @@ export function joinEmptyParagraphAfterList(
   return true;
 }
 
+export function joinParagraphAfterList(
+  state: EditorState,
+  dispatch?: (tr: Transaction) => void,
+): boolean {
+  const { $from, empty } = state.selection;
+  if (
+    !empty
+    || $from.depth !== 1
+    || $from.parent.type !== noteSchema.nodes.paragraph
+    || $from.parent.content.size === 0
+    || $from.parentOffset !== 0
+  ) {
+    return false;
+  }
+  const paragraphStart = $from.before(1);
+  const previous = state.doc.resolve(paragraphStart).nodeBefore;
+  if (
+    previous?.type !== noteSchema.nodes.bullet_list
+    && previous?.type !== noteSchema.nodes.ordered_list
+  ) {
+    return false;
+  }
+  const lastItem = previous.lastChild;
+  const lastParagraph = lastItem?.firstChild;
+  if (!lastItem || lastParagraph?.type !== noteSchema.nodes.paragraph) return false;
+
+  if (dispatch) {
+    const listStart = paragraphStart - previous.nodeSize;
+    const lastItemStart = listStart + 1 + previous.content.size - lastItem.nodeSize;
+    const insertionPosition = lastItemStart + 2 + lastParagraph.content.size;
+    const transaction = state.tr.delete(paragraphStart, $from.after(1));
+    transaction.insert(insertionPosition, $from.parent.content);
+    transaction.setSelection(TextSelection.create(transaction.doc, insertionPosition));
+    dispatch(transaction.scrollIntoView());
+  }
+  return true;
+}
+
 function literalTextSlice(text: string): Slice {
   const blocks = text.replace(/\r\n?/g, "\n").split("\n").map((line) =>
     noteSchema.nodes.paragraph.create(null, line ? noteSchema.text(line) : undefined),
@@ -689,6 +727,7 @@ class RichEditor implements EditorController {
               exitEmptyListItem,
               liftListItemAtStart,
               joinEmptyParagraphAfterList,
+              joinParagraphAfterList,
             ),
             Tab: chainCommands(
               sinkListItemAcrossTypes,

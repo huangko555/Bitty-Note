@@ -260,15 +260,15 @@ h1 { margin: 0; font-size: 23px; font-weight: 500; letter-spacing: -.025em; }
 .task-list-item.is-checked > .task-content > p:first-child { text-decoration-line: line-through; text-decoration-color: currentColor; text-decoration-thickness: 1px; }
 .row-insert-button { display: grid; place-items: center; width: 100%; height: 1.55em; padding: 0; border: 0; border-radius: var(--radius-compact); color: transparent; background: transparent; cursor: pointer; }
 .row-insert-button.is-terminal { margin-bottom: .775em; }
-.row-insert-button:hover, .row-insert-button:focus-visible { color: #339cff; background: rgb(112 107 87 / 8%); }
-.row-insert-button:active { color: #339cff; background: rgb(112 107 87 / 13%); transform: scale(.99); }
+.row-insert-button:hover, .row-insert-button:focus-visible { color: var(--muted); background: rgb(112 107 87 / 8%); }
+.row-insert-button:active { color: var(--ink); background: rgb(112 107 87 / 13%); transform: scale(.99); }
 .row-insert-button .lucide-icon { width: 12px; height: 12px; stroke-width: 2; }
 h1.has-fold-toggle, .has-fold-toggle > p:first-child, .has-fold-toggle > .task-content > p:first-child { box-sizing: border-box; padding-right: 28px; }
 .has-fold-toggle > p:first-child, .has-fold-toggle > .task-content > p:first-child { position: relative; }
 .fold-toggle { position: absolute; z-index: 3; top: 50%; right: 0; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; color: var(--muted); background: transparent; cursor: pointer; transform: translateY(-50%); }
 .fold-toggle:hover { color: var(--ink); background: rgb(112 107 87 / 8%); }
 .fold-toggle .lucide-icon { width: 15px; height: 15px; transition: transform .12s ease; transform-box: view-box; transform-origin: center; }
-.fold-toggle.is-expanded .lucide-icon { transform: rotate(90deg); }
+.fold-toggle.is-expanded .lucide-icon { transform: rotate(180deg); }
 .is-folded-content { display: none !important; }
 .is-collapsed-list-item:not(.task-list-item) > :not(:first-child) { display: none; }
 .task-list-item.is-collapsed-list-item > .task-content > :not(:first-child) { display: none; }

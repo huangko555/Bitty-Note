@@ -430,6 +430,51 @@ function adjacentDifferentListState(): EditorState {
 }
 
 describe("list keyboard behavior", () => {
+  it("joins an unwrapped middle task back into the previous task", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const { controller } = createEditor(
+      host,
+      "- [ ] 第一行\n- [ ] 第二行\n- [ ] 第三行\n",
+      {
+        onChange: () => {},
+        onFocusChange: () => {},
+        onSelectionChange: () => {},
+      },
+    );
+    const view = (controller as unknown as { view: EditorView }).view;
+    let middleParagraphPosition = -1;
+    view.state.doc.descendants((node, position) => {
+      if (
+        middleParagraphPosition < 0
+        && node.type === noteSchema.nodes.paragraph
+        && node.textContent === "第二行"
+      ) {
+        middleParagraphPosition = position;
+      }
+    });
+    view.dispatch(view.state.tr.setSelection(
+      TextSelection.create(view.state.doc, middleParagraphPosition + 1),
+    ));
+
+    view.dom.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "Backspace",
+      bubbles: true,
+      cancelable: true,
+    }));
+    view.dom.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "Backspace",
+      bubbles: true,
+      cancelable: true,
+    }));
+
+    expect(controller.getMarkdown()).toBe("- [ ] 第一行第二行\n- [ ] 第三行\n");
+    expect(view.state.selection.$from.parent.textContent).toBe("第一行第二行");
+    expect(view.state.selection.$from.parentOffset).toBe(3);
+    controller.destroy();
+    host.remove();
+  });
+
   it("lifts an empty list item when Backspace is pressed", () => {
     const state = listState();
     let next = state;

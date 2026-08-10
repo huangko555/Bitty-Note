@@ -519,22 +519,28 @@ describe("row drag handle", () => {
     });
     vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 220));
     vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(40, 0, 260, 220));
+    const headings = view.dom.querySelectorAll("h1");
+    vi.spyOn(headings[1]!, "getBoundingClientRect").mockReturnValue(rect(40, 90, 260, 22));
     const paragraphs = view.dom.querySelectorAll("p");
     vi.spyOn(paragraphs[1]!, "getBoundingClientRect").mockReturnValue(rect(80, 120, 200, 22));
     let sourcePosition = -1;
+    let targetPosition = -1;
     doc.descendants((node, position) => {
       if (node.type === noteSchema.nodes.paragraph && node.textContent === "移动") {
         sourcePosition = position;
-        return false;
       }
-      return sourcePosition < 0;
+      if (node.type === noteSchema.nodes.heading && node.textContent === "乙") {
+        targetPosition = position;
+      }
+      return sourcePosition < 0 || targetPosition < 0;
     });
-    vi.spyOn(view, "posAtCoords").mockReturnValue({
-      pos: sourcePosition + 1,
-      inside: sourcePosition,
-    });
+    vi.spyOn(view, "posAtCoords").mockImplementation(({ top }) => top < 110
+      ? { pos: targetPosition + 1, inside: targetPosition }
+      : { pos: sourcePosition + 1, inside: sourcePosition });
     const insertButton = view.dom.querySelector<HTMLElement>(".row-insert-button:not(.is-terminal)")!;
-    vi.spyOn(insertButton, "getBoundingClientRect").mockReturnValue(rect(40, 70, 260, 22));
+    vi.spyOn(insertButton, "getBoundingClientRect").mockReturnValue(rect(40, 65, 260, 20));
+    const terminalButton = view.dom.querySelector<HTMLElement>(".row-insert-button.is-terminal")!;
+    vi.spyOn(terminalButton, "getBoundingClientRect").mockReturnValue(rect(40, 180, 260, 20));
 
     const pointerEvent = (type: string, y: number) => {
       const event = new MouseEvent(type, {
@@ -557,8 +563,12 @@ describe("row drag handle", () => {
 
     const indicator = host.querySelector<HTMLElement>(".block-drop-indicator")!;
     expect(indicator.classList.contains("visible")).toBe(true);
-    expect(indicator.style.top).toBe("69px");
-    window.dispatchEvent(pointerEvent("pointerup", 75));
+    expect(indicator.style.top).toBe("64px");
+
+    window.dispatchEvent(pointerEvent("pointermove", 92));
+    expect(indicator.classList.contains("visible")).toBe(true);
+    expect(indicator.style.top).toBe("64px");
+    window.dispatchEvent(pointerEvent("pointerup", 92));
     expect(Array.from(view.state.doc.content.content, (node) => node.textContent))
       .toEqual(["甲", "甲正文", "移动", "乙"]);
   });

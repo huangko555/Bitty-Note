@@ -1,5 +1,5 @@
 import createLucideElement from "lucide/dist/esm/createElement.mjs";
-import ChevronRight from "lucide/dist/esm/icons/chevron-right.mjs";
+import ChevronDown from "lucide/dist/esm/icons/chevron-down.mjs";
 import { type Node as ProseMirrorNode } from "prosemirror-model";
 import { Plugin, TextSelection } from "prosemirror-state";
 import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
@@ -35,7 +35,7 @@ function foldButton(
     button.setAttribute("contenteditable", "false");
     button.setAttribute("aria-label", owner.attrs.collapsed ? t("expandContent") : t("collapseContent"));
     button.title = owner.attrs.collapsed ? t("expandContent") : t("collapseContent");
-    button.append(createLucideElement(ChevronRight, {
+    button.append(createLucideElement(ChevronDown, {
       class: "lucide-icon",
       "aria-hidden": "true",
     }));
