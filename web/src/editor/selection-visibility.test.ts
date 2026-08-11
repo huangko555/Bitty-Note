@@ -156,11 +156,32 @@ describe("selection visibility", () => {
 
     coordinator.show();
     frames.shift()?.(0);
-    coordinator.selectionChanged();
+    coordinator.selectionChanged(true);
     frames.shift()?.(16);
 
     expect(ensureSelectionVisible).toHaveBeenCalledTimes(2);
     expect(toolbar.classList.contains("visible")).toBe(true);
+  });
+
+  it("does not follow a selection for a passive document change", () => {
+    const toolbar = document.createElement("div");
+    document.body.append(toolbar);
+    const ensureSelectionVisible = vi.fn();
+    const frames: FrameRequestCallback[] = [];
+    const coordinator = createSelectionVisibilityCoordinator(
+      toolbar,
+      () => ({ ensureSelectionVisible }),
+      (callback) => frames.push(callback),
+    );
+
+    coordinator.show();
+    frames.shift()?.(0);
+    ensureSelectionVisible.mockClear();
+
+    coordinator.selectionChanged(false);
+
+    expect(frames).toHaveLength(0);
+    expect(ensureSelectionVisible).not.toHaveBeenCalled();
   });
 
   it("scrolls a caret above an overlaid toolbar", () => {

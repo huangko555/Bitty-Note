@@ -692,9 +692,9 @@ async function showNote(note: OpenedNote): Promise<void> {
       if (!focused && main.querySelector(".editor-settings-popover.visible")) return;
       selectionVisibility.focusChanged(focused && noteEditor?.mode === "wysiwyg");
     },
-    onSelectionChange: () => {
+    onSelectionChange: (reveal) => {
       updateToolbar();
-      selectionVisibility.selectionChanged();
+      selectionVisibility.selectionChanged(reveal);
     },
     onInsertBlankLine: () => selectionVisibility.show(),
   }, config.spellcheck);

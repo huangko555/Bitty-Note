@@ -14,6 +14,7 @@ import {
 } from "./editor";
 import { listNormalizationPlugin } from "./list-normalization";
 import { parseMarkdown, serializeMarkdown } from "./markdown";
+import { deleteRow } from "./row-drag";
 import { noteSchema } from "./schema";
 
 describe("window-level editor history shortcuts", () => {
@@ -21,12 +22,15 @@ describe("window-level editor history shortcuts", () => {
     const host = document.createElement("div");
     const outside = document.createElement("button");
     document.body.append(host, outside);
+    const revealRequests: boolean[] = [];
     const { controller } = createEditor(host, "- [ ] 待办\n", {
       onChange: () => {},
       onFocusChange: () => {},
-      onSelectionChange: () => {},
+      onSelectionChange: (reveal) => revealRequests.push(reveal),
     });
     host.querySelector<HTMLInputElement>("[data-task-checkbox]")!.click();
+    expect(revealRequests).toEqual([false]);
+    revealRequests.length = 0;
     outside.focus();
 
     const undoEvent = new KeyboardEvent("keydown", {
@@ -41,7 +45,9 @@ describe("window-level editor history shortcuts", () => {
     outside.dispatchEvent(undoEvent);
     expect(controller.getMarkdown()).toContain("- [ ] 待办");
     expect(undoEvent.defaultPrevented).toBe(true);
+    expect(revealRequests).toEqual([true]);
 
+    revealRequests.length = 0;
     const redoEvent = new KeyboardEvent("keydown", {
       bubbles: true,
       cancelable: true,
@@ -51,6 +57,7 @@ describe("window-level editor history shortcuts", () => {
     outside.dispatchEvent(redoEvent);
     expect(controller.getMarkdown()).toContain("- [x] 待办");
     expect(redoEvent.defaultPrevented).toBe(true);
+    expect(revealRequests).toEqual([true]);
 
     controller.destroy();
     host.remove();
@@ -122,10 +129,11 @@ describe("task checkbox rendering", () => {
     const host = document.createElement("div");
     document.body.append(host);
     const focusChanges: boolean[] = [];
+    const revealRequests: boolean[] = [];
     const { controller } = createEditor(host, "- [ ] 待办\n", {
       onChange: () => {},
       onFocusChange: (focused) => focusChanges.push(focused),
-      onSelectionChange: () => {},
+      onSelectionChange: (reveal) => revealRequests.push(reveal),
     });
 
     const checkbox = host.querySelector<HTMLInputElement>("[data-task-checkbox]")!;
@@ -136,7 +144,59 @@ describe("task checkbox rendering", () => {
     expect(press.defaultPrevented).toBe(true);
     expect(focusChanges).not.toContain(true);
     expect(controller.getMarkdown()).toContain("- [x] 待办");
+    expect(revealRequests).toEqual([false]);
 
+    controller.destroy();
+    host.remove();
+  });
+
+  it("reveals text edits but preserves the viewport for row deletion", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const revealRequests: boolean[] = [];
+    const { controller } = createEditor(host, "开头\n\n删除行\n", {
+      onChange: () => {},
+      onFocusChange: () => {},
+      onSelectionChange: (reveal) => revealRequests.push(reveal),
+    });
+    const view = (controller as unknown as { view: EditorView }).view;
+
+    view.dispatch(view.state.tr.insertText("输入", 1).scrollIntoView());
+    expect(revealRequests).toEqual([true]);
+
+    revealRequests.length = 0;
+    let deletedPosition = -1;
+    view.state.doc.descendants((node, position) => {
+      if (node.isTextblock && node.textContent === "删除行") deletedPosition = position;
+    });
+    expect(deleteRow(view.state, view.dispatch, deletedPosition)).toBe(true);
+    expect(revealRequests).toEqual([false]);
+
+    controller.destroy();
+    host.remove();
+  });
+
+  it("keeps toolbar formatting at the current viewport", () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const revealRequests: boolean[] = [];
+    const { controller } = createEditor(host, "正文\n", {
+      onChange: () => {},
+      onFocusChange: () => {},
+      onSelectionChange: (reveal) => revealRequests.push(reveal),
+    });
+    const view = (controller as unknown as { view: EditorView }).view;
+    const dispatch = view.dispatch.bind(view);
+    vi.spyOn(view, "dispatch").mockImplementation((transaction) => {
+      dispatch(transaction);
+      host.scrollTop = 0;
+    });
+    host.scrollTop = 420;
+
+    controller.run("heading");
+
+    expect(host.scrollTop).toBe(420);
+    expect(revealRequests).not.toContain(true);
     controller.destroy();
     host.remove();
   });

@@ -12,7 +12,7 @@ export function createSelectionVisibilityCoordinator(
 ): {
   editorPressStarted: (event?: Event) => void;
   focusChanged: (visible: boolean) => void;
-  selectionChanged: () => void;
+  selectionChanged: (reveal: boolean) => void;
   show: () => void;
 } {
   let scheduled = false;
@@ -128,8 +128,8 @@ export function createSelectionVisibilityCoordinator(
       // Keep the toolbar hidden until that actual press completes.
       restoredFocus = true;
     },
-    selectionChanged: () => {
-      if (toolbar.classList.contains("visible")) schedule();
+    selectionChanged: (reveal) => {
+      if (reveal && toolbar.classList.contains("visible")) schedule();
     },
     show,
   };

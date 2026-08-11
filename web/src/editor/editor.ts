@@ -25,6 +25,7 @@ import { parseMarkdown, parseSupportedFragment, serializeMarkdown } from "./mark
 import { rowDragPlugin } from "./row-drag";
 import { rowInsertPlugin } from "./row-insert";
 import { noteSchema } from "./schema";
+import { preserveViewportDuring } from "./editor-viewport";
 import { keepRectVisible } from "./selection-visibility";
 
 export type EditorAction =
@@ -88,9 +89,11 @@ export function handleWindowEditorHistoryShortcut(
 interface EditorCallbacks {
   onChange: (markdown: string) => void;
   onFocusChange: (focused: boolean) => void;
-  onSelectionChange: () => void;
+  onSelectionChange: (reveal: boolean) => void;
   onInsertBlankLine?: () => void;
 }
+
+const PRESERVE_VIEWPORT_META = "preserveViewport";
 
 function markInputRule(pattern: RegExp, markName: "strong" | "em" | "strike"): InputRule {
   return new InputRule(pattern, (state, match, _start, end) => {
@@ -743,7 +746,12 @@ class RichEditor implements EditorController {
         const next = this.view.state.apply(transaction);
         this.view.updateState(next);
         if (transaction.docChanged) this.callbacks.onChange(serializeMarkdown(next.doc));
-        if (transaction.selectionSet || transaction.docChanged) this.callbacks.onSelectionChange();
+        if (transaction.selectionSet || transaction.docChanged) {
+          this.callbacks.onSelectionChange(
+            transaction.scrolledIntoView
+              && transaction.getMeta(PRESERVE_VIEWPORT_META) !== true,
+          );
+        }
       },
       handleDOMEvents: {
         click: (view, event) => {
@@ -820,15 +828,20 @@ class RichEditor implements EditorController {
   }
 
   run(action: EditorAction): void {
-    if (action === "strong" || action === "em" || action === "strike") {
-      toggleMark(noteSchema.marks[action])(this.view.state, this.view.dispatch);
-    } else if (action === "heading") {
-      this.toggleHeading();
-    } else {
-      this.setList(action);
-    }
-    this.view.focus();
-    this.callbacks.onSelectionChange();
+    preserveViewportDuring(this.host, () => {
+      if (action === "strong" || action === "em" || action === "strike") {
+        toggleMark(noteSchema.marks[action])(
+          this.view.state,
+          this.dispatchPreservingViewport,
+        );
+      } else if (action === "heading") {
+        this.toggleHeading();
+      } else {
+        this.setList(action);
+      }
+      this.view.focus();
+    });
+    this.callbacks.onSelectionChange(false);
   }
 
   activeActions(): Set<EditorAction> {
@@ -884,19 +897,28 @@ class RichEditor implements EditorController {
   private toggleHeading(): void {
     const state = this.view.state;
     if (state.selection.$from.parent.type === noteSchema.nodes.heading) {
-      setBlockType(noteSchema.nodes.paragraph)(state, this.view.dispatch);
+      setBlockType(noteSchema.nodes.paragraph)(state, this.dispatchPreservingViewport);
       return;
     }
     while (nearestList(this.view.state)) {
-      if (!liftListItem(noteSchema.nodes.list_item)(this.view.state, this.view.dispatch)) break;
+      if (!liftListItem(noteSchema.nodes.list_item)(
+        this.view.state,
+        this.dispatchPreservingViewport,
+      )) break;
     }
-    setBlockType(noteSchema.nodes.heading, { level: 1 })(this.view.state, this.view.dispatch);
+    setBlockType(noteSchema.nodes.heading, { level: 1 })(
+      this.view.state,
+      this.dispatchPreservingViewport,
+    );
   }
 
   private setList(kind: ListKind): void {
-    toggleList(this.view.state, this.view.dispatch, kind);
+    toggleList(this.view.state, this.dispatchPreservingViewport, kind);
   }
 
+  private readonly dispatchPreservingViewport = (transaction: Transaction): void => {
+    this.view.dispatch(transaction.setMeta(PRESERVE_VIEWPORT_META, true));
+  };
 }
 
 class RawEditor implements EditorController {
