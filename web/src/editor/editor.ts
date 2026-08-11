@@ -18,6 +18,7 @@ import { EditorState, Selection, TextSelection, type Transaction } from "prosemi
 import { findWrapping } from "prosemirror-transform";
 import { EditorView } from "prosemirror-view";
 
+import { recoverClickedTextblockSelection } from "./click-selection";
 import { listNormalizationPlugin } from "./list-normalization";
 import { foldingPlugin } from "./folding";
 import { parseMarkdown, parseSupportedFragment, serializeMarkdown } from "./markdown";
@@ -745,6 +746,10 @@ class RichEditor implements EditorController {
         if (transaction.selectionSet || transaction.docChanged) this.callbacks.onSelectionChange();
       },
       handleDOMEvents: {
+        click: (view, event) => {
+          recoverClickedTextblockSelection(view, event.target);
+          return false;
+        },
         mousedown: (_view, event) => {
           const target = event.target;
           if (
