@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.3.4 — 2026-08-11
+
+### English
+
+- Prevented passive editor changes, including checking tasks and deleting dragged rows, from jumping the viewport to a stale selection at the document start.
+- Kept toolbar formatting at the current viewport while preserving normal caret-following for direct text edits, undo, and redo.
+
+### 简体中文
+
+- 修复勾选任务、拖动删除行等被动编辑操作可能跟随旧选区跳到文档开头的问题。
+- 工具栏格式化时保持当前视口，同时保留直接文本编辑、撤销和重做时正常跟随光标的行为。
+
 ## v1.3.3 — 2026-08-11
 
 ### English
