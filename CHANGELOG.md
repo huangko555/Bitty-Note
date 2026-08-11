@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.3.5 — 2026-08-11
+
+### English
+
+- Aligned the terminal blank-row drop guide with the guide shown in the visual space below it.
+- Matched folded-child hover highlighting to the content-width boundary used by inside drop targets, without changing the fold button hover effect.
+
+### 简体中文
+
+- 统一末尾空行尾部与下方视觉空白区域的拖放引导线位置。
+- 将折叠子项的悬停背景改为与内部拖放目标相同的内容宽度边界，同时保持折叠按钮自身的 hover 效果不变。
+
 ## v1.3.4 — 2026-08-11
 
 ### English
