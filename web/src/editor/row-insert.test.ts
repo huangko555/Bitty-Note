@@ -2,6 +2,7 @@ import { EditorState } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { foldingPlugin } from "./folding";
 import { rowInsertPlugin } from "./row-insert";
 import { noteSchema } from "./schema";
 
@@ -125,6 +126,59 @@ describe("row insertion gaps", () => {
     expect(host.querySelector(".row-insert-button")).toBeNull();
     expect(host.querySelector(".document-end-zone.is-placeholder")).not.toBeNull();
     expect(host.querySelectorAll("li:last-child p")).toHaveLength(1);
+  });
+
+  it("expands a final folded heading and appends a focused blank row", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const doc = noteSchema.nodes.doc.create(null, [
+      noteSchema.nodes.heading.create(
+        { level: 1, collapsed: true },
+        noteSchema.text("Title"),
+      ),
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("body")),
+    ]);
+    view = new EditorView(host, {
+      state: EditorState.create({
+        doc,
+        plugins: [foldingPlugin(), rowInsertPlugin()],
+      }),
+    });
+
+    const button = host.querySelector<HTMLButtonElement>(
+      ".row-insert-button.is-terminal",
+    );
+    expect(button).not.toBeNull();
+    button!.click();
+
+    expect(view.state.doc.firstChild?.attrs.collapsed).toBe(false);
+    expect(view.state.doc.childCount).toBe(3);
+    expect(view.state.doc.lastChild?.content.size).toBe(0);
+    expect(view.state.selection.$from.parent).toBe(view.state.doc.lastChild);
+  });
+
+  it("expands and focuses an existing final blank row without duplicating it", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const doc = noteSchema.nodes.doc.create(null, [
+      noteSchema.nodes.heading.create(
+        { level: 1, collapsed: true },
+        noteSchema.text("Title"),
+      ),
+      noteSchema.nodes.paragraph.create(),
+    ]);
+    view = new EditorView(host, {
+      state: EditorState.create({
+        doc,
+        plugins: [foldingPlugin(), rowInsertPlugin()],
+      }),
+    });
+
+    host.querySelector<HTMLButtonElement>(".row-insert-button.is-terminal")!.click();
+
+    expect(view.state.doc.firstChild?.attrs.collapsed).toBe(false);
+    expect(view.state.doc.childCount).toBe(2);
+    expect(view.state.selection.$from.parent).toBe(view.state.doc.lastChild);
   });
 
   it.each([

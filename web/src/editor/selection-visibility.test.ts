@@ -50,6 +50,30 @@ describe("selection visibility", () => {
     expect(toolbar.classList.contains("visible")).toBe(true);
   });
 
+  it("waits for a paint frame so native caret placement keeps the clicked row", async () => {
+    const toolbar = document.createElement("div");
+    document.body.append(toolbar);
+    const frames: FrameRequestCallback[] = [];
+    const coordinator = createSelectionVisibilityCoordinator(
+      toolbar,
+      () => null,
+      (callback) => {
+        frames.push(callback);
+        return frames.length;
+      },
+    );
+
+    coordinator.editorPressStarted();
+    window.dispatchEvent(new MouseEvent("click"));
+    await Promise.resolve();
+
+    expect(toolbar.classList.contains("visible")).toBe(false);
+    expect(frames).toHaveLength(1);
+
+    frames.shift()?.(0);
+    expect(toolbar.classList.contains("visible")).toBe(true);
+  });
+
   it("does not change toolbar state for editor controls", () => {
     const toolbar = document.createElement("div");
     const host = document.createElement("div");

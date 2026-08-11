@@ -37,6 +37,7 @@ interface ActiveDocumentEndTarget {
   anchor: HTMLElement;
   edge: DocumentEndAnchorEdge;
   terminalRow: RowDescriptor | null;
+  collapsedHeading: ProseMirrorNode | null;
 }
 
 function nodeAtPath(node: ProseMirrorNode, path: readonly number[]): ProseMirrorNode {
@@ -281,6 +282,24 @@ function removeRowAtPath(
   );
 }
 
+function expandHeadingInDocument(
+  root: ProseMirrorNode,
+  heading: ProseMirrorNode | null,
+): ProseMirrorNode {
+  if (!heading?.attrs.collapsed) return root;
+  const path = findNodePath(root, heading);
+  if (!path || path.length !== 1) return root;
+  return replaceNodeAtPath(
+    root,
+    path,
+    heading.type.create(
+      { ...heading.attrs, collapsed: false },
+      heading.content,
+      heading.marks,
+    ),
+  );
+}
+
 function isDraggableRowAtPath(root: ProseMirrorNode, path: readonly number[]): boolean {
   const node = nodeAtPath(root, path);
   if (node.type === noteSchema.nodes.list_item) {
@@ -442,6 +461,7 @@ export function moveRow(
   sourcePosition: number,
   targetPosition: number,
   side: RowDropSide,
+  expandHeading: ProseMirrorNode | null = null,
 ): boolean {
   const selectionAnchor = {
     parent: state.selection.$anchor.parent,
@@ -618,6 +638,7 @@ export function moveRow(
     nextDoc = insertNodeAtPath(nextDoc, [], insertionIndex, root.node);
   }
 
+  nextDoc = expandHeadingInDocument(nextDoc, expandHeading);
   return dispatchMovedDocument(state, dispatch, nextDoc, selectionAnchor, selectionHead);
 }
 
@@ -625,6 +646,7 @@ export function moveRowToDocumentEnd(
   state: EditorState,
   dispatch: ((transaction: Transaction) => void) | undefined,
   sourcePosition: number,
+  expandHeading: ProseMirrorNode | null = null,
 ): boolean {
   const source = state.doc.nodeAt(sourcePosition);
   if (!source) return false;
@@ -659,6 +681,9 @@ export function moveRowToDocumentEnd(
     appended = [rootNodeForSource(source, sourceKind).node];
   }
   nextDoc = insertNodesAtPath(nextDoc, [], nextDoc.childCount, appended);
+  if (source.type !== noteSchema.nodes.heading) {
+    nextDoc = expandHeadingInDocument(nextDoc, expandHeading);
+  }
   return dispatchMovedDocument(
     state,
     dispatch,
@@ -918,6 +943,7 @@ class RowDragHandleView {
           this.endTarget.anchor,
           this.endTarget.edge,
           this.endTarget.terminalRow,
+          this.endTarget.collapsedHeading,
         );
       } else {
         this.positionDropTarget(this.target, this.side, this.visualAnchor);
@@ -1000,13 +1026,22 @@ class RowDragHandleView {
 
     const endZone = documentEndZoneAt(this.view, this.host, event.clientX, event.clientY);
     if (endZone) {
+      const collapsedHeading = endZone.collapsedHeadingPosition === null
+        ? null
+        : this.view.state.doc.nodeAt(endZone.collapsedHeadingPosition);
       const terminalRowPosition = endZone.terminalBlankPosition === null
         ? null
         : rowPositionAt(this.view, endZone.terminalBlankPosition);
       const terminalRow = terminalRowPosition === null
+        || (collapsedHeading !== null && this.source.node.type === noteSchema.nodes.heading)
         ? null
         : rowAtPosition(this.view, terminalRowPosition);
-      this.positionDocumentEndTarget(endZone.element, "top", terminalRow);
+      this.positionDocumentEndTarget(
+        endZone.element,
+        "top",
+        terminalRow,
+        collapsedHeading,
+      );
       return;
     }
 
@@ -1135,8 +1170,14 @@ class RowDragHandleView {
             sourcePosition,
             endTarget.terminalRow.position,
             "after",
+            endTarget.collapsedHeading,
           )
-          : moveRowToDocumentEnd(this.view.state, this.view.dispatch, sourcePosition)
+          : moveRowToDocumentEnd(
+            this.view.state,
+            this.view.dispatch,
+            sourcePosition,
+            endTarget.collapsedHeading,
+          )
         : moveRow(
           this.view.state,
           this.view.dispatch,
@@ -1510,11 +1551,12 @@ class RowDragHandleView {
     anchor: HTMLElement,
     edge: DocumentEndAnchorEdge = "top",
     terminalRow: RowDescriptor | null = null,
+    collapsedHeading: ProseMirrorNode | null = null,
   ): void {
     this.target = null;
     this.side = "after";
     this.visualAnchor = null;
-    this.endTarget = { anchor, edge, terminalRow };
+    this.endTarget = { anchor, edge, terminalRow, collapsedHeading };
     this.reparentLevel = null;
     this.indicator.classList.remove("visible");
     this.insideIndicator.classList.remove("visible");
@@ -1525,8 +1567,14 @@ class RowDragHandleView {
         this.source.position,
         terminalRow.position,
         "after",
+        collapsedHeading,
       )
-      : moveRowToDocumentEnd(this.view.state, undefined, this.source.position)));
+      : moveRowToDocumentEnd(
+        this.view.state,
+        undefined,
+        this.source.position,
+        collapsedHeading,
+      )));
     if (!valid) {
       this.endTarget = null;
       return;

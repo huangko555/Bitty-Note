@@ -6,7 +6,9 @@ export function createSelectionVisibilityCoordinator(
   toolbar: HTMLElement,
   getTarget: () => SelectionVisibilityTarget | null,
   requestFrame: (callback: FrameRequestCallback) => number = window.requestAnimationFrame.bind(window),
-  defer: (callback: () => void) => void = window.queueMicrotask.bind(window),
+  defer: (callback: () => void) => void = (callback) => {
+    requestFrame(() => callback());
+  },
 ): {
   editorPressStarted: (event?: Event) => void;
   focusChanged: (visible: boolean) => void;

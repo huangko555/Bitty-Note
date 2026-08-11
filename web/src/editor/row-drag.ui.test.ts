@@ -257,7 +257,8 @@ describe("row drag handle", () => {
     }));
 
     expect(host.querySelector("p.is-folded-content")).not.toBeNull();
-    expect(host.querySelector(".document-end-zone")).toBeNull();
+    expect(host.querySelector(".row-insert-button.is-terminal.document-end-zone"))
+      .not.toBeNull();
     expect(host.querySelector(".block-drag-handle")?.classList.contains("visible")).toBe(true);
   });
 
@@ -1002,6 +1003,57 @@ describe("row drag handle", () => {
     window.dispatchEvent(pointerEvent("pointerup", 92));
     expect(Array.from(view.state.doc.content.content, (node) => node.textContent))
       .toEqual(["甲", "甲正文", "移动", "乙"]);
+  });
+
+  it("expands a final folded heading when content is dropped on its end button", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const doc = noteSchema.nodes.doc.create(null, [
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("moved")),
+      noteSchema.nodes.heading.create(
+        { level: 1, collapsed: true },
+        noteSchema.text("Title"),
+      ),
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("body")),
+    ]);
+    view = new EditorView(host, {
+      state: EditorState.create({
+        doc,
+        plugins: [foldingPlugin(), rowDragPlugin(), rowInsertPlugin()],
+      }),
+    });
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 220));
+    vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 220));
+    const source = view.dom.querySelector("p:not(.is-folded-content)")!;
+    vi.spyOn(source, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 22));
+    vi.spyOn(view, "posAtCoords").mockReturnValue({ pos: 1, inside: 0 });
+    const endButton = view.dom.querySelector<HTMLElement>(
+      ".row-insert-button.is-terminal",
+    )!;
+    vi.spyOn(endButton, "getBoundingClientRect").mockReturnValue(rect(40, 150, 260, 20));
+    const pointerEvent = (type: string, y: number) => {
+      const event = new MouseEvent(type, {
+        bubbles: true,
+        button: 0,
+        clientX: 100,
+        clientY: y,
+      });
+      Object.defineProperty(event, "pointerId", { value: 22 });
+      return event;
+    };
+
+    host.dispatchEvent(pointerEvent("pointermove", 30));
+    const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
+    Object.defineProperties(handle, {
+      setPointerCapture: { value: vi.fn() },
+      hasPointerCapture: { value: vi.fn(() => false) },
+    });
+    handle.dispatchEvent(pointerEvent("pointerdown", 30));
+    window.dispatchEvent(pointerEvent("pointermove", 165));
+    window.dispatchEvent(pointerEvent("pointerup", 165));
+
+    expect(view.state.doc.firstChild?.attrs.collapsed).toBe(false);
+    expect(view.state.doc.lastChild?.textContent).toBe("moved");
   });
 
   it("keeps the handle visible under the pointer after a successful drop", () => {

@@ -85,6 +85,32 @@ it("moves a row to the document end without changing its block type", () => {
   expect(next.doc.lastChild?.textContent).toBe("移动");
 });
 
+it("expands the final heading when content is moved to its folded section end", () => {
+  const foldedHeading = noteSchema.nodes.heading.create(
+    { level: 1, collapsed: true },
+    noteSchema.text("Title"),
+  );
+  const doc = noteSchema.nodes.doc.create(null, [
+    paragraph("moved"),
+    foldedHeading,
+    paragraph("body"),
+  ]);
+  const state = EditorState.create({ doc });
+  let next = state;
+
+  expect(moveRowToDocumentEnd(
+    state,
+    (transaction) => {
+      next = state.apply(transaction);
+    },
+    rowPosition(doc, "moved"),
+    foldedHeading,
+  )).toBe(true);
+
+  expect(next.doc.child(0).attrs.collapsed).toBe(false);
+  expect(next.doc.lastChild?.textContent).toBe("moved");
+});
+
 describe("row dragging", () => {
   it("deletes a row through history so it can be undone and redone", () => {
     const doc = noteSchema.nodes.doc.create(null, [

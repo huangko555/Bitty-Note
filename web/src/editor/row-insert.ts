@@ -4,7 +4,11 @@ import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } 
 import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
 
 import { t } from "../i18n";
-import { DOCUMENT_END_ZONE_CLASS, terminalBlankPosition } from "./editor-tail";
+import {
+  DOCUMENT_END_ZONE_CLASS,
+  finalCollapsedHeadingPosition,
+  terminalBlankPosition,
+} from "./editor-tail";
 import { noteSchema } from "./schema";
 
 const rowInsertKey = new PluginKey<DecorationSet>("rowInsert");
@@ -45,6 +49,7 @@ function insertButton(
   getPosition: () => number | undefined,
   onInsert?: () => void,
   terminal = false,
+  expandHeadingAt: number | null = null,
 ): HTMLElement {
   const button = document.createElement("button");
   button.type = "button";
@@ -64,12 +69,40 @@ function insertButton(
     event.stopPropagation();
     const position = getPosition();
     if (typeof position !== "number") return;
-    if (insertBlankParagraph(view.state, view.dispatch, position)) {
+    const changed = expandHeadingAt === null
+      ? insertBlankParagraph(view.state, view.dispatch, position)
+      : expandHeadingForInsertion(view.state, view.dispatch, expandHeadingAt);
+    if (changed) {
       view.focus();
       onInsert?.();
     }
   });
   return button;
+}
+
+function expandHeadingForInsertion(
+  state: EditorState,
+  dispatch: ((transaction: Transaction) => void) | undefined,
+  headingPosition: number,
+): boolean {
+  const heading = state.doc.nodeAt(headingPosition);
+  if (heading?.type !== noteSchema.nodes.heading || !heading.attrs.collapsed) return false;
+  if (!dispatch) return true;
+
+  const transaction = state.tr.setNodeMarkup(headingPosition, undefined, {
+    ...heading.attrs,
+    collapsed: false,
+  });
+  const blankPosition = terminalBlankPosition(transaction.doc);
+  if (blankPosition === null) {
+    const insertPosition = transaction.doc.content.size;
+    transaction.insert(insertPosition, noteSchema.nodes.paragraph.create());
+    transaction.setSelection(TextSelection.create(transaction.doc, insertPosition + 1));
+  } else {
+    transaction.setSelection(TextSelection.create(transaction.doc, blankPosition + 1));
+  }
+  dispatch(transaction.scrollIntoView());
+  return true;
 }
 
 function emptyDocumentEndZone(): HTMLElement {
@@ -83,32 +116,31 @@ function emptyDocumentEndZone(): HTMLElement {
 
 function decorations(doc: EditorState["doc"], onInsert?: () => void): DecorationSet {
   const headingPositions: number[] = [];
-  let finalHeadingCollapsed = false;
-  for (let index = doc.childCount - 1; index >= 0; index -= 1) {
-    const node = doc.child(index);
-    if (node.type === noteSchema.nodes.heading) {
-      finalHeadingCollapsed = Boolean(node.attrs.collapsed && index < doc.childCount - 1);
-      break;
-    }
-  }
   doc.forEach((node, position) => {
     if (node.type === noteSchema.nodes.heading && position > 0) headingPositions.push(position);
   });
   const terminalBlank = terminalBlankPosition(doc);
+  const collapsedHeading = finalCollapsedHeadingPosition(doc);
   const items: Decoration[] = headingPositions.map((position) => Decoration.widget(
     position,
     (view, getPosition) => insertButton(view, getPosition, onInsert),
     { key: `row-insert-${position}`, side: -1 },
   ));
-  if (!finalHeadingCollapsed) {
-    items.push(Decoration.widget(
-      doc.content.size,
-      terminalBlank !== null
+  items.push(Decoration.widget(
+    doc.content.size,
+    collapsedHeading !== null
+      ? (view, getPosition) => insertButton(
+        view,
+        getPosition,
+        onInsert,
+        true,
+        collapsedHeading,
+      )
+      : terminalBlank !== null
         ? emptyDocumentEndZone
         : (view, getPosition) => insertButton(view, getPosition, onInsert, true),
-      { key: "document-end-zone", side: -1 },
-    ));
-  }
+    { key: "document-end-zone", side: -1 },
+  ));
   return DecorationSet.create(doc, items);
 }
 
