@@ -735,6 +735,16 @@ function draggedBlockVerticalRect(
   const lastIndex = headingSectionEndIndex(view.state.doc, sourcePath[0]!) - 1;
   const lastDom = view.nodeDOM(topLevelNodePosition(view.state.doc, lastIndex));
   if (!(lastDom instanceof HTMLElement)) return headerRect;
+  const terminalEmptyLine = view.dom.querySelector<HTMLElement>(".is-terminal-empty-line");
+  if (
+    terminalEmptyLine
+    && (lastDom === terminalEmptyLine || lastDom.contains(terminalEmptyLine))
+  ) {
+    const terminalRect = rowHeaderVerticalRect(terminalEmptyLine);
+    if (terminalRect.bottom > terminalRect.top) {
+      return { top: headerRect.top, bottom: terminalRect.bottom };
+    }
+  }
   return { top: headerRect.top, bottom: unshiftedVerticalRect(lastDom).bottom };
 }
 

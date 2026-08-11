@@ -126,6 +126,55 @@ describe("row drag handle", () => {
     expect(highlight.style.height).toBe("61px");
   });
 
+  it("excludes the terminal empty tail from heading handle and fold highlights", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const item = (text: string, checked: boolean) => noteSchema.nodes.list_item.create(
+      { checked },
+      noteSchema.nodes.paragraph.create(null, text ? noteSchema.text(text) : undefined),
+    );
+    const doc = noteSchema.nodes.doc.create(null, [
+      noteSchema.nodes.heading.create({ level: 1 }, noteSchema.text("末标题")),
+      noteSchema.nodes.bullet_list.create(null, [
+        item("设计", true),
+        item("发布", true),
+        item("", false),
+      ]),
+    ]);
+    view = new EditorView(host, {
+      state: EditorState.create({
+        doc,
+        plugins: [foldingPlugin(), rowDragPlugin(), rowInsertPlugin()],
+      }),
+    });
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 220));
+    vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 220));
+    const heading = view.dom.querySelector("h1")!;
+    const list = view.dom.querySelector("ul")!;
+    const emptyParagraph = view.dom.querySelector(".is-terminal-empty-line")!;
+    vi.spyOn(heading, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 25));
+    vi.spyOn(list, "getBoundingClientRect").mockReturnValue(rect(50, 55, 230, 104));
+    vi.spyOn(emptyParagraph, "getBoundingClientRect").mockReturnValue(rect(80, 99, 200, 60));
+    vi.spyOn(view, "posAtCoords").mockReturnValue({ pos: 1, inside: 0 });
+
+    host.dispatchEvent(new MouseEvent("pointermove", {
+      bubbles: true,
+      clientX: 100,
+      clientY: 30,
+    }));
+    const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
+    const highlight = host.querySelector<HTMLElement>(".block-row-handle-highlight")!;
+    handle.dispatchEvent(new MouseEvent("pointerenter"));
+    expect(highlight.style.top).toBe("18px");
+    expect(highlight.style.height).toBe("104px");
+    handle.dispatchEvent(new MouseEvent("pointerleave"));
+
+    host.querySelector<HTMLButtonElement>(".fold-toggle")!
+      .dispatchEvent(new MouseEvent("pointerenter"));
+    expect(highlight.style.top).toBe("45px");
+    expect(highlight.style.height).toBe("77px");
+  });
+
   it("highlights the complete affected block when a fold toggle is hovered", () => {
     const host = document.createElement("div");
     document.body.append(host);
