@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.3.3 — 2026-08-11
+
+### English
+
+- Separated the document-end action area from real blank rows so terminal highlighting, insertion, and dragging stay accurate.
+- Fixed insertion and drop behavior at folded document endings, including keeping the final action visible and expanding folded content atomically.
+- Recovered the intended caret position when clicking text that becomes visible after expanding folded content.
+
+### 简体中文
+
+- 将文档末尾操作区与真实空行分离，使末尾高亮、插入和拖动命中保持准确。
+- 修复折叠文档末尾的插入与拖放行为，包括保持末尾操作入口可见并原子展开折叠内容。
+- 修复点击刚展开的折叠内容时光标可能被 WebView 覆盖的问题。
+
 ## v1.3.2 — 2026-08-11
 
 ### English
