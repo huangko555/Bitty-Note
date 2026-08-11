@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.3.7 — 2026-08-11
+
+### English
+
+- Stabilized drag hit testing at the document tail so the terminal blank row and the visual space below it share the same drop guide position.
+- Kept document-end actions and caret placement consistent while dragging near folded or empty content.
+
+### 简体中文
+
+- 稳定文档末尾的拖动命中，让末尾空行与下方视觉空白区域使用同一引导线位置。
+- 拖动到折叠或空内容附近时，保持文档末尾操作入口与光标定位行为一致。
+
 ## v1.3.6 — 2026-08-11
 
 ### English
