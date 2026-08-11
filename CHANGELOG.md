@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.3.6 — 2026-08-11
+
+### English
+
+- Made undo and redo preserve the original operation's viewport intent: text edits reveal their restored caret, while task checks, row operations, folding, and toolbar formatting keep the current viewport.
+- Prevented window-level undo and redo from stealing focus, showing the toolbar, or scrolling the note when the editor is unfocused.
+
+### 简体中文
+
+- 让撤销和重做继承原操作的视口意图：文本编辑会显示恢复后的光标，任务勾选、行操作、折叠和工具栏格式化则保持当前视口。
+- 编辑器失焦时，通过窗口快捷键撤销或重做不再抢占焦点、显示工具栏或滚动便签。
+
 ## v1.3.5 — 2026-08-11
 
 ### English
