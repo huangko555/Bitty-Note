@@ -202,8 +202,9 @@ describe("row drag handle", () => {
     button.dispatchEvent(new MouseEvent("pointerenter"));
 
     expect(highlight.classList.contains("visible")).toBe(true);
+    expect(highlight.style.left).toBe("72px");
     expect(highlight.style.top).toBe("47px");
-    expect(highlight.style.width).toBe("267px");
+    expect(highlight.style.width).toBe("208px");
     expect(highlight.style.height).toBe("32px");
 
     button.dispatchEvent(new MouseEvent("pointerleave"));
@@ -368,8 +369,10 @@ describe("row drag handle", () => {
       state: EditorState.create({ doc, plugins: [rowDragPlugin(), foldingPlugin()] }),
     });
     vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    const list = view.dom.querySelector("ul")!;
     const listItem = view.dom.querySelector("li")!;
     const parentParagraph = listItem.querySelector(":scope > p")!;
+    vi.spyOn(list, "getBoundingClientRect").mockReturnValue(rect(50, 20, 230, 70));
     vi.spyOn(listItem, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 70));
     vi.spyOn(parentParagraph, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 22));
     const button = parentParagraph.querySelector<HTMLButtonElement>(".fold-toggle")!;
@@ -379,6 +382,8 @@ describe("row drag handle", () => {
 
     const highlight = host.querySelector<HTMLElement>(".block-row-handle-highlight")!;
     expect(highlight.classList.contains("visible")).toBe(true);
+    expect(highlight.style.left).toBe("50px");
+    expect(highlight.style.width).toBe("230px");
     expect(highlight.style.top).toBe("45px");
     expect(highlight.style.height).toBe("47px");
   });
@@ -489,7 +494,7 @@ describe("row drag handle", () => {
       expect(endZone).not.toBeNull();
       vi.spyOn(sourceDom, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 22));
       vi.spyOn(emptyDom, "getBoundingClientRect").mockReturnValue(rect(80, 60, 200, 21));
-      vi.spyOn(endZone, "getBoundingClientRect").mockReturnValue(rect(20, 81, 277, 21));
+      vi.spyOn(endZone, "getBoundingClientRect").mockReturnValue(rect(20, 81.5, 277, 21));
       if (kind === "list") {
         vi.spyOn(view.dom.querySelector("li")!, "getBoundingClientRect")
           .mockReturnValue(rect(80, 60, 200, 21));
@@ -532,10 +537,15 @@ describe("row drag handle", () => {
         hasPointerCapture: { value: vi.fn(() => false) },
       });
       handle.dispatchEvent(pointerEvent("pointerdown", 30));
-      window.dispatchEvent(pointerEvent("pointermove", 170));
+      emptyDom.style.setProperty("--editor-text-shift-y", "1.5px");
+      window.dispatchEvent(pointerEvent("pointermove", 80));
       const indicator = host.querySelector<HTMLElement>(".block-drop-indicator")!;
+      const terminalRowTop = indicator.style.top;
+      window.dispatchEvent(pointerEvent("pointermove", 95));
+      expect(indicator.style.top).toBe(terminalRowTop);
+      window.dispatchEvent(pointerEvent("pointermove", 170));
       expect(indicator.classList.contains("visible")).toBe(true);
-      expect(indicator.style.top).toBe("80px");
+      expect(indicator.style.top).toBe(terminalRowTop);
       window.dispatchEvent(pointerEvent("pointerup", 170));
       expect(view.state.doc.child(0).textContent).toBe("保留内容");
       if (kind === "paragraph") {

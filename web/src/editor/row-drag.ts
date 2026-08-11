@@ -1353,7 +1353,7 @@ class RowDragHandleView {
     const blockRect = draggedBlockVerticalRect(this.view, row);
     const toggleBottom = row.header.querySelector<HTMLElement>(".fold-toggle")
       ?.getBoundingClientRect().bottom ?? headerRect.bottom;
-    const left = hostRect.left + FEEDBACK_LEFT_INSET;
+    const left = this.insideFeedbackLeft(row, hostRect);
     const top = Math.max(hostRect.top, headerRect.bottom, toggleBottom);
     const right = Math.min(
       hostRect.right - FEEDBACK_RIGHT_INSET,
@@ -1403,14 +1403,9 @@ class RowDragHandleView {
       return;
     }
     const hostRect = this.host.getBoundingClientRect();
-    const headerBounds = row.header.getBoundingClientRect();
-    const rowBounds = row.dom.getBoundingClientRect();
     const headerRect = rowHeaderVerticalRect(row.header);
     if (side === "inside") {
-      const contentLeft = row.node.type === noteSchema.nodes.list_item
-        ? this.listFeedbackLeft(row)
-        : Math.min(rowBounds.left, headerBounds.left) - 8;
-      const left = Math.max(hostRect.left + FEEDBACK_LEFT_INSET, contentLeft);
+      const left = this.insideFeedbackLeft(row, hostRect);
       const top = Math.max(hostRect.top, headerRect.top - 3);
       const right = hostRect.right - FEEDBACK_RIGHT_INSET;
       const bottom = Math.min(
@@ -1498,6 +1493,15 @@ class RowDragHandleView {
     return headerLeft - fontSize * 1.9;
   }
 
+  private insideFeedbackLeft(row: RowDescriptor, hostRect: DOMRect): number {
+    const headerBounds = row.header.getBoundingClientRect();
+    const rowBounds = row.dom.getBoundingClientRect();
+    const contentLeft = row.node.type === noteSchema.nodes.list_item
+      ? this.listFeedbackLeft(row)
+      : Math.min(rowBounds.left, headerBounds.left) - 8;
+    return Math.max(hostRect.left + FEEDBACK_LEFT_INSET, contentLeft);
+  }
+
   private dropBoundary(
     source: ProseMirrorNode,
     target: ProseMirrorNode | null,
@@ -1581,7 +1585,9 @@ class RowDragHandleView {
     }
     const hostRect = this.host.getBoundingClientRect();
     const anchorRect = anchor.getBoundingClientRect();
-    const top = edge === "top" ? anchorRect.top : anchorRect.bottom;
+    const top = edge === "top" && terminalRow
+      ? rowHeaderVerticalRect(terminalRow.header).bottom
+      : edge === "top" ? anchorRect.top : anchorRect.bottom;
     const left = this.dropIndicatorLeft(null);
     this.showDropIndicator(left, top, hostRect.right - FEEDBACK_RIGHT_INSET);
   }
