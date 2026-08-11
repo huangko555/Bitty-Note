@@ -45,7 +45,7 @@ describe("window-level editor history shortcuts", () => {
     outside.dispatchEvent(undoEvent);
     expect(controller.getMarkdown()).toContain("- [ ] 待办");
     expect(undoEvent.defaultPrevented).toBe(true);
-    expect(revealRequests).toEqual([true]);
+    expect(revealRequests).toEqual([false]);
 
     revealRequests.length = 0;
     const redoEvent = new KeyboardEvent("keydown", {
@@ -57,7 +57,7 @@ describe("window-level editor history shortcuts", () => {
     outside.dispatchEvent(redoEvent);
     expect(controller.getMarkdown()).toContain("- [x] 待办");
     expect(redoEvent.defaultPrevented).toBe(true);
-    expect(revealRequests).toEqual([true]);
+    expect(revealRequests).toEqual([false]);
 
     controller.destroy();
     host.remove();
@@ -165,11 +165,35 @@ describe("task checkbox rendering", () => {
     expect(revealRequests).toEqual([true]);
 
     revealRequests.length = 0;
+    expect(controller.undo()).toBe(true);
+    expect(revealRequests).toEqual([true]);
+
+    revealRequests.length = 0;
+    expect(controller.redo()).toBe(true);
+    expect(revealRequests).toEqual([true]);
+
+    revealRequests.length = 0;
     let deletedPosition = -1;
     view.state.doc.descendants((node, position) => {
       if (node.isTextblock && node.textContent === "删除行") deletedPosition = position;
     });
     expect(deleteRow(view.state, view.dispatch, deletedPosition)).toBe(true);
+    expect(revealRequests).toEqual([false]);
+
+    revealRequests.length = 0;
+    expect(controller.undo()).toBe(true);
+    expect(revealRequests).toEqual([false]);
+
+    revealRequests.length = 0;
+    expect(controller.undo()).toBe(true);
+    expect(revealRequests).toEqual([true]);
+
+    revealRequests.length = 0;
+    expect(controller.redo()).toBe(true);
+    expect(revealRequests).toEqual([true]);
+
+    revealRequests.length = 0;
+    expect(controller.redo()).toBe(true);
     expect(revealRequests).toEqual([false]);
 
     controller.destroy();
@@ -197,6 +221,39 @@ describe("task checkbox rendering", () => {
 
     expect(host.scrollTop).toBe(420);
     expect(revealRequests).not.toContain(true);
+
+    revealRequests.length = 0;
+    expect(controller.undo()).toBe(true);
+    expect(revealRequests).toEqual([false]);
+
+    revealRequests.length = 0;
+    expect(controller.redo()).toBe(true);
+    expect(revealRequests).toEqual([false]);
+    controller.destroy();
+    host.remove();
+  });
+
+  it("preserves the viewport intent when folding is undone and redone", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const revealRequests: boolean[] = [];
+    const { controller } = createEditor(host, "# 标题\n\n正文\n", {
+      onChange: () => {},
+      onFocusChange: () => {},
+      onSelectionChange: (reveal) => revealRequests.push(reveal),
+    });
+
+    host.querySelector<HTMLButtonElement>(".fold-toggle")!.click();
+    expect(revealRequests).toEqual([false]);
+
+    revealRequests.length = 0;
+    expect(controller.undo()).toBe(true);
+    expect(revealRequests).toEqual([false]);
+
+    revealRequests.length = 0;
+    expect(controller.redo()).toBe(true);
+    expect(revealRequests).toEqual([false]);
+
     controller.destroy();
     host.remove();
   });

@@ -6,6 +6,7 @@ import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
 
 import { t } from "../i18n";
 import { preserveVisualAnchorDuring } from "./editor-viewport";
+import { preserveViewportInHistory } from "./history-viewport";
 import { noteSchema } from "./schema";
 
 export const FOLD_HOVER_EVENT = "bitty-fold-hover";
@@ -97,10 +98,12 @@ function foldButton(
       const node = view.state.doc.nodeAt(ownerPosition);
       if (!node || node.type !== owner.type) return;
       const collapsing = !node.attrs.collapsed;
-      const transaction = view.state.tr.setNodeMarkup(ownerPosition, undefined, {
-        ...node.attrs,
-        collapsed: collapsing,
-      });
+      const transaction = preserveViewportInHistory(
+        view.state.tr.setNodeMarkup(ownerPosition, undefined, {
+          ...node.attrs,
+          collapsed: collapsing,
+        }),
+      );
       if (collapsing) {
         const caret = node.type === noteSchema.nodes.heading
           ? ownerPosition + node.nodeSize - 1

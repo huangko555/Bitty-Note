@@ -14,6 +14,7 @@ import {
 } from "./editor-viewport";
 import { documentEndZoneAt } from "./editor-tail";
 import { FOLD_HOVER_EVENT, type FoldHoverDetail } from "./folding";
+import { preserveViewportInHistory } from "./history-viewport";
 import { noteSchema } from "./schema";
 import { t } from "../i18n";
 
@@ -415,7 +416,7 @@ function dispatchMovedDocument(
   if (nextAnchor !== null && nextHead !== null) {
     transaction.setSelection(TextSelection.create(transaction.doc, nextAnchor, nextHead));
   }
-  dispatch(transaction.setMeta("rowDrag", true));
+  dispatch(preserveViewportInHistory(transaction.setMeta("rowDrag", true)));
   return true;
 }
 
@@ -447,11 +448,13 @@ export function deleteRow(
   if (!dispatch) return true;
 
   const changed = changedDocumentRange(state.doc, nextDoc);
-  dispatch(state.tr.replace(
-    changed.from,
-    changed.previousTo,
-    nextDoc.slice(changed.from, changed.nextTo),
-  ).setMeta("rowDrag", true));
+  dispatch(preserveViewportInHistory(
+    state.tr.replace(
+      changed.from,
+      changed.previousTo,
+      nextDoc.slice(changed.from, changed.nextTo),
+    ).setMeta("rowDrag", true),
+  ));
   return true;
 }
 

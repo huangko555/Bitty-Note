@@ -1,5 +1,10 @@
 import { baseKeymap, chainCommands, setBlockType, toggleMark } from "prosemirror-commands";
-import { history, redo, undo } from "prosemirror-history";
+import {
+  history,
+  isHistoryTransaction,
+  redoNoScroll,
+  undoNoScroll,
+} from "prosemirror-history";
 import {
   InputRule,
   inputRules,
@@ -26,6 +31,12 @@ import { rowDragPlugin } from "./row-drag";
 import { rowInsertPlugin } from "./row-insert";
 import { noteSchema } from "./schema";
 import { preserveViewportDuring } from "./editor-viewport";
+import {
+  appliedHistoryViewportIntent,
+  historyViewportIntentPlugin,
+  preserveViewportInHistory,
+  transactionPreservesViewport,
+} from "./history-viewport";
 import { keepRectVisible } from "./selection-visibility";
 
 export type EditorAction =
@@ -92,8 +103,6 @@ interface EditorCallbacks {
   onSelectionChange: (reveal: boolean) => void;
   onInsertBlankLine?: () => void;
 }
-
-const PRESERVE_VIEWPORT_META = "preserveViewport";
 
 function markInputRule(pattern: RegExp, markName: "strong" | "em" | "strike"): InputRule {
   return new InputRule(pattern, (state, match, _start, end) => {
@@ -720,12 +729,13 @@ class RichEditor implements EditorController {
           listNormalizationPlugin(),
           foldingPlugin(),
           history(),
+          historyViewportIntentPlugin(),
           rowDragPlugin(),
           rowInsertPlugin(callbacks.onInsertBlankLine),
           keymap({
-            "Mod-z": undo,
-            "Mod-y": redo,
-            "Mod-Shift-z": redo,
+            "Mod-z": undoNoScroll,
+            "Mod-y": redoNoScroll,
+            "Mod-Shift-z": redoNoScroll,
             Enter: splitCurrentListItem,
             Backspace: chainCommands(
               exitEmptyListItem,
@@ -747,9 +757,13 @@ class RichEditor implements EditorController {
         this.view.updateState(next);
         if (transaction.docChanged) this.callbacks.onChange(serializeMarkdown(next.doc));
         if (transaction.selectionSet || transaction.docChanged) {
+          const historyIntent = isHistoryTransaction(transaction)
+            ? appliedHistoryViewportIntent(next)
+            : null;
           this.callbacks.onSelectionChange(
-            transaction.scrolledIntoView
-              && transaction.getMeta(PRESERVE_VIEWPORT_META) !== true,
+            historyIntent
+              ? historyIntent === "reveal"
+              : transaction.scrolledIntoView && !transactionPreservesViewport(transaction),
           );
         }
       },
@@ -783,10 +797,12 @@ class RichEditor implements EditorController {
           const node = view.state.doc.nodeAt(position);
           if (node?.type !== noteSchema.nodes.list_item) return false;
           const hadFocus = view.hasFocus();
-          view.dispatch(view.state.tr.setNodeMarkup(position, undefined, {
-            ...node.attrs,
-            checked: target.checked,
-          }));
+          view.dispatch(preserveViewportInHistory(
+            view.state.tr.setNodeMarkup(position, undefined, {
+              ...node.attrs,
+              checked: target.checked,
+            }),
+          ));
           if (hadFocus) {
             restoreNativeSelection(
               view,
@@ -864,11 +880,11 @@ class RichEditor implements EditorController {
   }
 
   undo(): boolean {
-    return undo(this.view.state, this.view.dispatch);
+    return undoNoScroll(this.view.state, this.view.dispatch);
   }
 
   redo(): boolean {
-    return redo(this.view.state, this.view.dispatch);
+    return redoNoScroll(this.view.state, this.view.dispatch);
   }
 
   focus(): void {
@@ -917,7 +933,7 @@ class RichEditor implements EditorController {
   }
 
   private readonly dispatchPreservingViewport = (transaction: Transaction): void => {
-    this.view.dispatch(transaction.setMeta(PRESERVE_VIEWPORT_META, true));
+    this.view.dispatch(preserveViewportInHistory(transaction));
   };
 }
 
