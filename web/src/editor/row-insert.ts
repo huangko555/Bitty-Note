@@ -4,6 +4,7 @@ import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } 
 import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
 
 import { t } from "../i18n";
+import { DOCUMENT_END_ZONE_CLASS, terminalBlankPosition } from "./editor-tail";
 import { noteSchema } from "./schema";
 
 const rowInsertKey = new PluginKey<DecorationSet>("rowInsert");
@@ -49,7 +50,7 @@ function insertButton(
   button.type = "button";
   button.tabIndex = -1;
   button.className = "row-insert-button";
-  if (terminal) button.classList.add("is-terminal");
+  if (terminal) button.classList.add("is-terminal", DOCUMENT_END_ZONE_CLASS);
   button.dataset.editorControl = "true";
   button.setAttribute("aria-label", t("insertBlankLine"));
   button.setAttribute("contenteditable", "false");
@@ -71,29 +72,17 @@ function insertButton(
   return button;
 }
 
-function lastLineIsBlank(doc: EditorState["doc"]): boolean {
-  let node = doc.lastChild;
-  while (node && !node.isTextblock) node = node.lastChild;
-  return Boolean(node?.isTextblock && node.content.size === 0);
-}
-
-export function terminalBlankTextblock(
-  doc: EditorState["doc"],
-): { from: number; to: number } | null {
-  let last: { from: number; to: number; empty: boolean } | null = null;
-  doc.descendants((node, position) => {
-    if (node.isTextblock) {
-      last = { from: position, to: position + node.nodeSize, empty: node.content.size === 0 };
-    }
-  });
-  const terminal = last as { from: number; to: number; empty: boolean } | null;
-  return terminal && terminal.empty
-    ? { from: terminal.from, to: terminal.to }
-    : null;
+function emptyDocumentEndZone(): HTMLElement {
+  const zone = document.createElement("div");
+  zone.className = `${DOCUMENT_END_ZONE_CLASS} is-placeholder`;
+  zone.dataset.editorControl = "true";
+  zone.setAttribute("aria-hidden", "true");
+  zone.setAttribute("contenteditable", "false");
+  return zone;
 }
 
 function decorations(doc: EditorState["doc"], onInsert?: () => void): DecorationSet {
-  const positions = new Set<number>();
+  const headingPositions: number[] = [];
   let finalHeadingCollapsed = false;
   for (let index = doc.childCount - 1; index >= 0; index -= 1) {
     const node = doc.child(index);
@@ -102,32 +91,24 @@ function decorations(doc: EditorState["doc"], onInsert?: () => void): Decoration
       break;
     }
   }
-  if (!lastLineIsBlank(doc) && !finalHeadingCollapsed) positions.add(doc.content.size);
   doc.forEach((node, position) => {
-    if (node.type === noteSchema.nodes.heading && position > 0) positions.add(position);
+    if (node.type === noteSchema.nodes.heading && position > 0) headingPositions.push(position);
   });
-  const terminalBlank = terminalBlankTextblock(doc);
-  const items: Decoration[] = terminalBlank
-    ? [Decoration.node(
-      terminalBlank.from,
-      terminalBlank.to,
-      { class: "is-terminal-empty-line" },
-    )]
-    : [];
-  items.push(
-    ...[...positions]
-      .sort((left, right) => left - right)
-      .map((position) => Decoration.widget(
-        position,
-        (view, getPosition) => insertButton(
-          view,
-          getPosition,
-          onInsert,
-          position === doc.content.size,
-        ),
-        { key: `row-insert-${position}`, side: -1 },
-      )),
-  );
+  const terminalBlank = terminalBlankPosition(doc);
+  const items: Decoration[] = headingPositions.map((position) => Decoration.widget(
+    position,
+    (view, getPosition) => insertButton(view, getPosition, onInsert),
+    { key: `row-insert-${position}`, side: -1 },
+  ));
+  if (!finalHeadingCollapsed) {
+    items.push(Decoration.widget(
+      doc.content.size,
+      terminalBlank !== null
+        ? emptyDocumentEndZone
+        : (view, getPosition) => insertButton(view, getPosition, onInsert, true),
+      { key: "document-end-zone", side: -1 },
+    ));
+  }
   return DecorationSet.create(doc, items);
 }
 

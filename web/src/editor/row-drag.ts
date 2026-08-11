@@ -12,9 +12,9 @@ import {
   preserveViewportDuring,
   scrollForWheel,
 } from "./editor-viewport";
+import { documentEndZoneAt } from "./editor-tail";
 import { FOLD_HOVER_EVENT, type FoldHoverDetail } from "./folding";
 import { noteSchema } from "./schema";
-import { terminalBlankTextblock } from "./row-insert";
 import { t } from "../i18n";
 
 export type RowDropSide = "before" | "after" | "inside";
@@ -33,9 +33,10 @@ interface RowDescriptor {
   header: HTMLElement;
 }
 
-interface TerminalEmptyTail {
-  element: HTMLElement;
-  rowPosition: number;
+interface ActiveDocumentEndTarget {
+  anchor: HTMLElement;
+  edge: DocumentEndAnchorEdge;
+  terminalRow: RowDescriptor | null;
 }
 
 function nodeAtPath(node: ProseMirrorNode, path: readonly number[]): ProseMirrorNode {
@@ -702,10 +703,7 @@ function unshiftedVerticalRect(element: HTMLElement): { top: number; bottom: num
 }
 
 function rowHeaderVerticalRect(element: HTMLElement): { top: number; bottom: number } {
-  const rect = unshiftedVerticalRect(element);
-  if (!element.classList.contains("is-terminal-empty-line")) return rect;
-  const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight) || 21;
-  return { top: rect.top, bottom: Math.min(rect.bottom, rect.top + lineHeight) };
+  return unshiftedVerticalRect(element);
 }
 
 function topLevelNodePosition(root: ProseMirrorNode, index: number): number {
@@ -722,9 +720,6 @@ function draggedBlockVerticalRect(
 ): { top: number; bottom: number } {
   const headerRect = rowHeaderVerticalRect(row.header);
   if (row.node.type === noteSchema.nodes.list_item) {
-    if (row.header.classList.contains("is-terminal-empty-line") && row.node.childCount === 1) {
-      return headerRect;
-    }
     return { top: headerRect.top, bottom: unshiftedVerticalRect(row.dom).bottom };
   }
   if (row.node.type !== noteSchema.nodes.heading) return headerRect;
@@ -735,16 +730,6 @@ function draggedBlockVerticalRect(
   const lastIndex = headingSectionEndIndex(view.state.doc, sourcePath[0]!) - 1;
   const lastDom = view.nodeDOM(topLevelNodePosition(view.state.doc, lastIndex));
   if (!(lastDom instanceof HTMLElement)) return headerRect;
-  const terminalEmptyLine = view.dom.querySelector<HTMLElement>(".is-terminal-empty-line");
-  if (
-    terminalEmptyLine
-    && (lastDom === terminalEmptyLine || lastDom.contains(terminalEmptyLine))
-  ) {
-    const terminalRect = rowHeaderVerticalRect(terminalEmptyLine);
-    if (terminalRect.bottom > terminalRect.top) {
-      return { top: headerRect.top, bottom: terminalRect.bottom };
-    }
-  }
   return { top: headerRect.top, bottom: unshiftedVerticalRect(lastDom).bottom };
 }
 
@@ -790,8 +775,7 @@ class RowDragHandleView {
   private target: RowDescriptor | null = null;
   private side: RowDropSide = "after";
   private visualAnchor: HTMLElement | null = null;
-  private endTarget = false;
-  private endAnchorEdge: DocumentEndAnchorEdge = "top";
+  private endTarget: ActiveDocumentEndTarget | null = null;
   private reparentLevel: number | null = null;
   private startX = 0;
   private startY = 0;
@@ -907,7 +891,7 @@ class RowDragHandleView {
   private readonly onHoverMove = (event: PointerEvent): void => {
     if (this.source) return;
     if (event.target instanceof Node && this.handle.contains(event.target)) return;
-    if (this.terminalEmptyTailAt(event.clientX, event.clientY)) {
+    if (documentEndZoneAt(this.view, this.host, event.clientX, event.clientY)) {
       this.hide();
       return;
     }
@@ -929,8 +913,12 @@ class RowDragHandleView {
       this.positionHighlight(this.source);
       if (this.target && this.reparentLevel !== null) {
         this.positionReparentTarget(this.target, this.reparentLevel);
-      } else if (this.endTarget && this.visualAnchor) {
-        this.positionDocumentEndTarget(this.visualAnchor, this.endAnchorEdge);
+      } else if (this.endTarget) {
+        this.positionDocumentEndTarget(
+          this.endTarget.anchor,
+          this.endTarget.edge,
+          this.endTarget.terminalRow,
+        );
       } else {
         this.positionDropTarget(this.target, this.side, this.visualAnchor);
       }
@@ -1010,10 +998,15 @@ class RowDragHandleView {
     }
     autoScrollForPointer(this.host, event.clientY);
 
-    const terminalEmptyTail = this.terminalEmptyTailAt(event.clientX, event.clientY);
-    if (terminalEmptyTail) {
-      const terminalRow = rowAtPosition(this.view, terminalEmptyTail.rowPosition);
-      this.positionDropTarget(terminalRow, "after", terminalEmptyTail.element);
+    const endZone = documentEndZoneAt(this.view, this.host, event.clientX, event.clientY);
+    if (endZone) {
+      const terminalRowPosition = endZone.terminalBlankPosition === null
+        ? null
+        : rowPositionAt(this.view, endZone.terminalBlankPosition);
+      const terminalRow = terminalRowPosition === null
+        ? null
+        : rowAtPosition(this.view, terminalRowPosition);
+      this.positionDocumentEndTarget(endZone.element, "top", terminalRow);
       return;
     }
 
@@ -1108,18 +1101,21 @@ class RowDragHandleView {
   private readonly onDragEnd = (event: PointerEvent): void => {
     const sourcePosition = this.source?.position;
     const sourceNode = this.source?.node ?? null;
-    const targetPosition = this.target?.position;
-    const targetNode = this.target?.node ?? null;
-    const side = this.side;
-    const movesToEnd = this.endTarget;
+    const endTarget = this.endTarget;
+    const targetRow = endTarget?.terminalRow ?? this.target;
+    const targetPosition = targetRow?.position;
+    const targetNode = targetRow?.node ?? null;
+    const side = endTarget ? "after" : this.side;
+    const movesToDocumentEnd = Boolean(endTarget && !endTarget.terminalRow);
     const pointerX = event.clientX;
     const pointerY = event.clientY;
     this.updateDeleteTarget(pointerX, pointerY);
     const shouldDelete = sourcePosition !== undefined
       && this.moved
       && this.deleteTarget.classList.contains("is-armed");
+    const hasMoveTarget = targetPosition !== undefined || endTarget !== null;
     const shouldMove = sourcePosition !== undefined
-      && (targetPosition !== undefined || movesToEnd)
+      && hasMoveTarget
       && this.moved
       && !shouldDelete;
 
@@ -1131,8 +1127,16 @@ class RowDragHandleView {
         deleteRow(this.view.state, this.view.dispatch, sourcePosition);
       });
     } else if (shouldMove) {
-      const moved = movesToEnd
-        ? moveRowToDocumentEnd(this.view.state, this.view.dispatch, sourcePosition)
+      const moved = endTarget
+        ? endTarget.terminalRow
+          ? moveRow(
+            this.view.state,
+            this.view.dispatch,
+            sourcePosition,
+            endTarget.terminalRow.position,
+            "after",
+          )
+          : moveRowToDocumentEnd(this.view.state, this.view.dispatch, sourcePosition)
         : moveRow(
           this.view.state,
           this.view.dispatch,
@@ -1143,7 +1147,7 @@ class RowDragHandleView {
       if (moved && sourceNode) {
         alignDocumentBoundary(
           this.host,
-          () => this.dropBoundary(sourceNode, targetNode, side, movesToEnd),
+          () => this.dropBoundary(sourceNode, targetNode, side, movesToDocumentEnd),
           pointerY,
         );
       }
@@ -1156,7 +1160,7 @@ class RowDragHandleView {
       && pointerY >= hostRect.top
       && pointerY <= hostRect.bottom
     ) {
-      if (!this.terminalEmptyTailAt(pointerX, pointerY)) {
+      if (!documentEndZoneAt(this.view, this.host, pointerX, pointerY)) {
         const row = rowAt(this.view, pointerX, pointerY);
         if (row) this.show(row);
       }
@@ -1201,8 +1205,7 @@ class RowDragHandleView {
       this.source = null;
       this.target = null;
       this.visualAnchor = null;
-      this.endTarget = false;
-      this.endAnchorEdge = "top";
+      this.endTarget = null;
       this.reparentLevel = null;
       this.indicator.classList.remove("visible");
       this.insideIndicator.classList.remove("visible");
@@ -1338,8 +1341,7 @@ class RowDragHandleView {
     this.target = row;
     this.side = side;
     this.visualAnchor = effectiveVisualAnchor;
-    this.endTarget = false;
-    this.endAnchorEdge = "top";
+    this.endTarget = null;
     this.reparentLevel = null;
     this.indicator.classList.remove("visible");
     this.insideIndicator.classList.remove("visible");
@@ -1411,12 +1413,10 @@ class RowDragHandleView {
       this.view.dom.querySelectorAll<HTMLElement>(".row-insert-button"),
     );
     for (const button of buttons) {
+      if (button.classList.contains("is-terminal")) continue;
       const rect = button.getBoundingClientRect();
-      const terminal = button.classList.contains("is-terminal");
       const horizontalHit = clientX >= hostRect.left && clientX <= hostRect.right;
-      const verticalHit = terminal
-        ? clientY >= rect.top && clientY <= hostRect.bottom
-        : clientY >= rect.top && clientY <= rect.bottom;
+      const verticalHit = clientY >= rect.top && clientY <= rect.bottom;
       if (!horizontalHit || !verticalHit) continue;
       try {
         return { button, position: this.view.posAtDOM(button, 0) };
@@ -1509,20 +1509,28 @@ class RowDragHandleView {
   private positionDocumentEndTarget(
     anchor: HTMLElement,
     edge: DocumentEndAnchorEdge = "top",
+    terminalRow: RowDescriptor | null = null,
   ): void {
     this.target = null;
     this.side = "after";
-    this.visualAnchor = anchor;
-    this.endTarget = true;
-    this.endAnchorEdge = edge;
+    this.visualAnchor = null;
+    this.endTarget = { anchor, edge, terminalRow };
     this.reparentLevel = null;
     this.indicator.classList.remove("visible");
     this.insideIndicator.classList.remove("visible");
-    if (!this.source || !moveRowToDocumentEnd(
-      this.view.state,
-      undefined,
-      this.source.position,
-    )) return;
+    const valid = Boolean(this.source && (terminalRow
+      ? moveRow(
+        this.view.state,
+        undefined,
+        this.source.position,
+        terminalRow.position,
+        "after",
+      )
+      : moveRowToDocumentEnd(this.view.state, undefined, this.source.position)));
+    if (!valid) {
+      this.endTarget = null;
+      return;
+    }
     const hostRect = this.host.getBoundingClientRect();
     const anchorRect = anchor.getBoundingClientRect();
     const top = edge === "top" ? anchorRect.top : anchorRect.bottom;
@@ -1530,29 +1538,15 @@ class RowDragHandleView {
     this.showDropIndicator(left, top, hostRect.right - FEEDBACK_RIGHT_INSET);
   }
 
-  private terminalEmptyTailAt(clientX: number, clientY: number): TerminalEmptyTail | null {
-    const hostRect = this.host.getBoundingClientRect();
-    if (clientX < hostRect.left || clientX > hostRect.right) return null;
-    const terminalEmptyLine = this.view.dom.querySelector<HTMLElement>(
-      ".is-terminal-empty-line",
-    );
-    if (!terminalEmptyLine) return null;
-    const lineRect = rowHeaderVerticalRect(terminalEmptyLine);
-    if (lineRect.bottom <= lineRect.top) return null;
-    if (clientY < lineRect.bottom) return null;
-    const terminalBlank = terminalBlankTextblock(this.view.state.doc);
-    const rowPosition = terminalBlank
-      ? rowPositionAt(this.view, terminalBlank.from + 1)
-      : null;
-    return rowPosition === null ? null : { element: terminalEmptyLine, rowPosition };
-  }
-
   private documentEndAnchor(clientX: number, clientY: number): HTMLElement | null {
     const hostRect = this.host.getBoundingClientRect();
     if (clientX < hostRect.left || clientX > hostRect.right) return null;
     const children = Array.from(this.view.dom.children).reverse();
     for (const child of children) {
-      if (!(child instanceof HTMLElement) || child.classList.contains("row-insert-button")) {
+      if (
+        !(child instanceof HTMLElement)
+        || child.dataset.editorControl === "true"
+      ) {
         continue;
       }
       const rect = child.getBoundingClientRect();

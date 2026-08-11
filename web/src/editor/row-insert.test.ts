@@ -73,7 +73,20 @@ describe("row insertion gaps", () => {
     expect(host.querySelectorAll(".row-insert-button")).toHaveLength(1);
   });
 
-  it("hides the bottom gap when the final paragraph is already blank", () => {
+  it("keeps an otherwise empty document as one row plus its end zone", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const doc = noteSchema.nodes.doc.create(null, noteSchema.nodes.paragraph.create());
+    view = new EditorView(host, {
+      state: EditorState.create({ doc, plugins: [rowInsertPlugin()] }),
+    });
+
+    expect(host.querySelectorAll("p")).toHaveLength(1);
+    expect(host.querySelector(".row-insert-button")).toBeNull();
+    expect(host.querySelector(".document-end-zone.is-placeholder")).not.toBeNull();
+  });
+
+  it("uses a separate document end zone after a final blank paragraph", () => {
     const host = document.createElement("div");
     document.body.append(host);
     const doc = noteSchema.nodes.doc.create(null, [
@@ -85,10 +98,11 @@ describe("row insertion gaps", () => {
     });
 
     expect(host.querySelector(".row-insert-button")).toBeNull();
-    expect(host.querySelector(".is-terminal-empty-line")).not.toBeNull();
+    expect(host.querySelector(".document-end-zone.is-placeholder")).not.toBeNull();
+    expect(host.querySelectorAll("p")).toHaveLength(2);
   });
 
-  it("hides the bottom gap when the final list item is already blank", () => {
+  it("uses a separate document end zone after a final blank list item", () => {
     const host = document.createElement("div");
     document.body.append(host);
     const list = noteSchema.nodes.bullet_list.create(null, [
@@ -109,7 +123,8 @@ describe("row insertion gaps", () => {
     });
 
     expect(host.querySelector(".row-insert-button")).toBeNull();
-    expect(host.querySelector(".is-terminal-empty-line")).not.toBeNull();
+    expect(host.querySelector(".document-end-zone.is-placeholder")).not.toBeNull();
+    expect(host.querySelectorAll("li:last-child p")).toHaveLength(1);
   });
 
   it.each([

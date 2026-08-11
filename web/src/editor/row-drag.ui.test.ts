@@ -126,7 +126,7 @@ describe("row drag handle", () => {
     expect(highlight.style.height).toBe("61px");
   });
 
-  it("excludes the terminal empty tail from heading handle and fold highlights", () => {
+  it("keeps the document end zone outside heading handle and fold highlights", () => {
     const host = document.createElement("div");
     document.body.append(host);
     const item = (text: string, checked: boolean) => noteSchema.nodes.list_item.create(
@@ -151,10 +151,12 @@ describe("row drag handle", () => {
     vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 220));
     const heading = view.dom.querySelector("h1")!;
     const list = view.dom.querySelector("ul")!;
-    const emptyParagraph = view.dom.querySelector(".is-terminal-empty-line")!;
+    const emptyParagraph = view.dom.querySelector("li:last-child p")!;
+    const endZone = view.dom.querySelector(".document-end-zone.is-placeholder")!;
     vi.spyOn(heading, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 25));
-    vi.spyOn(list, "getBoundingClientRect").mockReturnValue(rect(50, 55, 230, 104));
-    vi.spyOn(emptyParagraph, "getBoundingClientRect").mockReturnValue(rect(80, 99, 200, 60));
+    vi.spyOn(list, "getBoundingClientRect").mockReturnValue(rect(50, 55, 230, 66));
+    vi.spyOn(emptyParagraph, "getBoundingClientRect").mockReturnValue(rect(80, 99, 200, 22));
+    vi.spyOn(endZone, "getBoundingClientRect").mockReturnValue(rect(20, 121, 277, 21));
     vi.spyOn(view, "posAtCoords").mockReturnValue({ pos: 1, inside: 0 });
 
     host.dispatchEvent(new MouseEvent("pointermove", {
@@ -166,13 +168,13 @@ describe("row drag handle", () => {
     const highlight = host.querySelector<HTMLElement>(".block-row-handle-highlight")!;
     handle.dispatchEvent(new MouseEvent("pointerenter"));
     expect(highlight.style.top).toBe("18px");
-    expect(highlight.style.height).toBe("104px");
+    expect(highlight.style.height).toBe("105px");
     handle.dispatchEvent(new MouseEvent("pointerleave"));
 
     host.querySelector<HTMLButtonElement>(".fold-toggle")!
       .dispatchEvent(new MouseEvent("pointerenter"));
     expect(highlight.style.top).toBe("45px");
-    expect(highlight.style.height).toBe("77px");
+    expect(highlight.style.height).toBe("78px");
   });
 
   it("highlights the complete affected block when a fold toggle is hovered", () => {
@@ -227,7 +229,7 @@ describe("row drag handle", () => {
     expect(highlight.style.height).toBe("29px");
   });
 
-  it("keeps the handle available when the final folded heading contains the terminal blank line", () => {
+  it("keeps the handle available when a final folded heading contains a blank line", () => {
     const host = document.createElement("div");
     document.body.append(host);
     const doc = noteSchema.nodes.doc.create(null, [
@@ -254,7 +256,8 @@ describe("row drag handle", () => {
       clientY: 30,
     }));
 
-    expect(host.querySelector(".is-terminal-empty-line.is-folded-content")).not.toBeNull();
+    expect(host.querySelector("p.is-folded-content")).not.toBeNull();
+    expect(host.querySelector(".document-end-zone")).toBeNull();
     expect(host.querySelector(".block-drag-handle")?.classList.contains("visible")).toBe(true);
   });
 
@@ -454,7 +457,7 @@ describe("row drag handle", () => {
   });
 
   it.each(["paragraph", "list"] as const)(
-    "keeps a terminal empty %s row to one line and treats its tail as ordinary after",
+    "keeps a final empty %s row ordinary and gives its end zone after semantics",
     (kind) => {
       const host = document.createElement("div");
       document.body.append(host);
@@ -479,19 +482,18 @@ describe("row drag handle", () => {
       const paragraphs = view.dom.querySelectorAll("p");
       const sourceDom = paragraphs[0]!;
       const emptyDom = paragraphs[2]!;
-      expect(emptyDom.classList.contains("is-terminal-empty-line")).toBe(true);
-      const posAtDOM = view.posAtDOM.bind(view);
-      vi.spyOn(view, "posAtDOM").mockImplementation((node, offset, bias) => {
-        if (node === emptyDom) throw new Error("terminal empty DOM maps to a node boundary");
-        return posAtDOM(node, offset, bias);
-      });
+      const endZone = view.dom.querySelector<HTMLElement>(
+        ".document-end-zone.is-placeholder",
+      )!;
+      expect(endZone).not.toBeNull();
       vi.spyOn(sourceDom, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 22));
-      vi.spyOn(emptyDom, "getBoundingClientRect").mockReturnValue(rect(80, 60, 200, 120));
+      vi.spyOn(emptyDom, "getBoundingClientRect").mockReturnValue(rect(80, 60, 200, 21));
+      vi.spyOn(endZone, "getBoundingClientRect").mockReturnValue(rect(20, 81, 277, 21));
       if (kind === "list") {
         vi.spyOn(view.dom.querySelector("li")!, "getBoundingClientRect")
-          .mockReturnValue(rect(80, 60, 200, 120));
+          .mockReturnValue(rect(80, 60, 200, 21));
         vi.spyOn(view.dom.querySelector("ul")!, "getBoundingClientRect")
-          .mockReturnValue(rect(50, 60, 230, 120));
+          .mockReturnValue(rect(50, 60, 230, 21));
       }
       let emptyPosition = -1;
       doc.descendants((node, position) => {
@@ -529,11 +531,11 @@ describe("row drag handle", () => {
         hasPointerCapture: { value: vi.fn(() => false) },
       });
       handle.dispatchEvent(pointerEvent("pointerdown", 30));
-      window.dispatchEvent(pointerEvent("pointermove", 185));
+      window.dispatchEvent(pointerEvent("pointermove", 170));
       const indicator = host.querySelector<HTMLElement>(".block-drop-indicator")!;
       expect(indicator.classList.contains("visible")).toBe(true);
       expect(indicator.style.top).toBe("80px");
-      window.dispatchEvent(pointerEvent("pointerup", 185));
+      window.dispatchEvent(pointerEvent("pointerup", 170));
       expect(view.state.doc.child(0).textContent).toBe("保留内容");
       if (kind === "paragraph") {
         expect(view.state.doc.child(1).content.size).toBe(0);
