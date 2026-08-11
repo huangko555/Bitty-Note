@@ -57,6 +57,9 @@ describe("row insertion gaps", () => {
     host.querySelector<HTMLButtonElement>(".row-insert-button")!.click();
 
     expect(view.hasFocus()).toBe(true);
+    expect(view.state.doc.childCount).toBe(2);
+    expect(view.state.doc.lastChild?.content.size).toBe(0);
+    expect(view.state.selection.$from.parent).toBe(view.state.doc.lastChild);
     expect(onInsert).toHaveBeenCalledOnce();
   });
 
@@ -101,6 +104,22 @@ describe("row insertion gaps", () => {
     expect(host.querySelector(".row-insert-button")).toBeNull();
     expect(host.querySelector(".document-end-zone.is-placeholder")).not.toBeNull();
     expect(host.querySelectorAll("p")).toHaveLength(2);
+  });
+
+  it("replaces the final blank placeholder with an insert button after typing", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const doc = noteSchema.nodes.doc.create(null, noteSchema.nodes.paragraph.create());
+    view = new EditorView(host, {
+      state: EditorState.create({ doc, plugins: [rowInsertPlugin()] }),
+    });
+
+    expect(host.querySelector(".document-end-zone.is-placeholder")).not.toBeNull();
+
+    view.dispatch(view.state.tr.insertText("body", 1));
+
+    expect(host.querySelector(".document-end-zone.is-placeholder")).toBeNull();
+    expect(host.querySelector(".row-insert-button.is-terminal")).not.toBeNull();
   });
 
   it("uses a separate document end zone after a final blank list item", () => {

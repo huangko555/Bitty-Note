@@ -1,4 +1,4 @@
-import { EditorState } from "prosemirror-state";
+import { EditorState, TextSelection } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -19,6 +19,36 @@ function rect(left: number, top: number, width: number, height: number): DOMRect
     y: top,
     toJSON: () => ({}),
   };
+}
+
+function dragPointerEvent(
+  type: string,
+  clientY: number,
+  pointerId: number,
+  clientX = 100,
+): MouseEvent {
+  const event = new MouseEvent(type, {
+    bubbles: true,
+    button: 0,
+    clientX,
+    clientY,
+  });
+  Object.defineProperty(event, "pointerId", { value: pointerId });
+  return event;
+}
+
+function enableDragHandle(handle: HTMLElement): void {
+  Object.defineProperties(handle, {
+    setPointerCapture: { value: vi.fn() },
+    hasPointerCapture: { value: vi.fn(() => false) },
+  });
+}
+
+function addToolbarOverlay(host: HTMLElement, height = 44): void {
+  const toolbar = document.createElement("div");
+  toolbar.className = "format-toolbar visible";
+  host.after(toolbar);
+  vi.spyOn(toolbar, "getBoundingClientRect").mockReturnValue(rect(0, 200 - height, 320, height));
 }
 
 describe("row drag handle", () => {
@@ -492,9 +522,19 @@ describe("row drag handle", () => {
         ".document-end-zone.is-placeholder",
       )!;
       expect(endZone).not.toBeNull();
+      let scrollTop = 0;
+      Object.defineProperty(host, "scrollTop", {
+        configurable: true,
+        get: () => scrollTop,
+        set: (value: number) => {
+          scrollTop = Math.max(0, Math.min(3, value));
+        },
+      });
       vi.spyOn(sourceDom, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 22));
-      vi.spyOn(emptyDom, "getBoundingClientRect").mockReturnValue(rect(80, 60, 200, 21));
-      vi.spyOn(endZone, "getBoundingClientRect").mockReturnValue(rect(20, 81.5, 277, 21));
+      vi.spyOn(emptyDom, "getBoundingClientRect")
+        .mockImplementation(() => rect(80, 60 - scrollTop, 200, 21));
+      vi.spyOn(endZone, "getBoundingClientRect")
+        .mockImplementation(() => rect(20, 81.5 - scrollTop, 277, 21));
       if (kind === "list") {
         vi.spyOn(view.dom.querySelector("li")!, "getBoundingClientRect")
           .mockReturnValue(rect(80, 60, 200, 21));
@@ -545,8 +585,11 @@ describe("row drag handle", () => {
       expect(indicator.style.top).toBe(terminalRowTop);
       window.dispatchEvent(pointerEvent("pointermove", 170));
       expect(indicator.classList.contains("visible")).toBe(true);
+      expect(host.scrollTop).toBe(0);
       expect(indicator.style.top).toBe(terminalRowTop);
-      window.dispatchEvent(pointerEvent("pointerup", 170));
+      window.dispatchEvent(pointerEvent("pointermove", 190));
+      expect(indicator.style.top).toBe(terminalRowTop);
+      window.dispatchEvent(pointerEvent("pointerup", 190));
       expect(view.state.doc.child(0).textContent).toBe("保留内容");
       if (kind === "paragraph") {
         expect(view.state.doc.child(1).content.size).toBe(0);
@@ -564,6 +607,47 @@ describe("row drag handle", () => {
       expect(emptyTextblocks).toBe(1);
     },
   );
+
+  it("keeps one document-end guide for a non-empty final row inside and below the viewport", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const source = noteSchema.nodes.paragraph.create(null, noteSchema.text("source"));
+    const finalRow = noteSchema.nodes.paragraph.create(null, noteSchema.text("final"));
+    const doc = noteSchema.nodes.doc.create(null, [source, finalRow]);
+    view = new EditorView(host, {
+      state: EditorState.create({
+        doc,
+        plugins: [rowDragPlugin(), rowInsertPlugin()],
+      }),
+    });
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 180));
+    vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 180));
+    const paragraphs = view.dom.querySelectorAll("p");
+    const sourceDom = paragraphs[0]!;
+    const finalDom = paragraphs[1]!;
+    const endButton = view.dom.querySelector<HTMLElement>(
+      ".row-insert-button.is-terminal",
+    )!;
+    vi.spyOn(sourceDom, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 22));
+    vi.spyOn(finalDom, "getBoundingClientRect").mockReturnValue(rect(80, 60, 200, 21));
+    vi.spyOn(endButton, "getBoundingClientRect").mockReturnValue(rect(20, 81.5, 277, 21));
+    vi.spyOn(view, "posAtCoords").mockImplementation(({ top }) => top < 50
+      ? { pos: 1, inside: 0 }
+      : { pos: doc.content.size - 1, inside: source.nodeSize });
+    host.dispatchEvent(dragPointerEvent("pointermove", 30, 33));
+    const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
+    enableDragHandle(handle);
+    handle.dispatchEvent(dragPointerEvent("pointerdown", 30, 33));
+    window.dispatchEvent(dragPointerEvent("pointermove", 95, 33));
+    const indicator = host.querySelector<HTMLElement>(".block-drop-indicator")!;
+    const insideTop = indicator.style.top;
+
+    window.dispatchEvent(dragPointerEvent("pointermove", 190, 33));
+
+    expect(indicator.classList.contains("visible")).toBe(true);
+    expect(indicator.style.top).toBe(insideTop);
+    window.dispatchEvent(dragPointerEvent("pointercancel", 190, 33));
+  });
 
   it("snaps a heading dragged over section content to the section bottom", () => {
     const host = document.createElement("div");
@@ -1015,7 +1099,7 @@ describe("row drag handle", () => {
       .toEqual(["甲", "甲正文", "移动", "乙"]);
   });
 
-  it("expands a final folded heading when content is dropped on its end button", () => {
+  it("keeps the final folded-heading guide through a hidden blank tail", () => {
     const host = document.createElement("div");
     document.body.append(host);
     const doc = noteSchema.nodes.doc.create(null, [
@@ -1025,6 +1109,7 @@ describe("row drag handle", () => {
         noteSchema.text("Title"),
       ),
       noteSchema.nodes.paragraph.create(null, noteSchema.text("body")),
+      noteSchema.nodes.paragraph.create(),
     ]);
     view = new EditorView(host, {
       state: EditorState.create({
@@ -1041,26 +1126,21 @@ describe("row drag handle", () => {
       ".row-insert-button.is-terminal",
     )!;
     vi.spyOn(endButton, "getBoundingClientRect").mockReturnValue(rect(40, 150, 260, 20));
-    const pointerEvent = (type: string, y: number) => {
-      const event = new MouseEvent(type, {
-        bubbles: true,
-        button: 0,
-        clientX: 100,
-        clientY: y,
-      });
-      Object.defineProperty(event, "pointerId", { value: 22 });
-      return event;
-    };
-
-    host.dispatchEvent(pointerEvent("pointermove", 30));
+    host.dispatchEvent(dragPointerEvent("pointermove", 30, 22));
     const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
-    Object.defineProperties(handle, {
-      setPointerCapture: { value: vi.fn() },
-      hasPointerCapture: { value: vi.fn(() => false) },
-    });
-    handle.dispatchEvent(pointerEvent("pointerdown", 30));
-    window.dispatchEvent(pointerEvent("pointermove", 165));
-    window.dispatchEvent(pointerEvent("pointerup", 165));
+    enableDragHandle(handle);
+    handle.dispatchEvent(dragPointerEvent("pointerdown", 30, 22));
+    window.dispatchEvent(dragPointerEvent("pointermove", 165, 22));
+    const indicator = host.querySelector<HTMLElement>(".block-drop-indicator")!;
+    expect(indicator.classList.contains("visible")).toBe(true);
+    const headingBottomGuide = indicator.style.top;
+    expect(headingBottomGuide).toBe("149px");
+    for (const pointerY of [185, 210, 260]) {
+      window.dispatchEvent(dragPointerEvent("pointermove", pointerY, 22));
+      expect(indicator.classList.contains("visible")).toBe(true);
+      expect(indicator.style.top).toBe(headingBottomGuide);
+    }
+    window.dispatchEvent(dragPointerEvent("pointerup", 260, 22));
 
     expect(view.state.doc.firstChild?.attrs.collapsed).toBe(false);
     expect(view.state.doc.lastChild?.textContent).toBe("moved");
@@ -1180,10 +1260,257 @@ describe("row drag handle", () => {
     window.dispatchEvent(pointerEvent("pointerup", 21));
 
     expect(view.state.doc.textContent).toBe("末尾开头中间");
-    expect(host.scrollTop).toBe(900);
+    expect(host.scrollTop).toBe(0);
     expect(restoreFrame).not.toBeNull();
     (restoreFrame as unknown as FrameRequestCallback)(0);
     expect(host.scrollTop).toBe(0);
+  });
+
+  it.each([
+    ["single-line", 22, 14],
+    ["wrapped multiline", 60, 52],
+  ])("fully reveals a moved %s row above the toolbar", (_label, sourceHeight, expectedScroll) => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const source = noteSchema.nodes.paragraph.create(null, noteSchema.text("开头"));
+    const doc = noteSchema.nodes.doc.create(null, [
+      source,
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("中间")),
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("末尾")),
+    ]);
+    view = new EditorView(host, {
+      state: EditorState.create({ doc, plugins: [rowDragPlugin()] }),
+    });
+    addToolbarOverlay(host);
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    const paragraphs = Array.from(view.dom.querySelectorAll("p"));
+    paragraphs.forEach((paragraph) => {
+      vi.spyOn(paragraph, "getBoundingClientRect").mockImplementation(() => {
+        const current = Array.from(view!.dom.querySelectorAll("p")).indexOf(paragraph);
+        return rect(
+          80,
+          20 + current * 60 - host.scrollTop,
+          200,
+          paragraph.textContent === "开头" ? sourceHeight : 22,
+        );
+      });
+    });
+    vi.spyOn(view, "posAtCoords").mockImplementation(({ top }) => {
+      if (top < 45) return { pos: 1, inside: 0 };
+      if (top < 105) return { pos: 5, inside: 4 };
+      return { pos: 9, inside: 8 };
+    });
+    let revealFrame: FrameRequestCallback | null = null;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      revealFrame = callback;
+      return 1;
+    });
+    host.dispatchEvent(dragPointerEvent("pointermove", 30, 23));
+    const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
+    enableDragHandle(handle);
+    handle.dispatchEvent(dragPointerEvent("pointerdown", 30, 23));
+    window.dispatchEvent(dragPointerEvent("pointermove", 160, 23));
+    window.dispatchEvent(dragPointerEvent("pointerup", 160, 23));
+
+    expect(view.state.doc.textContent).toBe("中间末尾开头");
+    const movedParagraph = Array.from(view.dom.querySelectorAll("p"))
+      .find((paragraph) => paragraph.textContent === "开头")!;
+    vi.spyOn(movedParagraph, "getBoundingClientRect").mockImplementation(() => rect(
+      80,
+      140 - host.scrollTop,
+      200,
+      sourceHeight,
+    ));
+    expect(revealFrame).not.toBeNull();
+    (revealFrame as unknown as FrameRequestCallback)(0);
+    expect(host.scrollTop).toBe(expectedScroll);
+  });
+
+  it("reveals a moved list parent together with its children", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const paragraph = (text: string) => noteSchema.nodes.paragraph.create(
+      null,
+      noteSchema.text(text),
+    );
+    const child = noteSchema.nodes.list_item.create({ checked: null }, paragraph("子项"));
+    const parent = noteSchema.nodes.list_item.create(
+      { checked: null },
+      [paragraph("父项"), noteSchema.nodes.bullet_list.create(null, child)],
+    );
+    const list = noteSchema.nodes.bullet_list.create(null, parent);
+    const targetPosition = list.nodeSize;
+    const doc = noteSchema.nodes.doc.create(null, [list, paragraph("目标")]);
+    view = new EditorView(host, {
+      state: EditorState.create({ doc, plugins: [rowDragPlugin()] }),
+    });
+    addToolbarOverlay(host);
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    const listItem = view.dom.querySelector("li")!;
+    const parentParagraph = listItem.querySelector(":scope > p")!;
+    const targetParagraph = Array.from(view.dom.querySelectorAll("p"))
+      .find((node) => node.textContent === "目标")!;
+    const movedTop = () => view!.state.doc.lastChild?.type === noteSchema.nodes.bullet_list
+      ? 100 - host.scrollTop
+      : 20 - host.scrollTop;
+    vi.spyOn(listItem, "getBoundingClientRect")
+      .mockImplementation(() => rect(80, movedTop(), 200, 90));
+    vi.spyOn(parentParagraph, "getBoundingClientRect")
+      .mockImplementation(() => rect(80, movedTop(), 200, 22));
+    vi.spyOn(targetParagraph, "getBoundingClientRect")
+      .mockImplementation(() => rect(80, 120 - host.scrollTop, 200, 22));
+    vi.spyOn(view, "posAtCoords").mockImplementation(({ top }) => top < 60
+      ? { pos: 2, inside: 1 }
+      : { pos: targetPosition + 1, inside: targetPosition });
+    let revealFrame: FrameRequestCallback | null = null;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      revealFrame = callback;
+      return 1;
+    });
+    host.dispatchEvent(dragPointerEvent("pointermove", 30, 29));
+    const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
+    enableDragHandle(handle);
+    handle.dispatchEvent(dragPointerEvent("pointerdown", 30, 29));
+    window.dispatchEvent(dragPointerEvent("pointermove", 140, 29));
+    window.dispatchEvent(dragPointerEvent("pointerup", 140, 29));
+
+    expect(view.state.doc.textContent).toBe("目标父项子项");
+    const movedListItem = view.dom.querySelector("li")!;
+    const movedParentParagraph = movedListItem.querySelector(":scope > p")!;
+    vi.spyOn(movedListItem, "getBoundingClientRect")
+      .mockImplementation(() => rect(80, 100 - host.scrollTop, 200, 90));
+    vi.spyOn(movedParentParagraph, "getBoundingClientRect")
+      .mockImplementation(() => rect(80, 100 - host.scrollTop, 200, 22));
+    expect(revealFrame).not.toBeNull();
+    (revealFrame as unknown as FrameRequestCallback)(0);
+    expect(host.scrollTop).toBe(42);
+  });
+
+  it.each([
+    ["complete", 190, 42],
+    ["oversized", 300, 92],
+  ])("reveals a moved %s heading section above the toolbar", (
+    _label,
+    sectionBottom,
+    expectedScroll,
+  ) => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const sourceHeading = noteSchema.nodes.heading.create(
+      { level: 1 },
+      noteSchema.text("章节"),
+    );
+    const firstBody = noteSchema.nodes.paragraph.create(null, noteSchema.text("第一行"));
+    const lastBody = noteSchema.nodes.paragraph.create(null, noteSchema.text("第二行"));
+    const targetHeading = noteSchema.nodes.heading.create(
+      { level: 1 },
+      noteSchema.text("目标"),
+    );
+    const targetPosition = sourceHeading.nodeSize + firstBody.nodeSize + lastBody.nodeSize;
+    const doc = noteSchema.nodes.doc.create(null, [
+      sourceHeading,
+      firstBody,
+      lastBody,
+      targetHeading,
+    ]);
+    view = new EditorView(host, {
+      state: EditorState.create({ doc, plugins: [rowDragPlugin()] }),
+    });
+    addToolbarOverlay(host);
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    const headings = view.dom.querySelectorAll("h1");
+    const paragraphs = view.dom.querySelectorAll("p");
+    vi.spyOn(headings[0]!, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 25));
+    vi.spyOn(paragraphs[0]!, "getBoundingClientRect").mockReturnValue(rect(80, 50, 200, 22));
+    vi.spyOn(paragraphs[1]!, "getBoundingClientRect").mockReturnValue(rect(80, 80, 200, 22));
+    vi.spyOn(headings[1]!, "getBoundingClientRect").mockReturnValue(rect(80, 140, 200, 25));
+    vi.spyOn(view, "posAtCoords").mockImplementation(({ top }) => top < 60
+      ? { pos: 1, inside: 0 }
+      : { pos: targetPosition + 1, inside: targetPosition });
+    let revealFrame: FrameRequestCallback | null = null;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      revealFrame = callback;
+      return 1;
+    });
+
+    host.dispatchEvent(dragPointerEvent("pointermove", 30, 41));
+    const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
+    enableDragHandle(handle);
+    handle.dispatchEvent(dragPointerEvent("pointerdown", 30, 41));
+    window.dispatchEvent(dragPointerEvent("pointermove", 160, 41));
+    window.dispatchEvent(dragPointerEvent("pointerup", 160, 41));
+
+    expect(Array.from(view.state.doc.content.content, (node) => node.textContent))
+      .toEqual(["目标", "章节", "第一行", "第二行"]);
+    const movedHeading = Array.from(view.dom.querySelectorAll("h1"))
+      .find((heading) => heading.textContent?.startsWith("章节"))!;
+    const movedLastBody = Array.from(view.dom.querySelectorAll("p"))
+      .find((paragraph) => paragraph.textContent === "第二行")!;
+    vi.spyOn(movedHeading, "getBoundingClientRect")
+      .mockImplementation(() => rect(80, 100 - host.scrollTop, 200, 25));
+    vi.spyOn(movedLastBody, "getBoundingClientRect")
+      .mockImplementation(() => rect(
+        80,
+        sectionBottom - 22 - host.scrollTop,
+        200,
+        22,
+      ));
+    expect(revealFrame).not.toBeNull();
+    (revealFrame as unknown as FrameRequestCallback)(0);
+    expect(host.scrollTop).toBe(expectedScroll);
+  });
+
+  it("preserves a focused offscreen caret and the tail viewport during a row move", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const doc = noteSchema.nodes.doc.create(null, [
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("开头")),
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("中间")),
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("末尾")),
+    ]);
+    let editor!: EditorView;
+    editor = new EditorView(host, {
+      state: EditorState.create({
+        doc,
+        selection: TextSelection.create(doc, 1),
+        plugins: [rowDragPlugin()],
+      }),
+      dispatchTransaction: (transaction) => {
+        editor.updateState(editor.state.apply(transaction));
+        // Native WebView selection reconciliation can reveal the stale caret
+        // and blur the editor while a pointer-controlled row move is ending.
+        host.scrollTop = 0;
+        editor.dom.blur();
+      },
+    });
+    view = editor;
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    const paragraphs = Array.from(view.dom.querySelectorAll("p"));
+    paragraphs.forEach((paragraph, index) => {
+      vi.spyOn(paragraph, "getBoundingClientRect")
+        .mockReturnValue(rect(80, 20 + index * 30, 200, 22));
+    });
+    vi.spyOn(view, "posAtCoords").mockImplementation(({ top }) => top < 70
+      ? { pos: 5, inside: 4 }
+      : { pos: 9, inside: 8 });
+    vi.spyOn(window, "requestAnimationFrame").mockReturnValue(1);
+    host.scrollTop = 900;
+    view.dom.focus();
+    host.dispatchEvent(dragPointerEvent("pointermove", 90, 18));
+    const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
+    enableDragHandle(handle);
+
+    handle.dispatchEvent(dragPointerEvent("pointerdown", 90, 18));
+    window.dispatchEvent(dragPointerEvent("pointermove", 55, 18));
+    window.dispatchEvent(dragPointerEvent("pointerup", 55, 18));
+
+    expect(view.state.doc.textContent).toBe("开头末尾中间");
+    expect(host.scrollTop).toBe(900);
+    expect(document.activeElement).toBe(view.dom);
   });
 
   it("keeps a moved empty paragraph hittable", () => {

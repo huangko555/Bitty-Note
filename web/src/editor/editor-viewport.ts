@@ -1,4 +1,5 @@
 const CARET_MARGIN = 8;
+export const POINTER_AUTO_SCROLL_EDGE_SIZE = 34;
 
 export function keepRectVisible(
   host: HTMLElement,
@@ -6,21 +7,27 @@ export function keepRectVisible(
   bottomInset = 0,
 ): void {
   const viewport = host.getBoundingClientRect();
+  const visibleTop = viewport.top + CARET_MARGIN;
+  const visibleBottom = viewport.bottom - bottomInset - CARET_MARGIN;
+  if (target.bottom - target.top > visibleBottom - visibleTop) {
+    host.scrollTop = Math.max(0, host.scrollTop + target.top - visibleTop);
+    return;
+  }
   const lowerOverflow = target.bottom
-    - (viewport.bottom - bottomInset - CARET_MARGIN);
+    - visibleBottom;
   if (lowerOverflow > 0) {
     host.scrollTop += lowerOverflow;
     return;
   }
 
-  const upperOverflow = viewport.top + CARET_MARGIN - target.top;
+  const upperOverflow = visibleTop - target.top;
   if (upperOverflow > 0) host.scrollTop -= upperOverflow;
 }
 
 export function autoScrollForPointer(
   host: HTMLElement,
   clientY: number,
-  edgeSize = 34,
+  edgeSize = POINTER_AUTO_SCROLL_EDGE_SIZE,
   step = 18,
 ): void {
   const viewport = host.getBoundingClientRect();
@@ -69,21 +76,15 @@ export function preserveVisualAnchorDuring<T>(
   return result;
 }
 
-export function alignDocumentBoundary(
+export function revealDocumentRect(
   host: HTMLElement,
-  locateBoundary: () => number | null,
-  preferredClientY: number,
+  locateRect: () => Pick<DOMRect, "top" | "bottom"> | null,
+  bottomInset = 0,
   requestFrame: (callback: FrameRequestCallback) => number = window.requestAnimationFrame.bind(window),
 ): void {
   requestFrame(() => {
     if (!host.isConnected) return;
-    const boundary = locateBoundary();
-    if (boundary === null) return;
-    const viewport = host.getBoundingClientRect();
-    const preferred = Math.max(
-      viewport.top + CARET_MARGIN,
-      Math.min(preferredClientY, viewport.bottom - CARET_MARGIN),
-    );
-    host.scrollTop = Math.max(0, host.scrollTop + boundary - preferred);
+    const target = locateRect();
+    if (target) keepRectVisible(host, target, bottomInset);
   });
 }

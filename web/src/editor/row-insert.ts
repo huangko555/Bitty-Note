@@ -6,8 +6,7 @@ import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
 import { t } from "../i18n";
 import {
   DOCUMENT_END_ZONE_CLASS,
-  finalCollapsedHeadingPosition,
-  terminalBlankPosition,
+  describeDocumentTail,
 } from "./editor-tail";
 import { noteSchema } from "./schema";
 
@@ -93,7 +92,8 @@ function expandHeadingForInsertion(
     ...heading.attrs,
     collapsed: false,
   });
-  const blankPosition = terminalBlankPosition(transaction.doc);
+  const tail = describeDocumentTail(transaction.doc);
+  const blankPosition = tail.kind === "blank" ? tail.terminalBlankNodePosition : null;
   if (blankPosition === null) {
     const insertPosition = transaction.doc.content.size;
     transaction.insert(insertPosition, noteSchema.nodes.paragraph.create());
@@ -119,8 +119,10 @@ function decorations(doc: EditorState["doc"], onInsert?: () => void): Decoration
   doc.forEach((node, position) => {
     if (node.type === noteSchema.nodes.heading && position > 0) headingPositions.push(position);
   });
-  const terminalBlank = terminalBlankPosition(doc);
-  const collapsedHeading = finalCollapsedHeadingPosition(doc);
+  const tail = describeDocumentTail(doc);
+  const tailKey = tail.kind === "collapsed-heading"
+    ? `${tail.kind}-${tail.collapsedHeadingPosition}`
+    : tail.kind;
   const items: Decoration[] = headingPositions.map((position) => Decoration.widget(
     position,
     (view, getPosition) => insertButton(view, getPosition, onInsert),
@@ -128,18 +130,21 @@ function decorations(doc: EditorState["doc"], onInsert?: () => void): Decoration
   ));
   items.push(Decoration.widget(
     doc.content.size,
-    collapsedHeading !== null
+    tail.kind === "collapsed-heading"
       ? (view, getPosition) => insertButton(
         view,
         getPosition,
         onInsert,
         true,
-        collapsedHeading,
+        tail.collapsedHeadingPosition,
       )
-      : terminalBlank !== null
+      : tail.kind === "blank"
         ? emptyDocumentEndZone
         : (view, getPosition) => insertButton(view, getPosition, onInsert, true),
-    { key: "document-end-zone", side: -1 },
+    {
+      key: `document-end-zone-${tailKey}`,
+      side: -1,
+    },
   ));
   return DecorationSet.create(doc, items);
 }

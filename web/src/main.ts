@@ -701,17 +701,7 @@ async function showNote(note: OpenedNote): Promise<void> {
   noteEditor = created.controller;
   editor = noteEditor;
   host.addEventListener("mousedown", (event) => {
-    const terminalButton = host.querySelector<HTMLElement>(
-      ".row-insert-button.is-terminal",
-    );
-    if (
-      !terminalButton
-      || event.clientY <= terminalButton.getBoundingClientRect().bottom
-    ) {
-      return;
-    }
-    event.preventDefault();
-    noteEditor?.focusEnd();
+    if (!noteEditor?.handleDocumentTailPress(event)) return;
     selectionVisibility.show();
   }, true);
   currentContent = created.snapshot.markdown;

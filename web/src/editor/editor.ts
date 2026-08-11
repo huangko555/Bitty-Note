@@ -38,6 +38,7 @@ import {
   transactionPreservesViewport,
 } from "./history-viewport";
 import { keepRectVisible } from "./selection-visibility";
+import { documentTailAt } from "./editor-tail";
 
 export type EditorAction =
   | "heading"
@@ -65,7 +66,7 @@ export interface EditorController {
   undo(): boolean;
   redo(): boolean;
   focus(): void;
-  focusEnd(): void;
+  handleDocumentTailPress(event: MouseEvent): boolean;
   ensureSelectionVisible(bottomInset?: number): void;
   destroy(): void;
 }
@@ -891,11 +892,27 @@ class RichEditor implements EditorController {
     this.view.focus();
   }
 
-  focusEnd(): void {
-    const end = this.view.state.doc.content.size;
-    const selection = Selection.near(this.view.state.doc.resolve(end), -1);
+  handleDocumentTailPress(event: MouseEvent): boolean {
+    const tail = documentTailAt(
+      this.view,
+      this.host,
+      event.clientX,
+      event.clientY,
+    );
+    if (!tail) return false;
+    const zoneRect = tail.element.getBoundingClientRect();
+    if (tail.kind !== "blank" && event.clientY <= zoneRect.bottom) return false;
+
+    event.preventDefault();
+    const selection = tail.kind === "blank" && tail.terminalBlankSelectionPosition !== null
+      ? TextSelection.create(this.view.state.doc, tail.terminalBlankSelectionPosition)
+      : Selection.near(
+        this.view.state.doc.resolve(this.view.state.doc.content.size),
+        -1,
+      );
     this.view.dispatch(this.view.state.tr.setSelection(selection).scrollIntoView());
     this.view.focus();
+    return true;
   }
 
   ensureSelectionVisible(bottomInset = 0): void {
@@ -978,9 +995,8 @@ class RawEditor implements EditorController {
     this.textarea.focus();
   }
 
-  focusEnd(): void {
-    this.textarea.focus();
-    this.textarea.setSelectionRange(this.textarea.value.length, this.textarea.value.length);
+  handleDocumentTailPress(_event: MouseEvent): boolean {
+    return false;
   }
 
   ensureSelectionVisible(_bottomInset = 0): void {}

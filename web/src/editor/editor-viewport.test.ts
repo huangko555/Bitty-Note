@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  alignDocumentBoundary,
   autoScrollForPointer,
   preserveVisualAnchorDuring,
   preserveViewportDuring,
+  revealDocumentRect,
   scrollForWheel,
 } from "./editor-viewport";
 
@@ -23,20 +23,54 @@ function viewport(top: number, bottom: number): DOMRect {
 }
 
 describe("editor viewport", () => {
-  it("keeps a semantic document boundary at its preferred screen position", () => {
+  it("reveals a dropped single-line block above a bottom overlay", () => {
     const host = document.createElement("div");
     document.body.append(host);
-    host.scrollTop = 900;
+    host.scrollTop = 100;
     vi.spyOn(host, "getBoundingClientRect").mockReturnValue(viewport(0, 200));
     let frame: FrameRequestCallback | null = null;
 
-    alignDocumentBoundary(host, () => -880, 20, (callback) => {
+    revealDocumentRect(host, () => ({ top: 160, bottom: 182 }), 44, (callback) => {
       frame = callback;
       return 1;
     });
     (frame as unknown as FrameRequestCallback)(0);
 
-    expect(host.scrollTop).toBe(0);
+    expect(host.scrollTop).toBe(134);
+    host.remove();
+  });
+
+  it("uses the full height of a multiline or parent block", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    host.scrollTop = 100;
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(viewport(0, 200));
+    let frame: FrameRequestCallback | null = null;
+
+    revealDocumentRect(host, () => ({ top: 90, bottom: 190 }), 44, (callback) => {
+      frame = callback;
+      return 1;
+    });
+    (frame as unknown as FrameRequestCallback)(0);
+
+    expect(host.scrollTop).toBe(142);
+    host.remove();
+  });
+
+  it("anchors an oversized dropped block by its top", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    host.scrollTop = 100;
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(viewport(0, 200));
+    let frame: FrameRequestCallback | null = null;
+
+    revealDocumentRect(host, () => ({ top: 40, bottom: 240 }), 44, (callback) => {
+      frame = callback;
+      return 1;
+    });
+    (frame as unknown as FrameRequestCallback)(0);
+
+    expect(host.scrollTop).toBe(132);
     host.remove();
   });
 

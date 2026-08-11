@@ -7,12 +7,13 @@ import { type EditorView } from "prosemirror-view";
 
 import { normalizeListDocument } from "./list-normalization";
 import {
-  alignDocumentBoundary,
   autoScrollForPointer,
+  POINTER_AUTO_SCROLL_EDGE_SIZE,
   preserveViewportDuring,
+  revealDocumentRect,
   scrollForWheel,
 } from "./editor-viewport";
-import { documentEndZoneAt } from "./editor-tail";
+import { documentTailAt } from "./editor-tail";
 import { FOLD_HOVER_EVENT, type FoldHoverDetail } from "./folding";
 import { preserveViewportInHistory } from "./history-viewport";
 import { noteSchema } from "./schema";
@@ -809,6 +810,7 @@ class RowDragHandleView {
   private startY = 0;
   private moved = false;
   private activePointerId: number | null = null;
+  private restoreEditorFocus = false;
   private finishing = false;
 
   constructor(private readonly view: EditorView) {
@@ -919,7 +921,7 @@ class RowDragHandleView {
   private readonly onHoverMove = (event: PointerEvent): void => {
     if (this.source) return;
     if (event.target instanceof Node && this.handle.contains(event.target)) return;
-    if (documentEndZoneAt(this.view, this.host, event.clientX, event.clientY)) {
+    if (documentTailAt(this.view, this.host, event.clientX, event.clientY)) {
       this.hide();
       return;
     }
@@ -998,6 +1000,7 @@ class RowDragHandleView {
     this.startX = event.clientX;
     this.startY = event.clientY;
     this.moved = false;
+    this.restoreEditorFocus = this.view.hasFocus();
     this.positionHighlight(this.source);
     this.highlight.classList.add("visible");
     this.showPreview(this.source, event.clientX, event.clientY);
@@ -1025,18 +1028,27 @@ class RowDragHandleView {
       this.positionDropTarget(null, "after");
       return;
     }
-    autoScrollForPointer(this.host, event.clientY);
+    const hostRect = this.host.getBoundingClientRect();
+    let endZone = documentTailAt(this.view, this.host, event.clientX, event.clientY);
+    const documentEndIsSettled = Boolean(
+      endZone
+      && event.clientY > hostRect.bottom - POINTER_AUTO_SCROLL_EDGE_SIZE
+      && endZone.element.getBoundingClientRect().bottom
+        <= hostRect.bottom - POINTER_AUTO_SCROLL_EDGE_SIZE,
+    );
+    if (!documentEndIsSettled) {
+      autoScrollForPointer(this.host, event.clientY);
+      endZone = documentTailAt(this.view, this.host, event.clientX, event.clientY);
+    }
 
-    const endZone = documentEndZoneAt(this.view, this.host, event.clientX, event.clientY);
     if (endZone) {
-      const collapsedHeading = endZone.collapsedHeadingPosition === null
-        ? null
-        : this.view.state.doc.nodeAt(endZone.collapsedHeadingPosition);
-      const terminalRowPosition = endZone.terminalBlankPosition === null
-        ? null
-        : rowPositionAt(this.view, endZone.terminalBlankPosition);
+      const collapsedHeading = endZone.kind === "collapsed-heading"
+        ? this.view.state.doc.nodeAt(endZone.collapsedHeadingPosition)
+        : null;
+      const terminalRowPosition = endZone.kind === "blank"
+        ? rowPositionAt(this.view, endZone.terminalBlankSelectionPosition)
+        : null;
       const terminalRow = terminalRowPosition === null
-        || (collapsedHeading !== null && this.source.node.type === noteSchema.nodes.heading)
         ? null
         : rowAtPosition(this.view, terminalRowPosition);
       this.positionDocumentEndTarget(
@@ -1074,7 +1086,7 @@ class RowDragHandleView {
       return;
     }
     if (!row) {
-      const endAnchor = this.documentEndAnchor(event.clientX, event.clientY);
+      const endAnchor = this.lastContentAnchor(event.clientX, event.clientY);
       if (endAnchor) {
         this.positionDocumentEndTarget(endAnchor, "bottom");
         return;
@@ -1142,11 +1154,10 @@ class RowDragHandleView {
     const endTarget = this.endTarget;
     const targetRow = endTarget?.terminalRow ?? this.target;
     const targetPosition = targetRow?.position;
-    const targetNode = targetRow?.node ?? null;
     const side = endTarget ? "after" : this.side;
-    const movesToDocumentEnd = Boolean(endTarget && !endTarget.terminalRow);
     const pointerX = event.clientX;
     const pointerY = event.clientY;
+    const restoreEditorFocus = this.restoreEditorFocus;
     this.updateDeleteTarget(pointerX, pointerY);
     const shouldDelete = sourcePosition !== undefined
       && this.moved
@@ -1165,7 +1176,7 @@ class RowDragHandleView {
         deleteRow(this.view.state, this.view.dispatch, sourcePosition);
       });
     } else if (shouldMove) {
-      const moved = endTarget
+      const moved = preserveViewportDuring(this.host, () => endTarget
         ? endTarget.terminalRow
           ? moveRow(
             this.view.state,
@@ -1187,14 +1198,17 @@ class RowDragHandleView {
           sourcePosition,
           targetPosition!,
           side,
-        );
+        ));
       if (moved && sourceNode) {
-        alignDocumentBoundary(
+        revealDocumentRect(
           this.host,
-          () => this.dropBoundary(sourceNode, targetNode, side, movesToDocumentEnd),
-          pointerY,
+          () => this.droppedBlockRect(sourceNode),
+          this.viewportBottomInset(),
         );
       }
+    }
+    if (restoreEditorFocus && !this.view.hasFocus()) {
+      preserveViewportDuring(this.host, () => this.view.focus());
     }
 
     const hostRect = this.host.getBoundingClientRect();
@@ -1204,7 +1218,7 @@ class RowDragHandleView {
       && pointerY >= hostRect.top
       && pointerY <= hostRect.bottom
     ) {
-      if (!documentEndZoneAt(this.view, this.host, pointerX, pointerY)) {
+      if (!documentTailAt(this.view, this.host, pointerX, pointerY)) {
         const row = rowAt(this.view, pointerX, pointerY);
         if (row) this.show(row);
       }
@@ -1246,6 +1260,7 @@ class RowDragHandleView {
       }
     } finally {
       this.activePointerId = null;
+      this.restoreEditorFocus = false;
       this.source = null;
       this.target = null;
       this.visualAnchor = null;
@@ -1505,53 +1520,28 @@ class RowDragHandleView {
     return Math.max(hostRect.left + FEEDBACK_LEFT_INSET, contentLeft);
   }
 
-  private dropBoundary(
+  private droppedBlockRect(
     source: ProseMirrorNode,
-    target: ProseMirrorNode | null,
-    side: RowDropSide,
-    documentEnd: boolean,
-  ): number | null {
-    const movedPath = findNodePath(this.view.state.doc, source);
-    if (movedPath) {
-      const movedRow = rowAtPosition(
-        this.view,
-        nodePositionAtPath(this.view.state.doc, movedPath),
-      );
-      if (movedRow) return unshiftedVerticalRect(movedRow.header).top;
+  ): { top: number; bottom: number } | null {
+    const stableNodes = source.type === noteSchema.nodes.list_item && source.firstChild
+      ? [source, source.firstChild]
+      : [source];
+    for (const stableNode of stableNodes) {
+      const path = findNodePath(this.view.state.doc, stableNode);
+      if (!path) continue;
+      const nodePosition = nodePositionAtPath(this.view.state.doc, path);
+      const rowPosition = rowPositionAt(this.view, nodePosition + 1) ?? nodePosition;
+      const row = rowAtPosition(this.view, rowPosition);
+      if (row) return draggedBlockVerticalRect(this.view, row);
     }
-    if (documentEnd) {
-      return null;
-    }
-    if (!target) return null;
-    const targetPath = findNodePath(this.view.state.doc, target);
-    if (!targetPath) return null;
-    const row = rowAtPosition(
-      this.view,
-      nodePositionAtPath(this.view.state.doc, targetPath),
+    return null;
+  }
+
+  private viewportBottomInset(): number {
+    const toolbar = this.host.parentElement?.querySelector<HTMLElement>(
+      ":scope > .format-toolbar.visible",
     );
-    if (!row) return null;
-    if (side === "before") return unshiftedVerticalRect(row.header).top;
-    if (side === "inside") return draggedBlockVerticalRect(this.view, row).bottom;
-    if (
-      source.type === noteSchema.nodes.heading
-      && target.type === noteSchema.nodes.list_item
-      && targetPath.length > 2
-    ) {
-      const topLevelDom = this.view.nodeDOM(
-        topLevelNodePosition(this.view.state.doc, targetPath[0]!),
-      );
-      return topLevelDom instanceof HTMLElement
-        ? unshiftedVerticalRect(topLevelDom).bottom
-        : null;
-    }
-    if (
-      target.type === noteSchema.nodes.list_item
-      || (source.type === noteSchema.nodes.heading
-        && target.type === noteSchema.nodes.heading)
-    ) {
-      return draggedBlockVerticalRect(this.view, row).bottom;
-    }
-    return unshiftedVerticalRect(row.header).bottom;
+    return toolbar?.getBoundingClientRect().height ?? 0;
   }
 
   private positionDocumentEndTarget(
@@ -1595,7 +1585,7 @@ class RowDragHandleView {
     this.showDropIndicator(left, top, hostRect.right - FEEDBACK_RIGHT_INSET);
   }
 
-  private documentEndAnchor(clientX: number, clientY: number): HTMLElement | null {
+  private lastContentAnchor(clientX: number, clientY: number): HTMLElement | null {
     const hostRect = this.host.getBoundingClientRect();
     if (clientX < hostRect.left || clientX > hostRect.right) return null;
     const children = Array.from(this.view.dom.children).reverse();

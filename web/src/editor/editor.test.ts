@@ -295,6 +295,80 @@ describe("task checkbox rendering", () => {
     controller.destroy();
     host.remove();
   });
+
+  it("handles a final blank tail press before native caret placement", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const { controller } = createEditor(
+      host,
+      "body\n\n<!-- bitty-empty-line -->\n",
+      {
+        onChange: () => {},
+        onFocusChange: () => {},
+        onSelectionChange: () => {},
+      },
+    );
+    const view = (controller as unknown as { view: EditorView }).view;
+    const zone = host.querySelector<HTMLElement>(
+      ".document-end-zone.is-placeholder",
+    )!;
+    vi.spyOn(host, "getBoundingClientRect")
+      .mockReturnValue(new DOMRect(0, 0, 300, 180));
+    vi.spyOn(zone, "getBoundingClientRect")
+      .mockReturnValue(new DOMRect(20, 80, 260, 22));
+    const event = new MouseEvent("mousedown", {
+      cancelable: true,
+      clientX: 100,
+      clientY: 90,
+    });
+
+    expect(controller.handleDocumentTailPress(event)).toBe(true);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(view.state.selection.$from.parent.content.size).toBe(0);
+    expect(document.activeElement).toBe(view.dom);
+    controller.destroy();
+    host.remove();
+  });
+
+  it("focuses a non-empty document end only below its insert button", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const { controller } = createEditor(host, "body\n", {
+      onChange: () => {},
+      onFocusChange: () => {},
+      onSelectionChange: () => {},
+    });
+    const view = (controller as unknown as { view: EditorView }).view;
+    const button = host.querySelector<HTMLElement>(
+      ".row-insert-button.is-terminal",
+    )!;
+    vi.spyOn(host, "getBoundingClientRect")
+      .mockReturnValue(new DOMRect(0, 0, 300, 180));
+    vi.spyOn(button, "getBoundingClientRect")
+      .mockReturnValue(new DOMRect(20, 80, 260, 22));
+    const buttonEvent = new MouseEvent("mousedown", {
+      cancelable: true,
+      clientX: 100,
+      clientY: 90,
+    });
+    const belowEvent = new MouseEvent("mousedown", {
+      cancelable: true,
+      clientX: 100,
+      clientY: 120,
+    });
+
+    expect(controller.handleDocumentTailPress(buttonEvent)).toBe(false);
+    expect(buttonEvent.defaultPrevented).toBe(false);
+    expect(controller.handleDocumentTailPress(belowEvent)).toBe(true);
+    expect(belowEvent.defaultPrevented).toBe(true);
+    expect(view.state.selection.$from.parent.textContent).toBe("body");
+    expect(view.state.selection.$from.parentOffset).toBe(4);
+    expect(document.activeElement).toBe(view.dom);
+
+    controller.destroy();
+    host.remove();
+  });
 });
 
 describe("spell checking", () => {
