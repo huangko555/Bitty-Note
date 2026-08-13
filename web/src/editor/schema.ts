@@ -1,3 +1,5 @@
+import createLucideElement from "lucide/dist/esm/createElement.mjs";
+import Check from "lucide/dist/esm/icons/check.mjs";
 import { Schema, type DOMOutputSpec, type NodeSpec } from "prosemirror-model";
 
 const listItem: NodeSpec = {
@@ -45,6 +47,10 @@ const listItem: NodeSpec = {
             tabindex: "-1",
           },
         ],
+        createLucideElement(Check, {
+          class: "lucide-icon task-check-icon",
+          "aria-hidden": "true",
+        }),
       ],
       ["div", { class: "task-content" }, 0],
     ];

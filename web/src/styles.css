@@ -250,10 +250,11 @@ h1 { margin: 0; font-size: 23px; font-weight: 500; letter-spacing: -.025em; }
 .ProseMirror h1 * { color: inherit; }
 .ProseMirror .task-list-item { display: block; }
 .task-check { position: absolute; top: 0; left: -1.15em; display: flex; align-items: center; justify-content: center; width: 17px; height: 1.55em; transform: translateX(-50%); }
-.task-check input { appearance: none; box-sizing: border-box; position: relative; width: 17px; height: 17px; margin: 0; padding: 0; border: 1.5px solid var(--line-strong); border-radius: 6px; background: var(--surface); cursor: pointer; }
+.task-check input { appearance: none; box-sizing: border-box; position: relative; width: 16px; height: 16px; margin: 0; padding: 0; border: 1.5px solid var(--line-strong); border-radius: 6px; background: var(--surface); cursor: pointer; }
 .task-check input:hover { border-color: var(--accent-deep); background: var(--accent-soft); }
 .task-check input:checked { border-color: var(--muted); background: var(--muted); }
-.task-check input:checked::after { content: ""; position: absolute; left: 50%; top: 50%; width: 4px; height: 7px; border: solid #fff; border-width: 0 2px 2px 0; transform: translate(-50%, -60%) rotate(45deg); }
+.task-check-icon { position: absolute; top: 50%; left: 50%; width: 12px; height: 12px; color: #fff; stroke-width: 2.4; opacity: 0; pointer-events: none; transform: translate(-50%, calc(-50% + .5px)); }
+.task-check input:checked + .task-check-icon { opacity: 1; }
 .task-content { min-width: 0; }
 .task-list-item.is-checked > .task-content, .task-list-item.is-checked > .task-content * { color: var(--muted); }
 .task-list-item.is-checked > .task-content > p:first-child { text-decoration-line: line-through; text-decoration-color: currentColor; text-decoration-thickness: 1px; }
