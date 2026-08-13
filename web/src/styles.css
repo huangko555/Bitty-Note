@@ -249,9 +249,9 @@ h1 { margin: 0; font-size: 23px; font-weight: 500; letter-spacing: -.025em; }
 .ProseMirror s { text-decoration: line-through; text-decoration-thickness: 1px; }
 .ProseMirror h1 * { color: inherit; }
 .ProseMirror .task-list-item { display: block; }
-.task-check { position: absolute; top: 0; left: -1.15em; display: flex; align-items: center; justify-content: center; width: 17px; height: 1.55em; transform: translateX(-50%); }
-.task-check input { appearance: none; box-sizing: border-box; position: absolute; z-index: 1; top: 50%; left: 50%; width: 17px; height: 17px; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; transform: translate(-50%, calc(-50% + .5px)); }
-.task-check-icon { position: absolute; top: 50%; left: 50%; width: 17px; height: 17px; pointer-events: none; transform: translate(-50%, calc(-50% + .5px)); }
+.task-check { position: absolute; top: 0; left: -1.15em; display: flex; align-items: center; justify-content: center; width: 18px; height: 1.55em; transform: translateX(-50%); }
+.task-check input { appearance: none; box-sizing: border-box; position: absolute; z-index: 1; top: 50%; left: 50%; width: 18px; height: 18px; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; transform: translate(-50%, calc(-50% + .5px)); }
+.task-check-icon { position: absolute; top: 50%; left: 50%; width: 18px; height: 18px; pointer-events: none; transform: translate(-50%, calc(-50% + .5px)); }
 .task-check-box { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1; }
 .task-check-mark { fill: none; stroke: transparent; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .task-check input:hover + .task-check-icon .task-check-box { fill: var(--accent-soft); stroke: var(--accent-deep); }
@@ -295,12 +295,12 @@ h1.has-fold-toggle, .has-fold-toggle > p:first-child, .has-fold-toggle > .task-c
 .block-drag-preview-text { min-width: 0; overflow: hidden; font-family: var(--editor-font-family); font-size: 13px; line-height: 18px; text-overflow: clip; white-space: nowrap; }
 .block-drag-preview-meta { flex: 0 0 auto; color: var(--ink); font-family: var(--editor-font-family); font-size: 13px; font-weight: 400; line-height: 18px; white-space: nowrap; }
 .block-drag-preview-meta:empty { display: none; }
-.block-delete-target { position: fixed; z-index: 11; right: 12px; bottom: 12px; display: flex; flex-direction: row-reverse; align-items: center; width: max-content; min-width: 44px; height: 44px; padding: 11px; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 14px; color: var(--danger); background: color-mix(in srgb, var(--paper) 92%, transparent); box-shadow: 0 5px 18px rgb(32 30 24 / 13%); opacity: 0; pointer-events: none; transform: translateY(7px) scale(.94); transform-origin: right center; transition: opacity .12s ease, transform .14s cubic-bezier(.2, .8, .2, 1), color .1s ease, background-color .1s ease, border-color .1s ease, box-shadow .1s ease; backdrop-filter: blur(8px); }
+.block-delete-target { position: fixed; z-index: 11; right: 12px; bottom: 12px; display: flex; flex-direction: row-reverse; align-items: center; width: max-content; min-width: 60px; height: 60px; padding: 15px; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 19px; color: var(--danger); background: color-mix(in srgb, var(--paper) 92%, transparent); box-shadow: 0 7px 25px rgb(32 30 24 / 13%); opacity: 0; pointer-events: none; transform: translateY(10px) scale(.94); transform-origin: right center; transition: opacity .12s ease, transform .14s cubic-bezier(.2, .8, .2, 1), color .1s ease, background-color .1s ease, border-color .1s ease, box-shadow .1s ease; backdrop-filter: blur(8px); }
 .block-delete-target.visible { opacity: 1; transform: translateY(0) scale(1); }
-.block-delete-target.is-armed { color: #fff; background: var(--danger); border-color: var(--danger); box-shadow: 0 7px 22px rgb(126 43 37 / 25%); transform: translateY(0) scale(1); }
-.block-delete-target .lucide-icon { flex: 0 0 20px; width: 20px; height: 20px; stroke-width: 2; }
-.block-delete-target span { overflow: hidden; max-width: 0; margin-right: 0; color: inherit; font-size: 12px; font-weight: 600; line-height: 1; white-space: nowrap; opacity: 0; transform: translateX(5px); transition: max-width .14s cubic-bezier(.2, .8, .2, 1), margin-right .14s cubic-bezier(.2, .8, .2, 1), opacity .1s ease, transform .14s cubic-bezier(.2, .8, .2, 1); }
-.block-delete-target.is-armed span { max-width: 140px; margin-right: 8px; opacity: 1; transform: translateX(0); }
+.block-delete-target.is-armed { color: #fff; background: var(--danger); border-color: var(--danger); box-shadow: 0 10px 30px rgb(126 43 37 / 25%); transform: translateY(0) scale(1); }
+.block-delete-target .lucide-icon { flex: 0 0 28px; width: 28px; height: 28px; stroke-width: 2; }
+.block-delete-target span { overflow: hidden; max-width: 0; margin-right: 0; color: inherit; font-size: 14px; font-weight: 600; line-height: 1; white-space: nowrap; opacity: 0; transform: translateX(7px); transition: max-width .14s cubic-bezier(.2, .8, .2, 1), margin-right .14s cubic-bezier(.2, .8, .2, 1), opacity .1s ease, transform .14s cubic-bezier(.2, .8, .2, 1); }
+.block-delete-target.is-armed span { max-width: 190px; margin-right: 11px; opacity: 1; transform: translateX(0); }
 .note-page:has(.format-toolbar.visible) .block-delete-target { bottom: 56px; }
 @media (prefers-reduced-motion: reduce) {
   .block-delete-target, .block-delete-target span { transition-duration: 0s; }

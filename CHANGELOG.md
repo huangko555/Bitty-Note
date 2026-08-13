@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.3.8 — 2026-08-13
+
+### English
+
+- Made insert actions below folded headings expand the section and place the caret on the resulting row, reusing an existing empty tail row instead of creating a duplicate.
+- Preserved bullet, ordered, and task-list types when inserting after folded list content, including unchecked state for new task items.
+- Reworked task checkboxes as stable 18 px SVG controls so their outlines and checkmarks stay visually consistent across consecutive rows.
+- Enlarged the drag-to-delete target and its contents for clearer feedback and easier targeting.
+
+### 简体中文
+
+- 点击折叠标题下方的插行入口后自动展开章节并将光标定位到结果行；末尾已有空行时直接复用，不再重复新增。
+- 在折叠列表内容后插行时延续项目符号、有序列表或任务列表类型，新任务项保持未勾选。
+- 将任务复选框调整为稳定的 18px SVG 控件，使连续多行的外框和勾号保持一致。
+- 放大拖动删除目标及其内部元素，使反馈更清晰、更容易命中。
+
 ## v1.3.7 — 2026-08-11
 
 ### English
