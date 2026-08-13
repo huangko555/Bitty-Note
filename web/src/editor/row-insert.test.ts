@@ -176,6 +176,52 @@ describe("row insertion gaps", () => {
     expect(view.state.selection.$from.parent).toBe(view.state.doc.lastChild);
   });
 
+  it("expands a folded section when inserting a blank row at its end", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const onInsert = vi.fn();
+    const revealRequests: boolean[] = [];
+    const doc = noteSchema.nodes.doc.create(null, [
+      noteSchema.nodes.heading.create(
+        { level: 1, collapsed: true },
+        noteSchema.text("Folded"),
+      ),
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("hidden body")),
+      noteSchema.nodes.heading.create({ level: 1 }, noteSchema.text("Next")),
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("visible body")),
+    ]);
+    view = new EditorView(host, {
+      state: EditorState.create({
+        doc,
+        plugins: [foldingPlugin(), rowInsertPlugin(onInsert)],
+      }),
+      dispatchTransaction: (transaction) => {
+        revealRequests.push(transaction.scrolledIntoView);
+        view!.updateState(view!.state.apply(transaction));
+      },
+    });
+
+    host.querySelector<HTMLButtonElement>(
+      ".row-insert-button:not(.is-terminal)",
+    )!.click();
+
+    expect(view.state.doc.firstChild?.attrs.collapsed).toBe(false);
+    expect(Array.from(view.state.doc.content.content, (node) => ({
+      type: node.type.name,
+      text: node.textContent,
+    }))).toEqual([
+      { type: "heading", text: "Folded" },
+      { type: "paragraph", text: "hidden body" },
+      { type: "paragraph", text: "" },
+      { type: "heading", text: "Next" },
+      { type: "paragraph", text: "visible body" },
+    ]);
+    expect(view.state.selection.$from.parent).toBe(view.state.doc.child(2));
+    expect(view.hasFocus()).toBe(true);
+    expect(revealRequests).toEqual([true]);
+    expect(onInsert).toHaveBeenCalledOnce();
+  });
+
   it("expands and focuses an existing final blank row without duplicating it", () => {
     const host = document.createElement("div");
     document.body.append(host);

@@ -16,10 +16,16 @@ export function insertBlankParagraph(
   state: EditorState,
   dispatch: ((transaction: Transaction) => void) | undefined,
   position: number,
+  expandHeadingAt: number | null = null,
 ): boolean {
   if (position < 0 || position > state.doc.content.size) return false;
   const $position = state.doc.resolve(position);
   if ($position.depth !== 0) return false;
+  const heading = expandHeadingAt === null ? null : state.doc.nodeAt(expandHeadingAt);
+  if (
+    expandHeadingAt !== null
+    && (heading?.type !== noteSchema.nodes.heading || !heading.attrs.collapsed)
+  ) return false;
   if (!dispatch) return true;
 
   const previous = $position.nodeBefore;
@@ -34,7 +40,14 @@ export function insertBlankParagraph(
       noteSchema.nodes.paragraph.create(),
     )
     : noteSchema.nodes.paragraph.create();
-  const transaction = state.tr.insert(insertPosition, node);
+  const transaction = state.tr;
+  if (heading && expandHeadingAt !== null) {
+    transaction.setNodeMarkup(expandHeadingAt, undefined, {
+      ...heading.attrs,
+      collapsed: false,
+    });
+  }
+  transaction.insert(insertPosition, node);
   transaction.setSelection(TextSelection.create(
     transaction.doc,
     insertPosition + (continuesList ? 2 : 1),
@@ -70,7 +83,9 @@ function insertButton(
     if (typeof position !== "number") return;
     const changed = expandHeadingAt === null
       ? insertBlankParagraph(view.state, view.dispatch, position)
-      : expandHeadingForInsertion(view.state, view.dispatch, expandHeadingAt);
+      : terminal
+        ? expandHeadingForInsertion(view.state, view.dispatch, expandHeadingAt)
+        : insertBlankParagraph(view.state, view.dispatch, position, expandHeadingAt);
     if (changed) {
       view.focus();
       onInsert?.();
@@ -115,17 +130,31 @@ function emptyDocumentEndZone(): HTMLElement {
 }
 
 function decorations(doc: EditorState["doc"], onInsert?: () => void): DecorationSet {
-  const headingPositions: number[] = [];
+  const headingPositions: Array<{
+    position: number;
+    expandHeadingAt: number | null;
+  }> = [];
+  let precedingCollapsedHeading: number | null = null;
   doc.forEach((node, position) => {
-    if (node.type === noteSchema.nodes.heading && position > 0) headingPositions.push(position);
+    if (node.type !== noteSchema.nodes.heading) return;
+    if (position > 0) {
+      headingPositions.push({ position, expandHeadingAt: precedingCollapsedHeading });
+    }
+    precedingCollapsedHeading = node.attrs.collapsed ? position : null;
   });
   const tail = describeDocumentTail(doc);
   const tailKey = tail.kind === "collapsed-heading"
     ? `${tail.kind}-${tail.collapsedHeadingPosition}`
     : tail.kind;
-  const items: Decoration[] = headingPositions.map((position) => Decoration.widget(
+  const items: Decoration[] = headingPositions.map(({ position, expandHeadingAt }) => Decoration.widget(
     position,
-    (view, getPosition) => insertButton(view, getPosition, onInsert),
+    (view, getPosition) => insertButton(
+      view,
+      getPosition,
+      onInsert,
+      false,
+      expandHeadingAt,
+    ),
     { key: `row-insert-${position}`, side: -1 },
   ));
   items.push(Decoration.widget(
