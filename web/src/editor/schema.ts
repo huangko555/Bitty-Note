@@ -1,6 +1,27 @@
-import createLucideElement from "lucide/dist/esm/createElement.mjs";
-import Check from "lucide/dist/esm/icons/check.mjs";
 import { Schema, type DOMOutputSpec, type NodeSpec } from "prosemirror-model";
+
+const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+
+function taskCheckIcon(): SVGElement {
+  const svg = document.createElementNS(SVG_NAMESPACE, "svg");
+  svg.setAttribute("class", "task-check-icon");
+  svg.setAttribute("viewBox", "0 0 17 17");
+  svg.setAttribute("aria-hidden", "true");
+
+  const box = document.createElementNS(SVG_NAMESPACE, "rect");
+  box.setAttribute("class", "task-check-box");
+  box.setAttribute("x", ".5");
+  box.setAttribute("y", ".5");
+  box.setAttribute("width", "16");
+  box.setAttribute("height", "16");
+  box.setAttribute("rx", "6");
+
+  const mark = document.createElementNS(SVG_NAMESPACE, "path");
+  mark.setAttribute("class", "task-check-mark");
+  mark.setAttribute("d", "M4.5 8.9 7.3 11.7 12.8 6.3");
+  svg.append(box, mark);
+  return svg;
+}
 
 const listItem: NodeSpec = {
   attrs: { checked: { default: null }, collapsed: { default: false } },
@@ -47,10 +68,7 @@ const listItem: NodeSpec = {
             tabindex: "-1",
           },
         ],
-        createLucideElement(Check, {
-          class: "lucide-icon task-check-icon",
-          "aria-hidden": "true",
-        }),
+        taskCheckIcon(),
       ],
       ["div", { class: "task-content" }, 0],
     ];
