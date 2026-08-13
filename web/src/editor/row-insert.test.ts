@@ -222,6 +222,39 @@ describe("row insertion gaps", () => {
     expect(onInsert).toHaveBeenCalledOnce();
   });
 
+  it("expands and focuses an existing blank row at the end of a folded section", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const onInsert = vi.fn();
+    const doc = noteSchema.nodes.doc.create(null, [
+      noteSchema.nodes.heading.create(
+        { level: 1, collapsed: true },
+        noteSchema.text("Folded"),
+      ),
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("hidden body")),
+      noteSchema.nodes.paragraph.create(),
+      noteSchema.nodes.heading.create({ level: 1 }, noteSchema.text("Next")),
+    ]);
+    view = new EditorView(host, {
+      state: EditorState.create({
+        doc,
+        plugins: [foldingPlugin(), rowInsertPlugin(onInsert)],
+      }),
+    });
+
+    host.querySelector<HTMLButtonElement>(
+      ".row-insert-button:not(.is-terminal)",
+    )!.click();
+
+    expect(view.state.doc.firstChild?.attrs.collapsed).toBe(false);
+    expect(view.state.doc.childCount).toBe(4);
+    expect(view.state.doc.child(2).type).toBe(noteSchema.nodes.paragraph);
+    expect(view.state.doc.child(2).content.size).toBe(0);
+    expect(view.state.selection.$from.parent).toBe(view.state.doc.child(2));
+    expect(view.hasFocus()).toBe(true);
+    expect(onInsert).toHaveBeenCalledOnce();
+  });
+
   it("expands and focuses an existing final blank row without duplicating it", () => {
     const host = document.createElement("div");
     document.body.append(host);
@@ -244,6 +277,46 @@ describe("row insertion gaps", () => {
     expect(view.state.doc.firstChild?.attrs.collapsed).toBe(false);
     expect(view.state.doc.childCount).toBe(2);
     expect(view.state.selection.$from.parent).toBe(view.state.doc.lastChild);
+  });
+
+  it.each([
+    ["bullet", "bullet_list", null],
+    ["ordered", "ordered_list", null],
+    ["task", "bullet_list", false],
+  ] as const)("continues a final folded %s list when the bottom gap is clicked", (
+    kind,
+    nodeName,
+    checked,
+  ) => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const list = noteSchema.nodes[nodeName].create(null, noteSchema.nodes.list_item.create(
+      { checked: kind === "task" ? true : null },
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("item")),
+    ));
+    const doc = noteSchema.nodes.doc.create(null, [
+      noteSchema.nodes.heading.create(
+        { level: 1, collapsed: true },
+        noteSchema.text("Title"),
+      ),
+      list,
+    ]);
+    view = new EditorView(host, {
+      state: EditorState.create({
+        doc,
+        plugins: [foldingPlugin(), rowInsertPlugin()],
+      }),
+    });
+
+    host.querySelector<HTMLButtonElement>(".row-insert-button.is-terminal")!.click();
+
+    expect(view.state.doc.firstChild?.attrs.collapsed).toBe(false);
+    expect(view.state.doc.childCount).toBe(2);
+    expect(view.state.doc.lastChild?.type.name).toBe(nodeName);
+    expect(view.state.doc.lastChild?.childCount).toBe(2);
+    expect(view.state.doc.lastChild?.lastChild?.attrs.checked).toBe(checked);
+    expect(view.state.selection.$from.parent.type).toBe(noteSchema.nodes.paragraph);
+    expect(view.state.selection.$from.parent.content.size).toBe(0);
   });
 
   it.each([

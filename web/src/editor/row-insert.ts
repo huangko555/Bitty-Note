@@ -12,6 +12,23 @@ import { noteSchema } from "./schema";
 
 const rowInsertKey = new PluginKey<DecorationSet>("rowInsert");
 
+function finalBlankTextblockSelectionPosition(
+  node: EditorState["doc"],
+  nodePosition: number,
+): number | null {
+  if (node.isTextblock) return node.content.size === 0 ? nodePosition + 1 : null;
+
+  let finalPosition = -1;
+  let finalIsBlank = false;
+  node.descendants((descendant, position) => {
+    if (descendant.isTextblock) {
+      finalPosition = nodePosition + position + 1;
+      finalIsBlank = descendant.content.size === 0;
+    }
+  });
+  return finalIsBlank ? finalPosition + 1 : null;
+}
+
 export function insertBlankParagraph(
   state: EditorState,
   dispatch: ((transaction: Transaction) => void) | undefined,
@@ -46,6 +63,20 @@ export function insertBlankParagraph(
       ...heading.attrs,
       collapsed: false,
     });
+    if (previous) {
+      const blankSelectionPosition = finalBlankTextblockSelectionPosition(
+        previous,
+        position - previous.nodeSize,
+      );
+      if (blankSelectionPosition !== null) {
+        transaction.setSelection(TextSelection.create(
+          transaction.doc,
+          blankSelectionPosition,
+        ));
+        dispatch(transaction.scrollIntoView());
+        return true;
+      }
+    }
   }
   transaction.insert(insertPosition, node);
   transaction.setSelection(TextSelection.create(
@@ -83,41 +114,13 @@ function insertButton(
     if (typeof position !== "number") return;
     const changed = expandHeadingAt === null
       ? insertBlankParagraph(view.state, view.dispatch, position)
-      : terminal
-        ? expandHeadingForInsertion(view.state, view.dispatch, expandHeadingAt)
-        : insertBlankParagraph(view.state, view.dispatch, position, expandHeadingAt);
+      : insertBlankParagraph(view.state, view.dispatch, position, expandHeadingAt);
     if (changed) {
       view.focus();
       onInsert?.();
     }
   });
   return button;
-}
-
-function expandHeadingForInsertion(
-  state: EditorState,
-  dispatch: ((transaction: Transaction) => void) | undefined,
-  headingPosition: number,
-): boolean {
-  const heading = state.doc.nodeAt(headingPosition);
-  if (heading?.type !== noteSchema.nodes.heading || !heading.attrs.collapsed) return false;
-  if (!dispatch) return true;
-
-  const transaction = state.tr.setNodeMarkup(headingPosition, undefined, {
-    ...heading.attrs,
-    collapsed: false,
-  });
-  const tail = describeDocumentTail(transaction.doc);
-  const blankPosition = tail.kind === "blank" ? tail.terminalBlankNodePosition : null;
-  if (blankPosition === null) {
-    const insertPosition = transaction.doc.content.size;
-    transaction.insert(insertPosition, noteSchema.nodes.paragraph.create());
-    transaction.setSelection(TextSelection.create(transaction.doc, insertPosition + 1));
-  } else {
-    transaction.setSelection(TextSelection.create(transaction.doc, blankPosition + 1));
-  }
-  dispatch(transaction.scrollIntoView());
-  return true;
 }
 
 function emptyDocumentEndZone(): HTMLElement {
