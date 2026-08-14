@@ -1567,7 +1567,19 @@ describe("row drag handle", () => {
 
   it("deletes only when released over the visible delete target", () => {
     const host = document.createElement("div");
-    document.body.append(host);
+    const shell = document.createElement("div");
+    shell.className = "app-shell";
+    const titleBar = document.createElement("header");
+    titleBar.className = "title-bar";
+    const page = document.createElement("main");
+    page.className = "note-page";
+    const toolbar = document.createElement("div");
+    toolbar.className = "format-toolbar visible";
+    page.append(host, toolbar);
+    shell.append(titleBar, page);
+    document.body.append(shell);
+    vi.spyOn(titleBar, "getBoundingClientRect").mockReturnValue(rect(0, 0, 300, 44));
+    vi.spyOn(toolbar, "getBoundingClientRect").mockReturnValue(rect(0, 156, 300, 44));
     const doc = noteSchema.nodes.doc.create(null, [
       noteSchema.nodes.paragraph.create(null, noteSchema.text("甲")),
       noteSchema.nodes.paragraph.create(null, noteSchema.text("乙")),
@@ -1611,24 +1623,25 @@ describe("row drag handle", () => {
     window.dispatchEvent(pointerEvent("pointermove", 120, 2));
     expect(deleteTarget.classList.contains("visible")).toBe(true);
     expect(deleteTarget.classList.contains("is-armed")).toBe(false);
-    expect(deleteTarget.style.top).toBe("8px");
+    expect(deleteTarget.style.top).toBe("52px");
 
     window.dispatchEvent(pointerEvent("pointermove", 120, 40));
-    expect(deleteTarget.style.top).toBe("8px");
+    expect(deleteTarget.style.top).toBe("52px");
     window.dispatchEvent(pointerEvent("pointermove", 120, window.innerHeight - 2));
-    expect(deleteTarget.style.top).toBe("8px");
+    expect(deleteTarget.style.top).toBe("52px");
 
     window.dispatchEvent(pointerEvent("pointerup", 120, 40));
     expect(view.state.doc.textContent).toBe("甲乙");
     expect(deleteTarget.classList.contains("visible")).toBe(false);
 
     handle.dispatchEvent(pointerEvent("pointerdown", 100, 30));
-    window.dispatchEvent(pointerEvent("pointermove", 160, 40));
+    window.dispatchEvent(pointerEvent("pointermove", 160, 190));
     expect(deleteTarget.classList.contains("is-armed")).toBe(false);
+    expect(deleteTarget.style.top).toBe("104px");
 
     window.dispatchEvent(pointerEvent("pointermove", 250, 150));
     expect(deleteTarget.classList.contains("is-armed")).toBe(true);
-    expect(deleteTarget.style.top).toBe("18px");
+    expect(deleteTarget.style.top).toBe("104px");
 
     window.dispatchEvent(pointerEvent("pointerup", 120, 40));
     expect(view.state.doc.textContent).toBe("甲乙");

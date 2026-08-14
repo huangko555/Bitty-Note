@@ -1662,12 +1662,23 @@ class RowDragHandleView {
     if (!this.deleteTarget.classList.contains("visible")) {
       const height = this.deleteTarget.offsetHeight
         || this.deleteTarget.getBoundingClientRect().height;
+      const shell = this.host.closest(".app-shell");
+      const titleBar = shell?.querySelector<HTMLElement>(":scope > .title-bar");
+      const toolbar = this.host.parentElement?.querySelector<HTMLElement>(
+        ":scope > .format-toolbar.visible:not(.is-unavailable)",
+      );
+      const minimumTop = titleBar
+        ? titleBar.getBoundingClientRect().bottom + DELETE_TARGET_VIEWPORT_MARGIN
+        : DELETE_TARGET_VIEWPORT_MARGIN;
+      const lowerBoundary = toolbar
+        ? toolbar.getBoundingClientRect().top
+        : window.innerHeight;
       const maximumTop = Math.max(
-        DELETE_TARGET_VIEWPORT_MARGIN,
-        window.innerHeight - height - DELETE_TARGET_VIEWPORT_MARGIN,
+        minimumTop,
+        lowerBoundary - height - DELETE_TARGET_VIEWPORT_MARGIN,
       );
       const top = Math.min(
-        Math.max(clientY - height / 2, DELETE_TARGET_VIEWPORT_MARGIN),
+        Math.max(clientY - height / 2, minimumTop),
         maximumTop,
       );
       this.deleteTarget.style.top = `${top}px`;
