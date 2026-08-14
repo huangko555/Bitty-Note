@@ -92,6 +92,9 @@ class DesktopBridge:
     def duplicate_note(self, name: str, requested_name: str) -> dict[str, Any]:
         return self._repository.duplicate_note(name, requested_name).to_dict()
 
+    def rename_note(self, name: str, requested_name: str) -> dict[str, Any]:
+        return self._repository.rename_note(name, requested_name).to_dict()
+
     def open_note(self, name: str) -> dict[str, Any]:
         return self._repository.open_note(name).to_dict()
 

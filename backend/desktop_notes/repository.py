@@ -169,6 +169,34 @@ class NotesRepository:
                 )) from error
             return self._open_path(target)
 
+    def rename_note(self, name: str, requested_name: str) -> OpenedNote:
+        source = self._note_path(name)
+        with self._lock:
+            if not source.is_file():
+                raise UserVisibleError(message(
+                    f'The note “{name}” no longer exists.',
+                    f"记录“{name}”已经不存在。",
+                ))
+            target_name = self._safe_filename(requested_name)
+            if target_name == source.name:
+                return self._open_path(source)
+            for entry in os.scandir(self.root):
+                if entry.name.casefold() == target_name.casefold() \
+                        and entry.name.casefold() != source.name.casefold():
+                    raise UserVisibleError(message(
+                        f'A note named “{target_name}” already exists.',
+                        f"已存在名为“{target_name}”的记录。",
+                    ))
+            target = self.root / target_name
+            try:
+                source.rename(target)
+            except OSError as error:
+                raise UserVisibleError(message(
+                    f"Couldn't rename the note: {error}",
+                    f"无法重命名记录：{error}",
+                )) from error
+            return self._open_path(target)
+
     def open_note(self, name: str) -> OpenedNote:
         with self._lock:
             return self._open_path(self._note_path(name))

@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import pytest
+
+from desktop_notes.errors import UserVisibleError
 from desktop_notes.repository import NotesRepository
 
 
@@ -30,6 +33,34 @@ def test_duplicate_preserves_bytes_and_deduplicates_name(tmp_path: Path) -> None
     assert first.content == "first\nsecond\n"
     assert first.has_bom is True
     assert first.newline == "\r\n"
+
+
+def test_rename_preserves_bytes_and_sanitizes_name(tmp_path: Path) -> None:
+    repository = NotesRepository(tmp_path)
+    source = repository.create_note("记录")
+    source_bytes = b"\xef\xbb\xbffirst\r\nsecond\r\n"
+    (tmp_path / source.name).write_bytes(source_bytes)
+
+    renamed = repository.rename_note(source.name, "  新:名称.md  ")
+
+    assert renamed.name == "新-名称.md"
+    assert not (tmp_path / source.name).exists()
+    assert (tmp_path / renamed.name).read_bytes() == source_bytes
+    assert renamed.content == "first\nsecond\n"
+    assert renamed.has_bom is True
+    assert renamed.newline == "\r\n"
+
+
+def test_rename_refuses_to_overwrite_an_existing_note(tmp_path: Path) -> None:
+    repository = NotesRepository(tmp_path)
+    source = repository.create_note("甲")
+    existing = repository.create_note("乙")
+
+    with pytest.raises(UserVisibleError):
+        repository.rename_note(source.name, existing.name.upper())
+
+    assert (tmp_path / source.name).exists()
+    assert (tmp_path / existing.name).exists()
 
 
 def test_note_previews_hide_empty_line_markers(tmp_path: Path) -> None:

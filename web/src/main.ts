@@ -15,6 +15,10 @@ import {
 } from "./editor/editor";
 import { createSelectionVisibilityCoordinator } from "./editor/selection-visibility";
 import { setLanguage, t } from "./i18n";
+import {
+  isPointerInsideElement,
+  shouldBeginTitleBarDrag,
+} from "./pointer-boundary";
 import type {
   AppConfig,
   NoteSummary,
@@ -44,6 +48,7 @@ let editorPreferenceSave: Promise<void> = Promise.resolve();
 let systemFonts: string[] = [];
 let overlayScrollbarCleanup: (() => void) | null = null;
 let toolbarInteractionCleanup: (() => void) | null = null;
+let noteContextMenuCleanup: (() => void) | null = null;
 let appVersion = "";
 let updateState: UpdateState = { status: "idle", available_version: null };
 let notifiedUpdateVersion: string | null = null;
@@ -137,6 +142,7 @@ function titleBar(
   title: string,
   back: (() => void) | null,
   showUpdateOnBack = true,
+  onRename: ((requestedName: string) => Promise<string | null>) | null = null,
 ): HTMLElement {
   const bar = document.createElement("header");
   bar.className = "title-bar";
@@ -150,7 +156,7 @@ function titleBar(
     <div class="title-left">
       ${back ? `<button class="window-button no-drag${backUpdateClass}" data-action="back" aria-label="${t("back")}">${icon("back")}${backUpdateDot}</button>` : '<span class="app-mark">Bitty</span>'}
     </div>
-    <div class="window-title" title="${escapeHtml(title)}">
+    <div class="window-title"${onRename ? "" : ` title="${escapeHtml(title)}"`}>
       ${title ? `<span class="title-pin-indicator" aria-hidden="true"${config.always_on_top ? "" : " hidden"}>${icon("pin")}</span>` : ""}
       <span class="window-title-text">${escapeHtml(title)}</span>
     </div>
@@ -159,6 +165,88 @@ function titleBar(
       <button class="window-button no-drag" data-action="minimize" aria-label="${t("minimize")}">${icon("minimize")}</button>
     </div>`;
   if (back) bar.querySelector('[data-action="back"]')?.addEventListener("click", back);
+  const titleContainer = bar.querySelector<HTMLElement>(".window-title");
+  const titleText = bar.querySelector<HTMLElement>(".window-title-text");
+  if (onRename && titleText) {
+    titleContainer?.classList.add("is-renamable");
+    titleText.classList.add("is-renamable", "no-drag");
+    const beginRename = () => {
+      if (!titleText.isConnected) return;
+      const input = document.createElement("input");
+      input.className = "title-rename-input no-drag";
+      input.type = "text";
+      input.maxLength = 100;
+      input.value = titleText.textContent?.replace(/\.md$/i, "") ?? "";
+      input.setAttribute("aria-label", t("noteName"));
+      let committing = false;
+      let outsidePointerDown: ((event: PointerEvent) => void) | null = null;
+      let windowBlur: (() => void) | null = null;
+      const stopWatchingOutside = () => {
+        if (outsidePointerDown) document.removeEventListener("pointerdown", outsidePointerDown, true);
+        if (windowBlur) window.removeEventListener("blur", windowBlur);
+        outsidePointerDown = null;
+        windowBlur = null;
+      };
+      const cancel = () => {
+        stopWatchingOutside();
+        if (input.isConnected) input.replaceWith(titleText);
+        bar.classList.remove("is-renaming");
+      };
+      const commit = async () => {
+        if (committing) return;
+        committing = true;
+        input.disabled = true;
+        try {
+          const renamedName = await onRename(input.value);
+          if (renamedName === null) {
+            cancel();
+            return;
+          }
+          titleText.textContent = renamedName;
+          stopWatchingOutside();
+          input.replaceWith(titleText);
+          bar.classList.remove("is-renaming");
+        } catch (error) {
+          committing = false;
+          input.disabled = false;
+          input.classList.add("is-invalid");
+          input.setAttribute("aria-invalid", "true");
+          showToast(errorMessage(error), "warning");
+          input.focus();
+          input.select();
+        }
+      };
+      input.addEventListener("input", () => {
+        input.classList.remove("is-invalid");
+        input.removeAttribute("aria-invalid");
+      });
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          void commit();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          cancel();
+        }
+      });
+      bar.classList.add("is-renaming");
+      titleText.replaceWith(input);
+      outsidePointerDown = (event) => {
+        if (isPointerInsideElement(input, event)) return;
+        void commit();
+      };
+      windowBlur = () => void commit();
+      document.addEventListener("pointerdown", outsidePointerDown, true);
+      window.addEventListener("blur", windowBlur);
+      input.focus();
+      input.select();
+    };
+    titleText.addEventListener("dblclick", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      beginRename();
+    });
+  }
   bar.querySelector('[data-action="pin"]')?.addEventListener("click", async () => {
     const next = !config.always_on_top;
     try {
@@ -176,7 +264,8 @@ function titleBar(
     void api.minimizeWindow();
   });
   bar.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0 || (event.target as Element).closest(".no-drag")) return;
+    const renameInput = bar.querySelector<HTMLInputElement>(".title-rename-input");
+    if (!shouldBeginTitleBarDrag(event, renameInput)) return;
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     beginWindowInteraction(event, "caption");
   });
@@ -335,7 +424,10 @@ function pageShell(
   back: (() => void) | null,
   quietTitleBar = false,
   showUpdateOnBack = true,
+  onRename: ((requestedName: string) => Promise<string | null>) | null = null,
 ): HTMLElement {
+  noteContextMenuCleanup?.();
+  noteContextMenuCleanup = null;
   overlayScrollbarCleanup?.();
   overlayScrollbarCleanup = null;
   toolbarInteractionCleanup?.();
@@ -346,7 +438,7 @@ function pageShell(
   const shell = document.createElement("div");
   shell.className = "app-shell";
   shell.classList.toggle("quiet-title-bar", quietTitleBar);
-  shell.append(titleBar(title, back, showUpdateOnBack));
+  shell.append(titleBar(title, back, showUpdateOnBack, onRename));
   appendResizeHandles(shell);
   app.append(shell);
   return shell;
@@ -457,17 +549,27 @@ async function renderHome(): Promise<void> {
       const item = document.createElement("article");
       item.className = "note-card";
       item.innerHTML = `
-        <button class="note-open" aria-label="${escapeHtml(t("openNote", { name: note.name }))}">
+        <div class="note-summary note-open" role="button" tabindex="0" aria-label="${escapeHtml(t("openNote", { name: note.name }))}">
           <strong>${escapeHtml(note.name.replace(/\.md$/i, ""))}</strong>
           <span>${escapeHtml(note.preview || t("emptyNote"))}</span>
-        </button>
+        </div>
         <div class="note-actions">
           <button class="note-action copy-button" aria-label="${escapeHtml(t("copyNote", { name: note.name }))}">${icon("copy")}</button>
           <button class="note-action archive-button ${archiveCandidate === note.name ? "confirm" : ""}" aria-label="${escapeHtml(t("archiveNote", { name: note.name }))}">
             ${archiveCandidate === note.name ? icon("check") : icon("archive")}
           </button>
         </div>`;
-      item.querySelector(".note-open")?.addEventListener("click", () => openNote(note.name));
+      const noteOpen = item.querySelector<HTMLElement>(".note-open");
+      noteOpen?.addEventListener("click", () => openNote(note.name));
+      noteOpen?.addEventListener("keydown", (event) => {
+        if (event.target !== noteOpen || (event.key !== "Enter" && event.key !== " ")) return;
+        event.preventDefault();
+        void openNote(note.name);
+      });
+      item.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        showNoteContextMenu(note.name, event.clientX, event.clientY);
+      });
       item.querySelector(".copy-button")?.addEventListener("click", () => showCopyDialog(note.name));
       item.querySelector(".archive-button")?.addEventListener("click", () => confirmArchive(note.name));
       list.append(item);
@@ -631,6 +733,66 @@ function showCopyDialog(sourceName: string): void {
   });
 }
 
+function showNoteContextMenu(sourceName: string, x: number, y: number): void {
+  noteContextMenuCleanup?.();
+  const menu = document.createElement("div");
+  menu.className = "note-context-menu";
+  menu.setAttribute("role", "menu");
+  menu.setAttribute("aria-label", t("renameNote", { name: sourceName }));
+  menu.innerHTML = `<button type="button" role="menuitem">${escapeHtml(t("rename"))}</button>`;
+  document.body.append(menu);
+
+  const viewportPadding = 6;
+  const bounds = menu.getBoundingClientRect();
+  menu.style.left = `${Math.max(viewportPadding, Math.min(x, window.innerWidth - bounds.width - viewportPadding))}px`;
+  menu.style.top = `${Math.max(viewportPadding, Math.min(y, window.innerHeight - bounds.height - viewportPadding))}px`;
+
+  const close = () => {
+    document.removeEventListener("pointerdown", onPointerDown, true);
+    document.removeEventListener("keydown", onKeyDown, true);
+    document.removeEventListener("scroll", onScroll, true);
+    window.removeEventListener("blur", close);
+    window.removeEventListener("resize", close);
+    menu.remove();
+    if (noteContextMenuCleanup === close) noteContextMenuCleanup = null;
+  };
+  const onPointerDown = (event: PointerEvent) => {
+    if (!(event.target instanceof Node) || !menu.contains(event.target)) close();
+  };
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    close();
+  };
+  const onScroll = () => close();
+
+  document.addEventListener("pointerdown", onPointerDown, true);
+  document.addEventListener("keydown", onKeyDown, true);
+  document.addEventListener("scroll", onScroll, true);
+  window.addEventListener("blur", close);
+  window.addEventListener("resize", close);
+  noteContextMenuCleanup = close;
+
+  const renameButton = menu.querySelector<HTMLButtonElement>("button")!;
+  renameButton.addEventListener("click", () => {
+    close();
+    showRenameDialog(sourceName);
+  });
+  renameButton.focus({ preventScroll: true });
+}
+
+function showRenameDialog(sourceName: string): void {
+  showNoteNameDialog({
+    title: t("rename"),
+    defaultName: sourceName.replace(/\.md$/i, ""),
+    confirmLabel: t("rename"),
+    run: async (name) => {
+      await api.renameNote(sourceName, name);
+      await renderHome();
+    },
+  });
+}
+
 async function confirmArchive(name: string): Promise<void> {
   if (archiveCandidate !== name) {
     archiveCandidate = name;
@@ -667,7 +829,7 @@ async function showNote(note: OpenedNote): Promise<void> {
   dirty = false;
   locked = false;
   await api.rememberLastNote(note.name);
-  const shell = pageShell(note.name, backToHome, true);
+  const shell = pageShell(note.name, backToHome, true, true, renameCurrentNote);
   const main = document.createElement("main");
   main.className = "note-page";
   main.innerHTML = `<div class="editor-host"></div><div class="format-toolbar" aria-label="${t("formatToolbar")}"></div>`;
@@ -1101,6 +1263,16 @@ async function copyCurrentContent(): Promise<void> {
 
 async function backToHome(): Promise<void> {
   if (await saveNow()) await renderHome();
+}
+
+async function renameCurrentNote(requestedName: string): Promise<string | null> {
+  if (!currentNote || !(await saveNow())) return null;
+  const renamed = await api.renameNote(currentNote.name, requestedName);
+  currentNote = renamed;
+  currentContent = renamed.content;
+  dirty = false;
+  await api.rememberLastNote(renamed.name);
+  return renamed.name;
 }
 
 async function closeApplication(): Promise<void> {

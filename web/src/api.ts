@@ -14,6 +14,7 @@ interface PythonApi {
   list_archived_notes(): Promise<BootstrapData["notes"]>;
   create_note(name: string): Promise<OpenedNote>;
   duplicate_note(name: string, requestedName: string): Promise<OpenedNote>;
+  rename_note(name: string, requestedName: string): Promise<OpenedNote>;
   open_note(name: string): Promise<OpenedNote>;
   save_note(
     name: string,
@@ -82,6 +83,7 @@ export interface DesktopApi {
   listArchivedNotes(): Promise<BootstrapData["notes"]>;
   createNote(name: string): Promise<OpenedNote>;
   duplicateNote(name: string, requestedName: string): Promise<OpenedNote>;
+  renameNote(name: string, requestedName: string): Promise<OpenedNote>;
   openNote(name: string): Promise<OpenedNote>;
   saveNote(note: OpenedNote, content: string, force?: boolean): Promise<SaveResult>;
   recreateNote(note: OpenedNote, content: string): Promise<OpenedNote>;
@@ -121,6 +123,7 @@ function desktopApi(raw: PythonApi): DesktopApi {
     listArchivedNotes: () => raw.list_archived_notes(),
     createNote: (name) => raw.create_note(name),
     duplicateNote: (name, requestedName) => raw.duplicate_note(name, requestedName),
+    renameNote: (name, requestedName) => raw.rename_note(name, requestedName),
     openNote: (name) => raw.open_note(name),
     saveNote: (note, content, force = false) =>
       raw.save_note(
@@ -263,6 +266,20 @@ function browserMock(): DesktopApi {
         revision: revision(),
       };
       notes.unshift(note);
+      return { ...note };
+    },
+    renameNote: async (name, requested) => {
+      const note = notes.find((item) => item.name === name);
+      if (!note) throw new Error(t("missingTitle"));
+      const stem = (requested.trim() || new Date().toISOString().slice(0, 10))
+        .replace(/\.md$/i, "");
+      const renamedName = `${stem}.md`;
+      if (notes.some((item) => (
+        item !== note && item.name.toLocaleLowerCase() === renamedName.toLocaleLowerCase()
+      ))) {
+        throw new Error(t("noteNameExists", { name: renamedName }));
+      }
+      note.name = renamedName;
       return { ...note };
     },
     openNote: async (name) => {
