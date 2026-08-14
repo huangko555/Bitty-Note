@@ -1608,9 +1608,15 @@ describe("row drag handle", () => {
     handle.dispatchEvent(pointerEvent("pointerdown", 100, 30));
     expect(deleteTarget.classList.contains("visible")).toBe(false);
 
-    window.dispatchEvent(pointerEvent("pointermove", 120, 40));
+    window.dispatchEvent(pointerEvent("pointermove", 120, 2));
     expect(deleteTarget.classList.contains("visible")).toBe(true);
     expect(deleteTarget.classList.contains("is-armed")).toBe(false);
+    expect(deleteTarget.style.top).toBe("8px");
+
+    window.dispatchEvent(pointerEvent("pointermove", 120, 40));
+    expect(deleteTarget.style.top).toBe("8px");
+    window.dispatchEvent(pointerEvent("pointermove", 120, window.innerHeight - 2));
+    expect(deleteTarget.style.top).toBe("8px");
 
     window.dispatchEvent(pointerEvent("pointerup", 120, 40));
     expect(view.state.doc.textContent).toBe("甲乙");
@@ -1622,6 +1628,7 @@ describe("row drag handle", () => {
 
     window.dispatchEvent(pointerEvent("pointermove", 250, 150));
     expect(deleteTarget.classList.contains("is-armed")).toBe(true);
+    expect(deleteTarget.style.top).toBe("18px");
 
     window.dispatchEvent(pointerEvent("pointerup", 120, 40));
     expect(view.state.doc.textContent).toBe("甲乙");
@@ -1635,5 +1642,6 @@ describe("row drag handle", () => {
     expect(view.state.doc.textContent).toBe("乙");
     expect(host.scrollTop).toBe(80);
     expect(deleteTarget.classList.contains("visible")).toBe(false);
+    expect(deleteTarget.style.top).toBe("");
   });
 });

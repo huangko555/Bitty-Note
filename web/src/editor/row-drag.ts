@@ -24,6 +24,7 @@ export type RowDropSide = "before" | "after" | "inside";
 type ListKind = "bullet" | "ordered" | "task";
 type DocumentEndAnchorEdge = "top" | "bottom";
 const DELETE_TARGET_HIT_PADDING = 6;
+const DELETE_TARGET_VIEWPORT_MARGIN = 8;
 const FEEDBACK_LEFT_INSET = 3;
 const FEEDBACK_RIGHT_INSET = 12;
 const MIN_FEEDBACK_WIDTH = 24;
@@ -1269,6 +1270,7 @@ class RowDragHandleView {
       this.indicator.classList.remove("visible");
       this.insideIndicator.classList.remove("visible");
       this.deleteTarget.classList.remove("visible", "is-armed");
+      this.deleteTarget.style.top = "";
       this.preview.classList.remove("visible");
       this.highlight.classList.remove("visible");
       this.hide();
@@ -1657,7 +1659,20 @@ class RowDragHandleView {
       this.deleteTarget.classList.remove("visible", "is-armed");
       return;
     }
-    this.deleteTarget.classList.add("visible");
+    if (!this.deleteTarget.classList.contains("visible")) {
+      const height = this.deleteTarget.offsetHeight
+        || this.deleteTarget.getBoundingClientRect().height;
+      const maximumTop = Math.max(
+        DELETE_TARGET_VIEWPORT_MARGIN,
+        window.innerHeight - height - DELETE_TARGET_VIEWPORT_MARGIN,
+      );
+      const top = Math.min(
+        Math.max(clientY - height / 2, DELETE_TARGET_VIEWPORT_MARGIN),
+        maximumTop,
+      );
+      this.deleteTarget.style.top = `${top}px`;
+      this.deleteTarget.classList.add("visible");
+    }
     const bounds = this.deleteTarget.getBoundingClientRect();
     this.deleteTarget.classList.toggle(
       "is-armed",

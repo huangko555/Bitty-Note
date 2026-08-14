@@ -5,20 +5,20 @@ const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 function taskCheckIcon(): SVGElement {
   const svg = document.createElementNS(SVG_NAMESPACE, "svg");
   svg.setAttribute("class", "task-check-icon");
-  svg.setAttribute("viewBox", "0 0 18 18");
+  svg.setAttribute("viewBox", "0 0 17 17");
   svg.setAttribute("aria-hidden", "true");
 
   const box = document.createElementNS(SVG_NAMESPACE, "rect");
   box.setAttribute("class", "task-check-box");
   box.setAttribute("x", ".5");
   box.setAttribute("y", ".5");
-  box.setAttribute("width", "17");
-  box.setAttribute("height", "17");
-  box.setAttribute("rx", "6.35");
+  box.setAttribute("width", "16");
+  box.setAttribute("height", "16");
+  box.setAttribute("rx", "6");
 
   const mark = document.createElementNS(SVG_NAMESPACE, "path");
   mark.setAttribute("class", "task-check-mark");
-  mark.setAttribute("d", "M4.76 9.42 7.73 12.39 13.55 6.67");
+  mark.setAttribute("d", "M4.5 8.9 7.3 11.7 12.8 6.3");
   svg.append(box, mark);
   return svg;
 }
