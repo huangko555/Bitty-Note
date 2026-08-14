@@ -27,6 +27,11 @@ import type {
   UpdateState,
 } from "./types";
 import { prepareForWindowMinimize, syncPinButtons } from "./window-controls";
+import {
+  clearRenameFailure,
+  showRenameFailure,
+  type RenameFeedbackPlacement,
+} from "./rename-feedback";
 
 const app = document.querySelector<HTMLElement>("#app")!;
 
@@ -34,6 +39,7 @@ let api: DesktopApi;
 let config: AppConfig;
 let notes: NoteSummary[] = [];
 let currentNote: OpenedNote | null = null;
+let windowRole: "main" | "note" = "main";
 let editor: EditorController | null = null;
 let currentContent = "";
 let dirty = false;
@@ -49,6 +55,7 @@ let systemFonts: string[] = [];
 let overlayScrollbarCleanup: (() => void) | null = null;
 let toolbarInteractionCleanup: (() => void) | null = null;
 let noteContextMenuCleanup: (() => void) | null = null;
+let beginTitleRename: (() => void) | null = null;
 let appVersion = "";
 let updateState: UpdateState = { status: "idle", available_version: null };
 let notifiedUpdateVersion: string | null = null;
@@ -95,6 +102,7 @@ type IconName =
   | "back"
   | "bold"
   | "check"
+  | "close"
   | "copy"
   | "heading"
   | "github"
@@ -118,6 +126,7 @@ function icon(name: IconName): string {
     back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
     bold: '<path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8"/>',
     check: '<path d="m5 12 4 4L19 6"/>',
+    close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
     copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
     heading: '<path d="M6 12h12"/><path d="M6 20V4"/><path d="M18 20V4"/>',
     github: '<path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3.3-.4 6.8-1.6 6.8-7A5.4 5.4 0 0 0 19.4 4 5 5 0 0 0 19.3.5S18 0 15 2a13.4 13.4 0 0 0-7 0C5-.1 3.7.5 3.7.5A5 5 0 0 0 3.6 4a5.4 5.4 0 0 0-1.4 3.7c0 5.4 3.5 6.5 6.8 7A4.8 4.8 0 0 0 8 18v4"/><path d="M8 19c-3 .9-3-1.5-4-2"/>',
@@ -146,6 +155,9 @@ function titleBar(
 ): HTMLElement {
   const bar = document.createElement("header");
   bar.className = "title-bar";
+  beginTitleRename = null;
+  const closesAuxiliaryWindow = Boolean(back && windowRole === "note");
+  if (closesAuxiliaryWindow) bar.classList.add("auxiliary-title-bar");
   const backUpdateClass = showUpdateOnBack
     ? ` update-indicator ${updateState.status === "available" ? "has-update" : ""}`
     : "";
@@ -154,7 +166,8 @@ function titleBar(
     : "";
   bar.innerHTML = `
     <div class="title-left">
-      ${back ? `<button class="window-button no-drag${backUpdateClass}" data-action="back" aria-label="${t("back")}">${icon("back")}${backUpdateDot}</button>` : '<span class="app-mark">Bitty</span>'}
+      ${back ? `<button class="window-button no-drag${closesAuxiliaryWindow ? " auxiliary-close-button" : backUpdateClass}" data-action="back" aria-label="${t(closesAuxiliaryWindow ? "close" : "back")}">${icon(closesAuxiliaryWindow ? "close" : "back")}${closesAuxiliaryWindow ? "" : backUpdateDot}</button>` : '<span class="app-mark">Bitty</span>'}
+      ${back ? `<span class="title-left-hover-actions"><button class="window-button no-drag quick-create-button" data-action="quick-create" aria-label="${t("createNote")}">${icon("plus")}</button></span>` : ""}
     </div>
     <div class="window-title"${onRename ? "" : ` title="${escapeHtml(title)}"`}>
       ${title ? `<span class="title-pin-indicator" aria-hidden="true"${config.always_on_top ? "" : " hidden"}>${icon("pin")}</span>` : ""}
@@ -165,11 +178,14 @@ function titleBar(
       <button class="window-button no-drag" data-action="minimize" aria-label="${t("minimize")}">${icon("minimize")}</button>
     </div>`;
   if (back) bar.querySelector('[data-action="back"]')?.addEventListener("click", back);
+  bar.querySelector('[data-action="quick-create"]')?.addEventListener("click", () => {
+    void quickCreateNote();
+  });
   const titleContainer = bar.querySelector<HTMLElement>(".window-title");
   const titleText = bar.querySelector<HTMLElement>(".window-title-text");
   if (onRename && titleText) {
     titleContainer?.classList.add("is-renamable");
-    titleText.classList.add("is-renamable", "no-drag");
+    titleText.classList.add("is-renamable");
     const beginRename = () => {
       if (!titleText.isConnected) return;
       const input = document.createElement("input");
@@ -208,17 +224,13 @@ function titleBar(
           bar.classList.remove("is-renaming");
         } catch (error) {
           committing = false;
-          input.disabled = false;
-          input.classList.add("is-invalid");
-          input.setAttribute("aria-invalid", "true");
-          showToast(errorMessage(error), "warning");
-          input.focus();
-          input.select();
+          showRenameFailure(input, errorMessage(error), "below-title", (message, placement) => {
+            showToast(message, "warning", placement);
+          });
         }
       };
       input.addEventListener("input", () => {
-        input.classList.remove("is-invalid");
-        input.removeAttribute("aria-invalid");
+        clearRenameFailure(input);
       });
       input.addEventListener("keydown", (event) => {
         if (event.key === "Enter") {
@@ -241,7 +253,16 @@ function titleBar(
       input.focus();
       input.select();
     };
-    titleText.addEventListener("dblclick", (event) => {
+    beginTitleRename = beginRename;
+    let previousTitleClick: { time: number; x: number; y: number } | null = null;
+    titleContainer?.addEventListener("click", (event) => {
+      if (event.button !== 0) return;
+      const previous = previousTitleClick;
+      previousTitleClick = { time: event.timeStamp, x: event.clientX, y: event.clientY };
+      if (!previous) return;
+      if (event.timeStamp - previous.time > 500) return;
+      if (Math.hypot(event.clientX - previous.x, event.clientY - previous.y) > 6) return;
+      previousTitleClick = null;
       event.preventDefault();
       event.stopPropagation();
       beginRename();
@@ -266,8 +287,24 @@ function titleBar(
   bar.addEventListener("pointerdown", (event) => {
     const renameInput = bar.querySelector<HTMLInputElement>(".title-rename-input");
     if (!shouldBeginTitleBarDrag(event, renameInput)) return;
-    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-    beginWindowInteraction(event, "caption");
+    const pointerId = event.pointerId;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const stopWaiting = () => {
+      bar.removeEventListener("pointermove", onPointerMove);
+      bar.removeEventListener("pointerup", stopWaiting);
+      bar.removeEventListener("pointercancel", stopWaiting);
+    };
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < 3) return;
+      stopWaiting();
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+      beginWindowInteraction(moveEvent, "caption");
+    };
+    bar.addEventListener("pointermove", onPointerMove);
+    bar.addEventListener("pointerup", stopWaiting);
+    bar.addEventListener("pointercancel", stopWaiting);
   });
   return bar;
 }
@@ -444,10 +481,14 @@ function pageShell(
   return shell;
 }
 
-function showToast(message: string, kind: "info" | "warning" = "info"): void {
+function showToast(
+  message: string,
+  kind: "info" | "warning" = "info",
+  placement: RenameFeedbackPlacement = "default",
+): void {
   document.querySelector(".toast")?.remove();
   const toast = document.createElement("div");
-  toast.className = `toast ${kind}`;
+  toast.className = `toast ${kind}${placement === "below-title" ? " below-title" : ""}`;
   toast.textContent = message.replace(/[。.!！?？;；]+$/u, "");
   document.body.append(toast);
   window.setTimeout(() => toast.remove(), 3200);
@@ -497,18 +538,30 @@ function modal(options: {
 }
 
 function showError(error: unknown): void {
-  modal({
-    title: t("operationFailed"),
-    message: errorMessage(error),
-    actions: [{ label: t("acknowledge"), kind: "primary", run: () => {} }],
-  });
+  showToast(errorMessage(error), "warning");
 }
 
 async function refreshNotes(): Promise<void> {
   notes = await api.listNotes();
 }
 
-async function renderHome(): Promise<void> {
+function noteListSignature(items: NoteSummary[]): string {
+  return JSON.stringify(items.map((note) => [note.name, note.preview, note.modified_ms]));
+}
+
+async function refreshHomeOnFocus(): Promise<void> {
+  try {
+    const refreshed = await api.listNotes();
+    if (!document.querySelector(".home-page")) return;
+    if (noteListSignature(refreshed) === noteListSignature(notes)) return;
+    notes = refreshed;
+    await renderHome(false);
+  } catch (error) {
+    showError(error);
+  }
+}
+
+async function renderHome(refresh = true): Promise<void> {
   deleteCandidate = null;
   if (deleteTimer !== null) window.clearTimeout(deleteTimer);
   deleteTimer = null;
@@ -517,10 +570,12 @@ async function renderHome(): Promise<void> {
   dirty = false;
   locked = false;
   await api.rememberLastNote(null);
-  try {
-    await refreshNotes();
-  } catch (error) {
-    showError(error);
+  if (refresh) {
+    try {
+      await refreshNotes();
+    } catch (error) {
+      showError(error);
+    }
   }
   const shell = pageShell("", null);
   const main = document.createElement("main");
@@ -653,6 +708,7 @@ async function confirmDeleteArchivedNote(name: string): Promise<void> {
     await api.deleteArchivedNote(name);
     await renderArchive();
   } catch (error) {
+    await renderArchive();
     showError(error);
   }
 }
@@ -673,6 +729,7 @@ function showNoteNameDialog(options: {
   defaultName: string;
   confirmLabel: string;
   run: (name: string) => Promise<void>;
+  renameFeedback?: boolean;
 }): void {
   const backdrop = document.createElement("div");
   backdrop.className = "modal-backdrop";
@@ -691,11 +748,18 @@ function showNoteNameDialog(options: {
       backdrop.remove();
     } catch (error) {
       button.disabled = false;
-      showError(error);
+      if (options.renameFeedback) {
+        showRenameFailure(input, errorMessage(error), "default", (message, placement) => {
+          showToast(message, "warning", placement);
+        });
+      } else {
+        showError(error);
+      }
     }
   };
   backdrop.querySelector('[data-action="cancel"]')?.addEventListener("click", () => backdrop.remove());
   backdrop.querySelector('[data-action="confirm"]')?.addEventListener("click", confirm);
+  input.addEventListener("input", () => clearRenameFailure(input));
   input.addEventListener("keydown", (event) => {
     if (event.key === "Enter") void confirm();
     if (event.key === "Escape") backdrop.remove();
@@ -706,18 +770,32 @@ function showNoteNameDialog(options: {
 }
 
 function showCreateDialog(): void {
+  showNoteNameDialog({
+    title: t("createNote"),
+    defaultName: availableNoteName(defaultNewNoteStem()),
+    confirmLabel: t("create"),
+    run: async (name) => showNote(await api.createNote(name)),
+  });
+}
+
+function defaultNewNoteStem(): string {
   const today = new Date();
-  const defaultStem = [
+  return [
     today.getFullYear(),
     String(today.getMonth() + 1).padStart(2, "0"),
     String(today.getDate()).padStart(2, "0"),
   ].join("-");
-  showNoteNameDialog({
-    title: t("createNote"),
-    defaultName: availableNoteName(defaultStem),
-    confirmLabel: t("create"),
-    run: async (name) => showNote(await api.createNote(name)),
-  });
+}
+
+async function quickCreateNote(): Promise<void> {
+  if (currentNote && !(await saveNow())) return;
+  try {
+    await refreshNotes();
+    const created = await api.createNote(availableNoteName(defaultNewNoteStem()));
+    await api.openNoteWindow(created.name);
+  } catch (error) {
+    showError(error);
+  }
 }
 
 function showCopyDialog(sourceName: string): void {
@@ -739,7 +817,9 @@ function showNoteContextMenu(sourceName: string, x: number, y: number): void {
   menu.className = "note-context-menu";
   menu.setAttribute("role", "menu");
   menu.setAttribute("aria-label", t("renameNote", { name: sourceName }));
-  menu.innerHTML = `<button type="button" role="menuitem">${escapeHtml(t("rename"))}</button>`;
+  menu.innerHTML = `
+    <button type="button" role="menuitem" data-action="rename">${escapeHtml(t("rename"))}</button>
+    <button type="button" role="menuitem" data-action="open-window">${escapeHtml(t("openInNewWindow"))}</button>`;
   document.body.append(menu);
 
   const viewportPadding = 6;
@@ -773,10 +853,23 @@ function showNoteContextMenu(sourceName: string, x: number, y: number): void {
   window.addEventListener("resize", close);
   noteContextMenuCleanup = close;
 
-  const renameButton = menu.querySelector<HTMLButtonElement>("button")!;
-  renameButton.addEventListener("click", () => {
+  const renameButton = menu.querySelector<HTMLButtonElement>('[data-action="rename"]')!;
+  renameButton.addEventListener("click", async () => {
     close();
-    showRenameDialog(sourceName);
+    try {
+      const status = await api.requestNoteRename(sourceName);
+      if (status === "available") showRenameDialog(sourceName);
+    } catch (error) {
+      showError(error);
+    }
+  });
+  menu.querySelector<HTMLButtonElement>('[data-action="open-window"]')?.addEventListener("click", async () => {
+    close();
+    try {
+      await api.openNoteWindow(sourceName);
+    } catch (error) {
+      showError(error);
+    }
   });
   renameButton.focus({ preventScroll: true });
 }
@@ -786,6 +879,7 @@ function showRenameDialog(sourceName: string): void {
     title: t("rename"),
     defaultName: sourceName.replace(/\.md$/i, ""),
     confirmLabel: t("rename"),
+    renameFeedback: true,
     run: async (name) => {
       await api.renameNote(sourceName, name);
       await renderHome();
@@ -806,20 +900,26 @@ async function confirmArchive(name: string): Promise<void> {
   }
   archiveCandidate = null;
   if (archiveTimer !== null) window.clearTimeout(archiveTimer);
+  archiveTimer = null;
   try {
     await api.archiveNote(name);
     await renderHome();
   } catch (error) {
+    await renderHome();
     showError(error);
   }
 }
 
-async function openNote(name: string): Promise<void> {
+async function openNote(name: string): Promise<boolean> {
   try {
+    if (!(await api.acquireNote(name))) return false;
     await showNote(await api.openNote(name));
+    return true;
   } catch (error) {
     showError(error);
-    await renderHome();
+    if (windowRole === "note") await api.closeWindow();
+    else await renderHome();
+    return false;
   }
 }
 
@@ -1262,7 +1362,13 @@ async function copyCurrentContent(): Promise<void> {
 }
 
 async function backToHome(): Promise<void> {
-  if (await saveNow()) await renderHome();
+  if (!(await saveNow())) return;
+  if (windowRole === "note") {
+    await editorPreferenceSave;
+    await api.closeWindow();
+  } else {
+    await renderHome();
+  }
 }
 
 async function renameCurrentNote(requestedName: string): Promise<string | null> {
@@ -1279,16 +1385,24 @@ async function closeApplication(): Promise<void> {
   if (await saveNow()) {
     await editorPreferenceSave;
     await api.closeWindow();
+  } else {
+    await api.cancelClose();
   }
 }
 
 declare global {
   interface Window {
     desktopNotesRequestClose?: () => void;
+    desktopNotesRefreshHome?: () => void;
+    desktopNotesBeginRename?: () => void;
   }
 }
 
 window.desktopNotesRequestClose = () => void closeApplication();
+window.desktopNotesRefreshHome = () => {
+  if (document.querySelector(".home-page")) void renderHome();
+};
+window.desktopNotesBeginRename = () => beginTitleRename?.();
 
 function updateButtonText(): string {
   if (updateState.status === "store") return t("storeUpdates");
@@ -1513,6 +1627,7 @@ async function start(): Promise<void> {
   api = await connectApi();
   const bootstrap = await api.bootstrap();
   config = bootstrap.config;
+  windowRole = bootstrap.window_role;
   setLanguage(config.language);
   notes = bootstrap.notes;
   systemFonts = bootstrap.system_fonts;
@@ -1526,18 +1641,19 @@ async function start(): Promise<void> {
   window.addEventListener("focus", () => {
     void checkExternalChange();
     void syncAlwaysOnTop();
+    if (document.querySelector(".home-page")) void refreshHomeOnFocus();
   });
   let restoredNote = false;
-  if (config.last_note) {
+  const startupNote = windowRole === "note" ? bootstrap.initial_note : config.last_note;
+  if (startupNote) {
     try {
-      await showNote(await api.openNote(config.last_note));
-      restoredNote = true;
+      restoredNote = await openNote(startupNote);
     } catch {
-      config.last_note = null;
+      if (windowRole === "main") config.last_note = null;
     }
   }
-  if (!restoredNote) await renderHome();
-  if (bootstrap.update_result) {
+  if (!restoredNote && windowRole === "main") await renderHome();
+  if (windowRole === "main" && bootstrap.update_result) {
     showToast(
       bootstrap.update_result.status === "success"
         ? t("updateSucceeded", { version: bootstrap.update_result.version })
@@ -1545,9 +1661,11 @@ async function start(): Promise<void> {
       bootstrap.update_result.status === "success" ? "info" : "warning",
     );
   }
-  showAvailableUpdateOnce(updateState);
-  void refreshUpdateState(false).catch(() => {});
-  window.setInterval(() => void refreshUpdateState(false).catch(() => {}), 60 * 60 * 1000);
+  if (windowRole === "main") {
+    showAvailableUpdateOnce(updateState);
+    void refreshUpdateState(false).catch(() => {});
+    window.setInterval(() => void refreshUpdateState(false).catch(() => {}), 60 * 60 * 1000);
+  }
 }
 
 void start().catch((error) => {

@@ -41,6 +41,7 @@ export interface AppConfig {
   window_y: number | null;
   window_width: number;
   window_height: number;
+  note_window_sizes: Record<string, { width: number; height: number }>;
   last_note: string | null;
   editor_font: string;
   editor_font_size: number;
@@ -60,6 +61,8 @@ export interface BootstrapData {
   app_version: string;
   update_state: UpdateState;
   update_result: UpdateResult | null;
+  window_role: "main" | "note";
+  initial_note: string | null;
 }
 
 export interface MigrationResult {

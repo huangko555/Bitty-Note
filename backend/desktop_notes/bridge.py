@@ -27,19 +27,35 @@ from .platform_windows import (
 from .repository import NotesRepository
 from .storage import StorageManager
 from .updates import PROJECT_URL, UpdateService
+from .window_coordinator import WindowCoordinator
 
 
 class DesktopBridge:
     """Small interface exposed to JavaScript; filesystem details stay behind it."""
 
-    def __init__(self, config_store: ConfigStore):
+    def __init__(
+        self,
+        config_store: ConfigStore,
+        coordinator: WindowCoordinator | None = None,
+        *,
+        session_id: str = "main",
+        window_role: str = "main",
+        initial_note: str | None = None,
+    ):
         self.config_store = config_store
+        self.coordinator = coordinator
+        self.session_id = session_id
+        self.window_role = window_role
+        self.initial_note = initial_note
         self._repository = NotesRepository(Path(config_store.config.save_dir))
         self._storage = StorageManager(config_store, send_file_to_trash)
         self._updates = UpdateService(config_store)
         self._window: webview.Window | None = None
         self._window_interaction = None
         self._lock = threading.RLock()
+        self._always_on_top = (
+            config_store.config.always_on_top if window_role == "main" else False
+        )
         self.allow_close = False
 
     def attach_window(self, window: webview.Window) -> None:
@@ -47,20 +63,32 @@ class DesktopBridge:
 
     def bootstrap(self) -> dict[str, Any]:
         with self._lock:
-            update_result = self._updates.consume_result()
+            update_result = (
+                self._updates.consume_result() if self.window_role == "main" else None
+            )
+            notes = self._repository.list_notes()
+            if self.coordinator is not None:
+                self.coordinator.reconcile_saved_sizes([note.name for note in notes])
+            config = self.config_store.config.to_dict()
+            config["always_on_top"] = self._always_on_top
             return {
-                "config": self.config_store.config.to_dict(),
-                "notes": [note.to_dict() for note in self._repository.list_notes()],
+                "config": config,
+                "notes": [note.to_dict() for note in notes],
                 "system_fonts": list_system_fonts(),
                 "app_version": __version__,
                 "update_state": self._updates.state(),
                 "update_result": update_result,
+                "window_role": self.window_role,
+                "initial_note": self.initial_note,
             }
 
     def set_language(self, language: str) -> dict[str, str]:
         normalized = set_backend_language(language)
         self.config_store.update(language=normalized)
-        self._require_window().set_title(text("Bitty", "小记"))
+        if self.coordinator is not None:
+            self.coordinator.refresh_titles()
+        else:
+            self._require_window().set_title(text("Bitty", "小记"))
         return {"language": normalized}
 
     def check_update(self, force: bool = False) -> dict[str, str | None]:
@@ -81,7 +109,10 @@ class DesktopBridge:
             )
 
     def list_notes(self) -> list[dict[str, Any]]:
-        return [note.to_dict() for note in self._repository.list_notes()]
+        notes = self._repository.list_notes()
+        if self.coordinator is not None:
+            self.coordinator.reconcile_saved_sizes([note.name for note in notes])
+        return [note.to_dict() for note in notes]
 
     def list_archived_notes(self) -> list[dict[str, Any]]:
         return [note.to_dict() for note in self._repository.list_archived_notes()]
@@ -93,7 +124,36 @@ class DesktopBridge:
         return self._repository.duplicate_note(name, requested_name).to_dict()
 
     def rename_note(self, name: str, requested_name: str) -> dict[str, Any]:
-        return self._repository.rename_note(name, requested_name).to_dict()
+        if self.coordinator is None:
+            return self._repository.rename_note(name, requested_name).to_dict()
+        renamed = self.coordinator.rename_note(
+            self.session_id,
+            name,
+            requested_name,
+            lambda: self._repository.rename_note(name, requested_name),
+        )
+        return renamed.to_dict()
+
+    def acquire_note(self, name: str) -> dict[str, bool]:
+        self._repository.open_note(name)
+        available = (
+            True
+            if self.coordinator is None
+            else self.coordinator.acquire_note(self.session_id, name)
+        )
+        return {"available": available}
+
+    def open_note_window(self, name: str) -> dict[str, str]:
+        self._repository.open_note(name)
+        if self.coordinator is None:
+            raise RuntimeError("Multiple windows are not configured")
+        return self.coordinator.open_auxiliary(name)
+
+    def request_note_rename(self, name: str) -> dict[str, str]:
+        self._repository.open_note(name)
+        if self.coordinator is None:
+            return {"status": "available"}
+        return self.coordinator.request_note_rename(name)
 
     def open_note(self, name: str) -> dict[str, Any]:
         return self._repository.open_note(name).to_dict()
@@ -131,6 +191,8 @@ class DesktopBridge:
         ).to_dict()
 
     def archive_note(self, name: str) -> dict[str, str]:
+        if self.coordinator is not None:
+            self.coordinator.ensure_note_is_not_open_elsewhere(self.session_id, name)
         return {"archived_name": self._repository.archive_note(name)}
 
     def restore_archived_note(self, name: str) -> dict[str, str]:
@@ -157,6 +219,8 @@ class DesktopBridge:
                 text("Choose a different storage folder.", "请选择新的保存目录")
             )
         with self._lock:
+            if self.coordinator is not None:
+                self.coordinator.ensure_storage_can_move()
             result = self._storage.migrate(Path(path))
             self._repository = NotesRepository(Path(self.config_store.config.save_dir))
             return result.to_dict()
@@ -167,14 +231,20 @@ class DesktopBridge:
         return {"enabled": enabled}
 
     def remember_last_note(self, name: str | None) -> None:
+        if self.window_role != "main":
+            return
         self.config_store.update(last_note=name)
+        if name is None and self.coordinator is not None:
+            self.coordinator.release_note(self.session_id)
 
     def set_always_on_top(self, enabled: bool) -> dict[str, bool]:
         window = self._require_window()
-        previous = self.config_store.config.always_on_top
+        previous = self._always_on_top
         set_window_topmost(window, enabled)
         try:
-            self.config_store.update(always_on_top=enabled)
+            if self.window_role == "main":
+                self.config_store.update(always_on_top=enabled)
+            self._always_on_top = enabled
         except Exception:
             try:
                 set_window_topmost(window, previous)
@@ -185,8 +255,9 @@ class DesktopBridge:
 
     def get_always_on_top(self) -> dict[str, bool]:
         enabled = is_window_topmost(self._require_window())
-        if self.config_store.config.always_on_top != enabled:
+        if self.window_role == "main" and self.config_store.config.always_on_top != enabled:
             self.config_store.update(always_on_top=enabled)
+        self._always_on_top = enabled
         return {"enabled": enabled}
 
     def set_editor_preferences(
@@ -243,8 +314,15 @@ class DesktopBridge:
         self._require_window().minimize()
 
     def close_window(self) -> None:
+        if self.coordinator is not None:
+            self.coordinator.close_session(self.session_id)
+            return
         self.allow_close = True
         self._require_window().destroy()
+
+    def cancel_close(self) -> None:
+        if self.coordinator is not None:
+            self.coordinator.cancel_app_close()
 
     def _require_window(self) -> webview.Window:
         if self._window is None:
@@ -286,4 +364,44 @@ class WindowStateSaver:
             )
         except Exception:
             # Window state is optional and must never take down the note editor.
+            pass
+
+
+class NoteWindowSizeSaver:
+    """Persists only a note window's dimensions; placement is intentionally transient."""
+
+    def __init__(
+        self,
+        window: webview.Window,
+        coordinator: WindowCoordinator,
+        session_id: str,
+    ):
+        self.window = window
+        self.coordinator = coordinator
+        self.session_id = session_id
+        self._timer: threading.Timer | None = None
+        self._lock = threading.Lock()
+
+    def schedule(self) -> None:
+        with self._lock:
+            if self._timer is not None:
+                self._timer.cancel()
+            self._timer = threading.Timer(0.4, self._save)
+            self._timer.daemon = True
+            self._timer.start()
+
+    def flush(self) -> None:
+        with self._lock:
+            if self._timer is not None:
+                self._timer.cancel()
+                self._timer = None
+        self._save()
+
+    def _save(self) -> None:
+        name = self.coordinator.note_name(self.session_id)
+        if name is None:
+            return
+        try:
+            self.coordinator.save_size(name, self.window.width, self.window.height)
+        except Exception:
             pass

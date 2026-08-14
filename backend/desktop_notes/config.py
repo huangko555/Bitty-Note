@@ -5,7 +5,7 @@ import os
 import re
 import tempfile
 import threading
-from dataclasses import asdict, dataclass, fields, replace
+from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +57,7 @@ class AppConfig:
     window_y: int | None = None
     window_width: int = 350
     window_height: int = 530
+    note_window_sizes: dict[str, dict[str, int]] = field(default_factory=dict)
     last_note: str | None = None
     editor_font: str = DEFAULT_EDITOR_FONT
     editor_font_size: int = DEFAULT_EDITOR_FONT_SIZE
@@ -126,6 +127,22 @@ class ConfigStore:
                 )
             except ValueError:
                 values["editor_highlight_color"] = DEFAULT_EDITOR_HIGHLIGHT_COLOR
+            raw_sizes = values.get("note_window_sizes", {})
+            if isinstance(raw_sizes, dict):
+                values["note_window_sizes"] = {
+                    name: {"width": size["width"], "height": size["height"]}
+                    for name, size in raw_sizes.items()
+                    if isinstance(name, str)
+                    and isinstance(size, dict)
+                    and isinstance(size.get("width"), int)
+                    and not isinstance(size.get("width"), bool)
+                    and isinstance(size.get("height"), int)
+                    and not isinstance(size.get("height"), bool)
+                    and size["width"] > 0
+                    and size["height"] > 0
+                }
+            else:
+                values["note_window_sizes"] = {}
             return AppConfig(**values)
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             return AppConfig(save_dir=str(self.default_save_dir))

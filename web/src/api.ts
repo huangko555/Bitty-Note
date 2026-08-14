@@ -15,6 +15,9 @@ interface PythonApi {
   create_note(name: string): Promise<OpenedNote>;
   duplicate_note(name: string, requestedName: string): Promise<OpenedNote>;
   rename_note(name: string, requestedName: string): Promise<OpenedNote>;
+  acquire_note(name: string): Promise<{ available: boolean }>;
+  open_note_window(name: string): Promise<{ status: "opened" | "focused" }>;
+  request_note_rename(name: string): Promise<{ status: "available" | "focused" }>;
   open_note(name: string): Promise<OpenedNote>;
   save_note(
     name: string,
@@ -57,6 +60,7 @@ interface PythonApi {
   end_window_interaction(): Promise<void>;
   minimize_window(): Promise<void>;
   close_window(): Promise<void>;
+  cancel_close(): Promise<void>;
 }
 
 export type WindowResizeEdge =
@@ -84,6 +88,9 @@ export interface DesktopApi {
   createNote(name: string): Promise<OpenedNote>;
   duplicateNote(name: string, requestedName: string): Promise<OpenedNote>;
   renameNote(name: string, requestedName: string): Promise<OpenedNote>;
+  acquireNote(name: string): Promise<boolean>;
+  openNoteWindow(name: string): Promise<"opened" | "focused">;
+  requestNoteRename(name: string): Promise<"available" | "focused">;
   openNote(name: string): Promise<OpenedNote>;
   saveNote(note: OpenedNote, content: string, force?: boolean): Promise<SaveResult>;
   recreateNote(note: OpenedNote, content: string): Promise<OpenedNote>;
@@ -114,6 +121,7 @@ export interface DesktopApi {
   endWindowInteraction(): Promise<void>;
   minimizeWindow(): Promise<void>;
   closeWindow(): Promise<void>;
+  cancelClose(): Promise<void>;
 }
 
 function desktopApi(raw: PythonApi): DesktopApi {
@@ -124,6 +132,9 @@ function desktopApi(raw: PythonApi): DesktopApi {
     createNote: (name) => raw.create_note(name),
     duplicateNote: (name, requestedName) => raw.duplicate_note(name, requestedName),
     renameNote: (name, requestedName) => raw.rename_note(name, requestedName),
+    acquireNote: async (name) => (await raw.acquire_note(name)).available,
+    openNoteWindow: async (name) => (await raw.open_note_window(name)).status,
+    requestNoteRename: async (name) => (await raw.request_note_rename(name)).status,
     openNote: (name) => raw.open_note(name),
     saveNote: (note, content, force = false) =>
       raw.save_note(
@@ -178,6 +189,7 @@ function desktopApi(raw: PythonApi): DesktopApi {
     endWindowInteraction: () => raw.end_window_interaction(),
     minimizeWindow: () => raw.minimize_window(),
     closeWindow: () => raw.close_window(),
+    cancelClose: () => raw.cancel_close(),
   };
 }
 
@@ -227,6 +239,7 @@ function browserMock(): DesktopApi {
         window_y: null,
         window_width: 350,
         window_height: 530,
+        note_window_sizes: {},
         last_note: null,
         editor_font: "DengXian",
         editor_font_size: 14,
@@ -243,6 +256,8 @@ function browserMock(): DesktopApi {
       app_version: "1.3.8",
       update_state: { status: "unsupported", available_version: null },
       update_result: null,
+      window_role: "main",
+      initial_note: null,
     }),
     listNotes: async () => summary(notes),
     listArchivedNotes: async () => summary(archivedNotes),
@@ -282,6 +297,9 @@ function browserMock(): DesktopApi {
       note.name = renamedName;
       return { ...note };
     },
+    acquireNote: async () => true,
+    openNoteWindow: async () => "opened",
+    requestNoteRename: async () => "available",
     openNote: async (name) => {
       const note = notes.find((item) => item.name === name);
       if (!note) throw new Error(t("missingTitle"));
@@ -371,25 +389,33 @@ function browserMock(): DesktopApi {
     endWindowInteraction: async () => {},
     minimizeWindow: async () => {},
     closeWindow: async () => {},
+    cancelClose: async () => {},
   };
 }
 
 export async function connectApi(): Promise<DesktopApi> {
-  if (window.pywebview?.api) return desktopApi(window.pywebview.api);
+  const getNativeApi = (): PythonApi | null => {
+    const api = window.pywebview?.api;
+    return typeof api?.bootstrap === "function" ? api : null;
+  };
+
+  const initialApi = getNativeApi();
+  if (initialApi) return desktopApi(initialApi);
   if (import.meta.env.DEV) return browserMock();
   await new Promise<void>((resolve) => {
     // WebView2 can take a few seconds to inject the native bridge on a cold
     // start. Keep the loading view alive long enough to avoid falling back to
     // browser preview mode inside the packaged application.
-    const timeout = window.setTimeout(resolve, 5_000);
-    window.addEventListener(
-      "pywebviewready",
-      () => {
-        window.clearTimeout(timeout);
-        resolve();
-      },
-      { once: true },
-    );
+    const finish = () => {
+      window.clearInterval(poll);
+      window.clearTimeout(timeout);
+      resolve();
+    };
+    const poll = window.setInterval(() => {
+      if (getNativeApi()) finish();
+    }, 25);
+    const timeout = window.setTimeout(finish, 5_000);
   });
-  return window.pywebview?.api ? desktopApi(window.pywebview.api) : browserMock();
+  const readyApi = getNativeApi();
+  return readyApi ? desktopApi(readyApi) : browserMock();
 }

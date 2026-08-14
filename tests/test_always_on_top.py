@@ -53,3 +53,18 @@ def test_reading_native_topmost_repairs_stale_config(
 
     assert bridge.get_always_on_top() == {"enabled": False}
     assert store.config.always_on_top is False
+
+
+def test_auxiliary_topmost_does_not_change_main_window_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = ConfigStore(tmp_path / "config.json", tmp_path / "notes")
+    bridge = DesktopBridge(store, window_role="note")
+    window = object()
+    bridge.attach_window(window)  # type: ignore[arg-type]
+    monkeypatch.setattr(bridge_module, "set_window_topmost", lambda *_args: None)
+
+    assert bridge.set_always_on_top(True) == {"enabled": True}
+
+    assert store.config.always_on_top is False

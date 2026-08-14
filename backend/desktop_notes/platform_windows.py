@@ -11,6 +11,7 @@ from send2trash import send2trash
 from .errors import UserVisibleError
 from .i18n import text as message
 
+
 _APP_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 _APP_RUN_NAME = "Bitty"
 _LEGACY_APP_RUN_NAME = "DesktopNotes"
@@ -79,6 +80,23 @@ def open_directory(path: Path) -> None:
             f"Couldn't open the storage folder: {error}",
             f"无法打开保存目录：{error}",
         )) from error
+
+
+def focus_window(window: object) -> None:
+    """Restore and activate a window without calling WinForms across threads."""
+    restore = getattr(window, "restore", None)
+    if callable(restore):
+        restore()
+    if sys.platform != "win32":
+        return
+
+    native = getattr(window, "native", None)
+    handle_object = getattr(native, "Handle", None)
+    if handle_object is None:
+        return
+    handle = int(handle_object.ToInt64())
+    ctypes.windll.user32.ShowWindowAsync(handle, 9)  # SW_RESTORE
+    ctypes.windll.user32.SetForegroundWindow(handle)
 
 
 def set_window_topmost(window: object, enabled: bool) -> None:

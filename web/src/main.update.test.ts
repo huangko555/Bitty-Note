@@ -19,6 +19,7 @@ const bootstrap: BootstrapData = {
     window_y: null,
     window_width: 350,
     window_height: 530,
+    note_window_sizes: {},
     last_note: null,
     editor_font: "DengXian",
     editor_font_size: 14,
@@ -35,6 +36,8 @@ const bootstrap: BootstrapData = {
   app_version: "1.1.2",
   update_state: { status: "available", available_version: "1.1.3" },
   update_result: null,
+  window_role: "main",
+  initial_note: null,
 };
 
 class ResizeObserverStub {
@@ -122,5 +125,36 @@ describe("available update interaction", () => {
 
     expect(updateButton.classList.contains("is-downloading")).toBe(false);
     expect(document.querySelector(".toast")?.textContent).toBe("Microsoft Store updates opened");
+  });
+
+  it("restores the archive button after archiving fails", async () => {
+    const note = { name: "Example.md", preview: "Preview", modified_ms: 1 };
+    const archiveNote = vi.fn().mockRejectedValue(new Error("Close its other window first."));
+    const homeBootstrap: BootstrapData = {
+      ...bootstrap,
+      notes: [note],
+      update_state: { status: "idle", available_version: null },
+      config: { ...bootstrap.config, available_version: null },
+    };
+    const api = {
+      bootstrap: vi.fn().mockResolvedValue(homeBootstrap),
+      getAlwaysOnTop: vi.fn().mockResolvedValue(false),
+      rememberLastNote: vi.fn().mockResolvedValue(undefined),
+      listNotes: vi.fn().mockResolvedValue([note]),
+      checkUpdate: vi.fn().mockResolvedValue(homeBootstrap.update_state),
+      archiveNote,
+    } as unknown as DesktopApi;
+    connectApi.mockResolvedValue(api);
+
+    await import("./main");
+    await vi.waitFor(() => expect(document.querySelector(".archive-button")).not.toBeNull());
+
+    document.querySelector<HTMLButtonElement>(".archive-button")!.click();
+    await vi.waitFor(() => expect(document.querySelector(".archive-button.confirm")).not.toBeNull());
+    document.querySelector<HTMLButtonElement>(".archive-button.confirm")!.click();
+
+    await vi.waitFor(() => expect(archiveNote).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(document.querySelector(".archive-button.confirm")).toBeNull());
+    expect(document.querySelector(".toast")?.textContent).toBe("Close its other window first");
   });
 });
