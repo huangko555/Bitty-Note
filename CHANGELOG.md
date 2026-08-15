@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.3.9 — 2026-08-15
+
+### English
+
+- Added note renaming from the home-page context menu and directly from an open note's title, with conflict feedback and coordination for notes already open in another window.
+- Added dedicated note windows from the home-page context menu, including focus reuse for notes already open, independent per-note window sizes, synchronized pin state, and coordinated saves and updates.
+- Made task checkboxes scale with editor line height while keeping their rounded outlines, row-to-row dimensions, and checkmark alignment visually stable.
+- Kept the drag-to-delete target inside the usable window area and snapped its final position to whole pixels for consistent border rendering.
+
+### 简体中文
+
+- 支持从主页右键菜单重命名便签，也可直接双击已打开便签的标题重命名；名称冲突会就地提示，已在其他窗口打开的便签会自动协调处理。
+- 支持从主页右键菜单在独立窗口打开便签；已打开的便签会复用并聚焦原窗口，同时保存各便签的独立窗口尺寸，并同步置顶状态、保存与更新流程。
+- 任务复选框会随编辑器行高缩放，同时保持圆角描边、连续多行尺寸和勾号位置稳定一致。
+- 拖动删除目标会限制在窗口可用区域内，并将最终位置吸附到整数像素，使描边显示保持一致。
+
 ## v1.3.8 — 2026-08-13
 
 ### English
