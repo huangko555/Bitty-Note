@@ -1677,10 +1677,10 @@ class RowDragHandleView {
         minimumTop,
         lowerBoundary - height - DELETE_TARGET_VIEWPORT_MARGIN,
       );
-      const top = Math.min(
+      const top = Math.round(Math.min(
         Math.max(clientY - height / 2, minimumTop),
         maximumTop,
-      );
+      ));
       this.deleteTarget.style.top = `${top}px`;
       this.deleteTarget.classList.add("visible");
     }

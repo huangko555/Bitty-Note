@@ -1635,6 +1635,11 @@ describe("row drag handle", () => {
     expect(deleteTarget.classList.contains("visible")).toBe(false);
 
     handle.dispatchEvent(pointerEvent("pointerdown", 100, 30));
+    window.dispatchEvent(pointerEvent("pointermove", 120, 100.4));
+    expect(deleteTarget.style.top).toBe("78px");
+    window.dispatchEvent(pointerEvent("pointerup", 120, 100.4));
+
+    handle.dispatchEvent(pointerEvent("pointerdown", 100, 30));
     window.dispatchEvent(pointerEvent("pointermove", 160, 190));
     expect(deleteTarget.classList.contains("is-armed")).toBe(false);
     expect(deleteTarget.style.top).toBe("104px");

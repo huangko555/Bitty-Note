@@ -18,7 +18,7 @@ function taskCheckIcon(): SVGElement {
 
   const mark = document.createElementNS(SVG_NAMESPACE, "path");
   mark.setAttribute("class", "task-check-mark");
-  mark.setAttribute("d", "M4.5 8.9 7.3 11.7 12.8 6.3");
+  mark.setAttribute("d", "M4 8.9 6.8 11.7 12.3 6.3");
   svg.append(box, mark);
   return svg;
 }
