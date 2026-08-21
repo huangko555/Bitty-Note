@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.3.10 — 2026-08-21
+
+### English
+
+- Made the original row or heading section semi-transparent while dragging, while keeping the floating preview fully opaque and applying the feedback without animation.
+- Kept row-handle hover and drag backgrounds clipped to the visible editor area instead of disappearing when part of the feedback extends beyond the window.
+- Hid the editor caret when the application window loses focus without clearing the logical selection or editing state.
+- Enabled Per-Monitor V2 rendering for crisp text on mixed-DPI displays, restored secondary-monitor position and logical size accurately across restarts, and positioned the hidden startup window before its first visible frame.
+
+### 简体中文
+
+- 拖动行或标题章节时，将原位置内容设为半透明，同时保持浮动预览完全不透明，并且反馈不使用动画。
+- 行手柄的悬停与拖动背景超出窗口时按编辑区可见范围裁切，不再因部分越界而整体消失。
+- 应用窗口失去焦点时隐藏编辑器光标，同时保留逻辑选区和编辑状态。
+- 启用 Per-Monitor V2，在混合 DPI 显示器上保持文字清晰；重启后准确恢复副屏位置与逻辑尺寸，并在启动窗口首次可见前完成定位。
+
 ## v1.3.9 — 2026-08-15
 
 ### English
