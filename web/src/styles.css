@@ -278,6 +278,7 @@ h1 { margin: 0; font-size: 23px; font-weight: 500; letter-spacing: -.025em; }
 .scrollbar-hover-area:hover > .overlay-scrollbar.is-scrollable { opacity: 1; }
 .overlay-scrollbar-thumb:hover { background-color: rgb(73 71 65 / 54%); }
 .ProseMirror { position: relative; z-index: 1; min-height: 100%; outline: none; color: var(--ink); caret-color: var(--ink); font-family: var(--editor-font-family); font-size: var(--editor-font-size); font-weight: 400; line-height: 1.55; text-rendering: optimizeLegibility; white-space: pre-wrap; overflow-wrap: break-word; cursor: text; tab-size: 4; }
+.window-inactive .ProseMirror, .window-inactive .raw-editor { caret-color: transparent; }
 .ProseMirror ::selection { background-color: var(--accent-soft); }
 .ProseMirror p { --editor-text-shift-y: 1.5px; min-height: 1.55em; margin: 0; transform: translateY(var(--editor-text-shift-y)); }
 .ProseMirror h1 { position: relative; min-height: 1.55em; margin: 0; color: var(--editor-structure-color); font-size: 1.28em; font-weight: 500; line-height: 1.55; }
@@ -330,6 +331,7 @@ h1.has-fold-toggle, .has-fold-toggle > p:first-child, .has-fold-toggle > .task-c
 .block-drag-handle.visible { display: grid; }
 .block-drag-handle:hover { color: var(--ink); background: transparent; }
 .block-drag-handle.is-dragging { display: grid; color: var(--ink); cursor: grabbing; background: transparent; transform: scale(.95); }
+.is-row-drag-source { opacity: .5; }
 .block-drag-handle .lucide-icon { width: 15px; height: 15px; }
 .block-drop-indicator { position: fixed; z-index: 9; display: none; height: 2px; border-radius: 999px; background: #339cff; pointer-events: none; }
 .block-drop-indicator::before { content: ""; position: absolute; top: 50%; left: 0; box-sizing: border-box; width: 8px; height: 8px; border: 2px solid #339cff; border-radius: 50%; background: var(--paper); transform: translate(-50%, -50%); }

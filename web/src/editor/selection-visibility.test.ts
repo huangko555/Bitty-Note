@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createSelectionVisibilityCoordinator,
   keepRectVisible,
+  trackWindowActivity,
 } from "./selection-visibility";
 
 function rect(top: number, bottom: number): DOMRect {
@@ -20,6 +21,19 @@ function rect(top: number, bottom: number): DOMRect {
 }
 
 describe("selection visibility", () => {
+  it("marks the document inactive while its window is blurred", () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    const stopTracking = trackWindowActivity(window);
+
+    expect(document.documentElement.classList.contains("window-inactive")).toBe(false);
+    window.dispatchEvent(new Event("blur"));
+    expect(document.documentElement.classList.contains("window-inactive")).toBe(true);
+    window.dispatchEvent(new Event("focus"));
+    expect(document.documentElement.classList.contains("window-inactive")).toBe(false);
+
+    stopTracking();
+  });
+
   it("lets the editor finish its click before showing the toolbar", () => {
     const toolbar = document.createElement("div");
     document.body.append(toolbar);

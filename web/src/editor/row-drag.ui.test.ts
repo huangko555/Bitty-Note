@@ -117,7 +117,14 @@ describe("row drag handle", () => {
     expect(preview.querySelector(".block-drag-preview-meta")?.textContent).toBe("");
     expect(preview.style.left).toBe("96px");
     expect(preview.style.top).toBe("32px");
+    expect(paragraph.classList.contains("is-row-drag-source")).toBe(true);
+    expect(getComputedStyle(paragraph).opacity).toBe("0.5");
+    window.dispatchEvent(dragPointerEvent("pointermove", 55, 1));
+    expect(paragraph.classList.contains("is-row-drag-source")).toBe(true);
+    expect(getComputedStyle(paragraph).opacity).toBe("0.5");
     window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, button: 0 }));
+    expect(paragraph.classList.contains("is-row-drag-source")).toBe(false);
+    expect(getComputedStyle(paragraph).opacity).toBe("1");
     expect(highlight.classList.contains("visible")).toBe(false);
     expect(preview.classList.contains("visible")).toBe(false);
   });
@@ -154,6 +161,20 @@ describe("row drag handle", () => {
     expect(highlight.classList.contains("visible")).toBe(true);
     expect(highlight.style.top).toBe("18px");
     expect(highlight.style.height).toBe("61px");
+
+    enableDragHandle(handle);
+    handle.dispatchEvent(dragPointerEvent("pointerdown", 30, 2));
+    expect(headings[0]!.classList.contains("is-row-drag-source")).toBe(true);
+    expect(paragraph.classList.contains("is-row-drag-source")).toBe(true);
+    expect(getComputedStyle(headings[0]!).opacity).toBe("0.5");
+    expect(getComputedStyle(paragraph).opacity).toBe("0.5");
+    window.dispatchEvent(dragPointerEvent("pointermove", 40, 2));
+    expect(headings[0]!.classList.contains("is-row-drag-source")).toBe(true);
+    expect(paragraph.classList.contains("is-row-drag-source")).toBe(true);
+    expect(headings[1]!.classList.contains("is-row-drag-source")).toBe(false);
+    window.dispatchEvent(dragPointerEvent("pointercancel", 40, 2));
+    expect(headings[0]!.classList.contains("is-row-drag-source")).toBe(false);
+    expect(paragraph.classList.contains("is-row-drag-source")).toBe(false);
   });
 
   it("keeps the document end zone outside heading handle and fold highlights", () => {

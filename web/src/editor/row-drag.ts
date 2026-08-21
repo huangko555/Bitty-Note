@@ -2,8 +2,13 @@ import createLucideElement from "lucide/dist/esm/createElement.mjs";
 import GripVertical from "lucide/dist/esm/icons/grip-vertical.mjs";
 import Trash2 from "lucide/dist/esm/icons/trash-2.mjs";
 import { Fragment, type Node as ProseMirrorNode } from "prosemirror-model";
-import { Plugin, TextSelection, type EditorState, type Transaction } from "prosemirror-state";
-import { type EditorView } from "prosemirror-view";
+import {
+  Plugin,
+  TextSelection,
+  type EditorState,
+  type Transaction,
+} from "prosemirror-state";
+import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
 
 import { normalizeListDocument } from "./list-normalization";
 import {
@@ -28,6 +33,11 @@ const DELETE_TARGET_VIEWPORT_MARGIN = 8;
 const FEEDBACK_LEFT_INSET = 3;
 const FEEDBACK_RIGHT_INSET = 12;
 const MIN_FEEDBACK_WIDTH = 24;
+
+interface DraggedSourceRange {
+  from: number;
+  to: number;
+}
 
 interface RowDescriptor {
   node: ProseMirrorNode;
@@ -814,7 +824,10 @@ class RowDragHandleView {
   private restoreEditorFocus = false;
   private finishing = false;
 
-  constructor(private readonly view: EditorView) {
+  constructor(
+    private readonly view: EditorView,
+    private readonly setDraggedSource: (ranges: DraggedSourceRange[]) => void,
+  ) {
     this.host = view.dom.parentElement!;
     this.handle = document.createElement("button");
     this.handle.type = "button";
@@ -1002,6 +1015,7 @@ class RowDragHandleView {
     this.startY = event.clientY;
     this.moved = false;
     this.restoreEditorFocus = this.view.hasFocus();
+    this.showDraggedSource();
     this.positionHighlight(this.source);
     this.highlight.classList.add("visible");
     this.showPreview(this.source, event.clientX, event.clientY);
@@ -1021,7 +1035,10 @@ class RowDragHandleView {
   private readonly onDragMove = (event: PointerEvent): void => {
     if (!this.source) return;
     this.positionPreview(event.clientX, event.clientY);
-    if (Math.hypot(event.clientX - this.startX, event.clientY - this.startY) >= 4) {
+    if (
+      !this.moved
+      && Math.hypot(event.clientX - this.startX, event.clientY - this.startY) >= 4
+    ) {
       this.moved = true;
     }
     this.updateDeleteTarget(event.clientX, event.clientY);
@@ -1273,6 +1290,7 @@ class RowDragHandleView {
       this.deleteTarget.style.top = "";
       this.preview.classList.remove("visible");
       this.highlight.classList.remove("visible");
+      this.setDraggedSource([]);
       this.hide();
       this.finishing = false;
     }
@@ -1333,6 +1351,27 @@ class RowDragHandleView {
     this.preview.classList.add("visible");
     this.truncatePreviewText(text);
     this.positionPreview(clientX, clientY);
+  }
+
+  private showDraggedSource(): void {
+    if (!this.source) return;
+    const ranges: DraggedSourceRange[] = [{
+      from: this.source.position,
+      to: this.source.position + this.source.node.nodeSize,
+    }];
+    if (this.source.node.type === noteSchema.nodes.heading) {
+      const path = findNodePath(this.view.state.doc, this.source.node);
+      if (path) {
+        const start = path[0]!;
+        const end = headingSectionEndIndex(this.view.state.doc, start);
+        ranges.length = 0;
+        for (let index = start; index < end; index += 1) {
+          const from = topLevelNodePosition(this.view.state.doc, index);
+          ranges.push({ from, to: from + this.view.state.doc.child(index).nodeSize });
+        }
+      }
+    }
+    this.setDraggedSource(ranges);
   }
 
   private truncatePreviewText(text: string): void {
@@ -1696,7 +1735,21 @@ class RowDragHandleView {
 }
 
 export function rowDragPlugin(): Plugin {
+  let draggedSource: DraggedSourceRange[] = [];
   return new Plugin({
-    view: (view) => new RowDragHandleView(view),
+    props: {
+      decorations: (state) => draggedSource.length === 0
+        ? DecorationSet.empty
+        : DecorationSet.create(state.doc, draggedSource.map(({ from, to }) => (
+          Decoration.node(from, to, {
+            class: "is-row-drag-source",
+            style: "opacity: 0.5 !important",
+          })
+        ))),
+    },
+    view: (view) => new RowDragHandleView(view, (ranges) => {
+      draggedSource = ranges;
+      view.updateState(view.state);
+    }),
   });
 }

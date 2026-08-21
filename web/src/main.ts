@@ -13,7 +13,10 @@ import {
   type EditorAction,
   type EditorController,
 } from "./editor/editor";
-import { createSelectionVisibilityCoordinator } from "./editor/selection-visibility";
+import {
+  createSelectionVisibilityCoordinator,
+  trackWindowActivity,
+} from "./editor/selection-visibility";
 import { setLanguage, t } from "./i18n";
 import {
   isPointerInsideElement,
@@ -34,6 +37,7 @@ import {
 } from "./rename-feedback";
 
 const app = document.querySelector<HTMLElement>("#app")!;
+trackWindowActivity(window);
 
 let api: DesktopApi;
 let config: AppConfig;

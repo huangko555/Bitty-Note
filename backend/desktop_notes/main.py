@@ -24,6 +24,53 @@ from .window_coordinator import WindowCoordinator, WindowSession
 
 MIN_WINDOW_WIDTH = 300
 MIN_WINDOW_HEIGHT = 380
+MONITOR_DEFAULTTONEAREST = 0x00000002
+
+
+class _MONITORINFO(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", ctypes.wintypes.DWORD),
+        ("rcMonitor", ctypes.wintypes.RECT),
+        ("rcWork", ctypes.wintypes.RECT),
+        ("dwFlags", ctypes.wintypes.DWORD),
+    ]
+
+
+def _monitor_work_area(
+    x: int,
+    y: int,
+    width: int,
+    height: int,
+) -> ctypes.wintypes.RECT:
+    user32 = ctypes.windll.user32
+    window_rect = ctypes.wintypes.RECT(x, y, x + width, y + height)
+    monitor_from_rect = user32.MonitorFromRect
+    if hasattr(monitor_from_rect, "restype"):
+        monitor_from_rect.argtypes = [
+            ctypes.POINTER(ctypes.wintypes.RECT),
+            ctypes.wintypes.DWORD,
+        ]
+        monitor_from_rect.restype = ctypes.c_void_p
+    monitor = monitor_from_rect(
+        ctypes.byref(window_rect),
+        MONITOR_DEFAULTTONEAREST,
+    )
+    if monitor:
+        info = _MONITORINFO()
+        info.cbSize = ctypes.sizeof(info)
+        get_monitor_info = user32.GetMonitorInfoW
+        if hasattr(get_monitor_info, "restype"):
+            get_monitor_info.argtypes = [
+                ctypes.c_void_p,
+                ctypes.POINTER(_MONITORINFO),
+            ]
+            get_monitor_info.restype = ctypes.wintypes.BOOL
+        if get_monitor_info(monitor, ctypes.byref(info)):
+            return info.rcWork
+
+    work_area = ctypes.wintypes.RECT()
+    user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(work_area), 0)
+    return work_area
 
 
 def _resource_path(relative: str) -> Path:
@@ -42,16 +89,13 @@ def _visible_window_bounds(
     if sys.platform != "win32" or x is None or y is None:
         return x, y, width, height
 
-    work_area = ctypes.wintypes.RECT()
-    ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(work_area), 0)
+    work_area = _monitor_work_area(x, y, width, height)
     max_width = max(MIN_WINDOW_WIDTH, work_area.right - work_area.left)
     max_height = max(MIN_WINDOW_HEIGHT, work_area.bottom - work_area.top)
     width = min(width, max_width)
     height = min(height, max_height)
-    if x + 80 < work_area.left or x > work_area.right - 80:
-        x = work_area.left + 40
-    if y + 42 < work_area.top or y > work_area.bottom - 42:
-        y = work_area.top + 40
+    x = max(work_area.left, min(x, work_area.right - width))
+    y = max(work_area.top, min(y, work_area.bottom - height))
     return x, y, width, height
 
 
