@@ -23,6 +23,7 @@ from .platform_windows import (
     set_window_topmost,
     start_window_interaction,
     update_window_interaction,
+    window_logical_bounds,
 )
 from .repository import NotesRepository
 from .storage import StorageManager
@@ -356,11 +357,13 @@ class WindowStateSaver:
 
     def _save(self) -> None:
         try:
+            x, y, width, height = window_logical_bounds(self.window)
             self.config_store.update(
-                window_x=self.window.x,
-                window_y=self.window.y,
-                window_width=self.window.width,
-                window_height=self.window.height,
+                window_x=x,
+                window_y=y,
+                window_width=width,
+                window_height=height,
+                window_position_space="logical",
             )
         except Exception:
             # Window state is optional and must never take down the note editor.

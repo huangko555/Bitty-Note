@@ -57,6 +57,7 @@ class AppConfig:
     window_y: int | None = None
     window_width: int = 350
     window_height: int = 530
+    window_position_space: str | None = None
     note_window_sizes: dict[str, dict[str, int]] = field(default_factory=dict)
     last_note: str | None = None
     editor_font: str = DEFAULT_EDITOR_FONT
@@ -108,6 +109,8 @@ class ConfigStore:
             values.setdefault("save_dir", str(self.default_save_dir))
             if values.get("language", "en") not in SUPPORTED_LANGUAGES:
                 values["language"] = "en"
+            if values.get("window_position_space") not in (None, "logical"):
+                values["window_position_space"] = None
             editor_font = values.get("editor_font", DEFAULT_EDITOR_FONT)
             if isinstance(editor_font, str):
                 values["editor_font"] = LEGACY_EDITOR_FONTS.get(

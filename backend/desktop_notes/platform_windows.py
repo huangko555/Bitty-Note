@@ -99,6 +99,73 @@ def focus_window(window: object) -> None:
     ctypes.windll.user32.SetForegroundWindow(handle)
 
 
+def move_window_to_physical(window: object, x: int, y: int) -> None:
+    """Place a native window using desktop physical pixels without resizing it."""
+    if sys.platform != "win32":
+        return
+
+    native = getattr(window, "native", None)
+    handle_object = getattr(native, "Handle", None)
+    if handle_object is None:
+        return
+
+    handle = int(handle_object.ToInt64())
+    set_window_position = ctypes.windll.user32.SetWindowPos
+    set_window_position.argtypes = [
+        ctypes.wintypes.HWND,
+        ctypes.wintypes.HWND,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.wintypes.UINT,
+    ]
+    set_window_position.restype = ctypes.wintypes.BOOL
+    set_window_position(
+        handle,
+        None,
+        x,
+        y,
+        0,
+        0,
+        0x0001 | 0x0004 | 0x0010,  # NOSIZE | NOZORDER | NOACTIVATE
+    )
+
+
+def window_logical_bounds(window: object) -> tuple[int, int, int, int]:
+    """Read native bounds and convert them to the logical units used by pywebview."""
+    fallback = (window.x, window.y, window.width, window.height)
+    if sys.platform != "win32":
+        return fallback
+
+    native = getattr(window, "native", None)
+    handle_object = getattr(native, "Handle", None)
+    if handle_object is None:
+        return fallback
+
+    handle = int(handle_object.ToInt64())
+    rect = ctypes.wintypes.RECT()
+    get_window_rect = ctypes.windll.user32.GetWindowRect
+    get_window_rect.argtypes = [
+        ctypes.wintypes.HWND,
+        ctypes.POINTER(ctypes.wintypes.RECT),
+    ]
+    get_window_rect.restype = ctypes.wintypes.BOOL
+    if not get_window_rect(handle, ctypes.byref(rect)):
+        return fallback
+    get_dpi = ctypes.windll.user32.GetDpiForWindow
+    get_dpi.argtypes = [ctypes.wintypes.HWND]
+    get_dpi.restype = ctypes.wintypes.UINT
+    dpi = get_dpi(handle) or 96
+    scale = dpi / 96
+    return (
+        round(rect.left / scale),
+        round(rect.top / scale),
+        round((rect.right - rect.left) / scale),
+        round((rect.bottom - rect.top) / scale),
+    )
+
+
 def set_window_topmost(window: object, enabled: bool) -> None:
     """Toggle topmost without touching WinForms from pywebview's worker thread."""
     if sys.platform != "win32":

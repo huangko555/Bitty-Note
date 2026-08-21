@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import ctypes
-import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 from desktop_notes.bridge import WindowStateSaver
 from desktop_notes.config import ConfigStore
 from desktop_notes.main import (
+    _MonitorWorkArea,
     _allow_system_shutdown,
     _normalize_window_after_show,
+    _restore_window_from_hidden_start,
     _visible_window_bounds,
 )
 
@@ -45,13 +44,43 @@ class FakeStateSaver:
         pass
 
 
-def test_initial_size_is_normalized_before_state_tracking_starts() -> None:
+def test_initial_bounds_are_normalized_before_state_tracking_starts(monkeypatch) -> None:
     window = FakeWindow()
     saver = FakeStateSaver()
+    move_calls: list[tuple[object, int, int]] = []
+    monkeypatch.setattr(
+        "desktop_notes.main.move_window_to_physical",
+        lambda target, x, y: move_calls.append((target, x, y)),
+    )
 
-    _normalize_window_after_show(window, saver, 350, 630)
+    _normalize_window_after_show(window, saver, 350, 630, 3644, 386)
 
+    assert move_calls == [(window, 3644, 386)]
     assert window.resize_calls == [(350, 630)]
+    assert window.events.moved.handlers == [saver.schedule]
+    assert window.events.resized.handlers == [saver.schedule]
+
+
+def test_hidden_start_restores_window_before_revealing_it(monkeypatch) -> None:
+    window = FakeWindow()
+    saver = FakeStateSaver()
+    calls: list[object] = []
+    window.hide = lambda: calls.append("hide")
+    window.show = lambda: calls.append("show")
+    window.resize = lambda width, height: calls.append(("resize", width, height))
+    monkeypatch.setattr(
+        "desktop_notes.main.move_window_to_physical",
+        lambda _target, x, y: calls.append(("move", x, y)),
+    )
+
+    _restore_window_from_hidden_start(window, saver, 350, 630, 3644, 386)
+
+    assert calls == [
+        "hide",
+        ("move", 3644, 386),
+        ("resize", 350, 630),
+        "show",
+    ]
     assert window.events.moved.handlers == [saver.schedule]
     assert window.events.resized.handlers == [saver.schedule]
 
@@ -67,7 +96,10 @@ def test_system_shutdown_overrides_pywebview_close_cancellation() -> None:
     assert user_close.Cancel is True
 
 
-def test_default_and_resized_window_dimensions_are_persisted(tmp_path: Path) -> None:
+def test_default_and_resized_window_dimensions_are_persisted(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
     config_path = tmp_path / "config.json"
     store = ConfigStore(config_path, tmp_path / "Bitty-Note")
     assert (store.config.window_width, store.config.window_height) == (350, 530)
@@ -77,6 +109,10 @@ def test_default_and_resized_window_dimensions_are_persisted(tmp_path: Path) -> 
         (),
         {"x": 120, "y": 80, "width": 428, "height": 712},
     )()
+    monkeypatch.setattr(
+        "desktop_notes.bridge.window_logical_bounds",
+        lambda _window: (120, 80, 428, 712),
+    )
     WindowStateSaver(window, store).flush()
 
     restored = ConfigStore(config_path, tmp_path / "Bitty-Note").config
@@ -86,50 +122,65 @@ def test_default_and_resized_window_dimensions_are_persisted(tmp_path: Path) -> 
         restored.window_width,
         restored.window_height,
     ) == (120, 80, 428, 712)
+    assert restored.window_position_space == "logical"
 
 
 def test_restored_position_uses_its_secondary_monitor_work_area(monkeypatch) -> None:
-    class FakeUser32:
-        def __init__(self) -> None:
-            self.monitor_rect: tuple[int, int, int, int] | None = None
-
-        def SystemParametersInfoW(self, _action, _param, rect_pointer, _flags) -> int:
-            rect = rect_pointer._obj
-            rect.left, rect.top, rect.right, rect.bottom = 0, 0, 2560, 1392
-            return 1
-
-        def MonitorFromRect(self, rect_pointer, _flags) -> int:
-            rect = rect_pointer._obj
-            self.monitor_rect = (rect.left, rect.top, rect.right, rect.bottom)
-            return 2
-
-        def GetMonitorInfoW(self, monitor, info_pointer) -> int:
-            assert monitor == 2
-            info = info_pointer._obj
-            info.rcMonitor.left = 2560
-            info.rcMonitor.top = 135
-            info.rcMonitor.right = 4267
-            info.rcMonitor.bottom = 1202
-            info.rcWork.left = 2560
-            info.rcWork.top = 135
-            info.rcWork.right = 4267
-            info.rcWork.bottom = 1154
-            return 1
-
-    user32 = FakeUser32()
-    monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setattr(
-        ctypes,
-        "windll",
-        SimpleNamespace(user32=user32),
-        raising=False,
+        "desktop_notes.main._monitor_work_areas",
+        lambda: [
+            _MonitorWorkArea(0, 0, 2560, 1392, 96),
+            _MonitorWorkArea(2560, 135, 4267, 1154, 96),
+        ],
     )
+    monkeypatch.setattr("desktop_notes.main.sys.platform", "win32")
 
     restored = _visible_window_bounds(2800, 300, 350, 530)
 
     assert restored == (2800, 300, 350, 530)
-    assert user32.monitor_rect == (2800, 300, 3150, 830)
 
     clamped = _visible_window_bounds(4200, 1000, 350, 530)
 
     assert clamped == (3917, 624, 350, 530)
+
+
+def test_logical_position_is_restored_to_physical_secondary_monitor_coordinates(
+    monkeypatch,
+) -> None:
+    monitors = [
+        _MonitorWorkArea(0, 0, 2560, 1392, 96),
+        _MonitorWorkArea(2560, 135, 4267, 1154, 144),
+    ]
+    monkeypatch.setattr(
+        "desktop_notes.main._monitor_work_areas",
+        lambda: monitors,
+    )
+    monkeypatch.setattr("desktop_notes.main.sys.platform", "win32")
+
+    restored = _visible_window_bounds(
+        2429,
+        257,
+        316,
+        491,
+        position_space="logical",
+    )
+
+    assert restored == (3644, 386, 316, 491)
+
+
+def test_legacy_physical_position_is_preserved_on_scaled_secondary_monitor(
+    monkeypatch,
+) -> None:
+    monitors = [
+        _MonitorWorkArea(0, 0, 2560, 1392, 96),
+        _MonitorWorkArea(2560, 135, 4267, 1154, 144),
+    ]
+    monkeypatch.setattr(
+        "desktop_notes.main._monitor_work_areas",
+        lambda: monitors,
+    )
+    monkeypatch.setattr("desktop_notes.main.sys.platform", "win32")
+
+    restored = _visible_window_bounds(2800, 300, 350, 530)
+
+    assert restored == (2800, 300, 350, 530)

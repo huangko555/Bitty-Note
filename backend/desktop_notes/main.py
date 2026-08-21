@@ -5,6 +5,7 @@ import ctypes.wintypes
 import logging
 import sys
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 
 import webview
@@ -17,6 +18,7 @@ from .i18n import set_language, text
 from .platform_windows import (
     documents_directory,
     local_config_path,
+    move_window_to_physical,
     set_autostart,
 )
 from .window_coordinator import WindowCoordinator, WindowSession
@@ -24,7 +26,6 @@ from .window_coordinator import WindowCoordinator, WindowSession
 
 MIN_WINDOW_WIDTH = 300
 MIN_WINDOW_HEIGHT = 380
-MONITOR_DEFAULTTONEAREST = 0x00000002
 
 
 class _MONITORINFO(ctypes.Structure):
@@ -36,41 +37,83 @@ class _MONITORINFO(ctypes.Structure):
     ]
 
 
-def _monitor_work_area(
-    x: int,
-    y: int,
-    width: int,
-    height: int,
-) -> ctypes.wintypes.RECT:
+@dataclass(frozen=True)
+class _MonitorWorkArea:
+    left: int
+    top: int
+    right: int
+    bottom: int
+    dpi: int
+
+
+def _monitor_work_areas() -> list[_MonitorWorkArea]:
     user32 = ctypes.windll.user32
-    window_rect = ctypes.wintypes.RECT(x, y, x + width, y + height)
-    monitor_from_rect = user32.MonitorFromRect
-    if hasattr(monitor_from_rect, "restype"):
-        monitor_from_rect.argtypes = [
-            ctypes.POINTER(ctypes.wintypes.RECT),
-            ctypes.wintypes.DWORD,
-        ]
-        monitor_from_rect.restype = ctypes.c_void_p
-    monitor = monitor_from_rect(
-        ctypes.byref(window_rect),
-        MONITOR_DEFAULTTONEAREST,
+    shcore = ctypes.windll.shcore
+    monitors: list[_MonitorWorkArea] = []
+    callback_type = ctypes.WINFUNCTYPE(
+        ctypes.wintypes.BOOL,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.wintypes.RECT),
+        ctypes.wintypes.LPARAM,
     )
-    if monitor:
+
+    get_monitor_info = user32.GetMonitorInfoW
+    get_monitor_info.argtypes = [ctypes.c_void_p, ctypes.POINTER(_MONITORINFO)]
+    get_monitor_info.restype = ctypes.wintypes.BOOL
+    get_dpi = shcore.GetDpiForMonitor
+    get_dpi.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_int,
+        ctypes.POINTER(ctypes.wintypes.UINT),
+        ctypes.POINTER(ctypes.wintypes.UINT),
+    ]
+    get_dpi.restype = ctypes.c_long
+
+    def collect(
+        monitor: int,
+        _device_context: int,
+        _monitor_rect: object,
+        _data: int,
+    ) -> bool:
         info = _MONITORINFO()
         info.cbSize = ctypes.sizeof(info)
-        get_monitor_info = user32.GetMonitorInfoW
-        if hasattr(get_monitor_info, "restype"):
-            get_monitor_info.argtypes = [
-                ctypes.c_void_p,
-                ctypes.POINTER(_MONITORINFO),
-            ]
-            get_monitor_info.restype = ctypes.wintypes.BOOL
         if get_monitor_info(monitor, ctypes.byref(info)):
-            return info.rcWork
+            dpi_x = ctypes.wintypes.UINT(96)
+            dpi_y = ctypes.wintypes.UINT(96)
+            if get_dpi(monitor, 0, ctypes.byref(dpi_x), ctypes.byref(dpi_y)) != 0:
+                dpi_x.value = 96
+            monitors.append(_MonitorWorkArea(
+                info.rcWork.left,
+                info.rcWork.top,
+                info.rcWork.right,
+                info.rcWork.bottom,
+                int(dpi_x.value or 96),
+            ))
+        return True
+
+    callback = callback_type(collect)
+    enum_display_monitors = user32.EnumDisplayMonitors
+    enum_display_monitors.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        callback_type,
+        ctypes.wintypes.LPARAM,
+    ]
+    enum_display_monitors.restype = ctypes.wintypes.BOOL
+    enum_display_monitors(None, None, callback, 0)
+    if monitors:
+        return monitors
 
     work_area = ctypes.wintypes.RECT()
     user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(work_area), 0)
-    return work_area
+    return [_MonitorWorkArea(
+        work_area.left,
+        work_area.top,
+        work_area.right,
+        work_area.bottom,
+        96,
+    )]
 
 
 def _resource_path(relative: str) -> Path:
@@ -83,20 +126,52 @@ def _visible_window_bounds(
     y: int | None,
     width: int,
     height: int,
+    position_space: str | None = None,
 ) -> tuple[int | None, int | None, int, int]:
     width = max(MIN_WINDOW_WIDTH, width)
     height = max(MIN_WINDOW_HEIGHT, height)
     if sys.platform != "win32" or x is None or y is None:
         return x, y, width, height
 
-    work_area = _monitor_work_area(x, y, width, height)
-    max_width = max(MIN_WINDOW_WIDTH, work_area.right - work_area.left)
-    max_height = max(MIN_WINDOW_HEIGHT, work_area.bottom - work_area.top)
+    candidates: list[tuple[float, int, _MonitorWorkArea, int, int]] = []
+    for monitor in _monitor_work_areas():
+        scale = monitor.dpi / 96
+        physical_width = round(width * scale)
+        physical_height = round(height * scale)
+        interpretations = []
+        if position_space in (None, "physical"):
+            interpretations.append((x, y))
+        if position_space in (None, "logical"):
+            interpretations.append((round(x * scale), round(y * scale)))
+        for physical_x, physical_y in interpretations:
+            overlap_width = max(
+                0,
+                min(physical_x + physical_width, monitor.right)
+                - max(physical_x, monitor.left),
+            )
+            overlap_height = max(
+                0,
+                min(physical_y + physical_height, monitor.bottom)
+                - max(physical_y, monitor.top),
+            )
+            overlap = overlap_width * overlap_height
+            area = max(1, physical_width * physical_height)
+            candidates.append((overlap / area, overlap, monitor, physical_x, physical_y))
+
+    _, _, work_area, physical_x, physical_y = max(
+        candidates,
+        key=lambda item: (item[0], item[1]),
+    )
+    scale = work_area.dpi / 96
+    max_width = max(MIN_WINDOW_WIDTH, int((work_area.right - work_area.left) / scale))
+    max_height = max(MIN_WINDOW_HEIGHT, int((work_area.bottom - work_area.top) / scale))
     width = min(width, max_width)
     height = min(height, max_height)
-    x = max(work_area.left, min(x, work_area.right - width))
-    y = max(work_area.top, min(y, work_area.bottom - height))
-    return x, y, width, height
+    physical_width = round(width * scale)
+    physical_height = round(height * scale)
+    physical_x = max(work_area.left, min(physical_x, work_area.right - physical_width))
+    physical_y = max(work_area.top, min(physical_y, work_area.bottom - physical_height))
+    return physical_x, physical_y, width, height
 
 
 def _single_instance() -> object | None:
@@ -117,13 +192,33 @@ def _normalize_window_after_show(
     state_saver: object,
     width: int,
     height: int,
+    x: int | None = None,
+    y: int | None = None,
 ) -> None:
     # WinForms applies the frameless style after its initial size. Resizing once
     # after the native window is shown prevents the removed frame dimensions
     # from being subtracted again on every restart.
+    if x is not None and y is not None:
+        move_window_to_physical(window, x, y)
     window.resize(width, height)
     window.events.moved += state_saver.schedule  # type: ignore[attr-defined]
     window.events.resized += state_saver.schedule  # type: ignore[attr-defined]
+
+
+def _restore_window_from_hidden_start(
+    window: webview.Window,
+    state_saver: object,
+    width: int,
+    height: int,
+    x: int | None = None,
+    y: int | None = None,
+) -> None:
+    # pywebview briefly shows an opacity-zero window to initialize WinForms when
+    # hidden=True. Hiding once more synchronizes with that native cycle before
+    # the restored bounds are applied and the real first frame is revealed.
+    window.hide()
+    _normalize_window_after_show(window, state_saver, width, height, x, y)
+    window.show()
 
 
 def _normalize_note_window_after_show(
@@ -165,6 +260,7 @@ def main() -> None:
         config.window_y,
         config.window_width,
         config.window_height,
+        config.window_position_space,
     )
 
     index = _resource_path("dist/web/index.html")
@@ -179,12 +275,13 @@ def main() -> None:
         js_api=bridge,
         width=width,
         height=height,
-        x=x,
-        y=y,
+        x=None,
+        y=None,
         min_size=(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT),
         frameless=True,
         easy_drag=False,
         on_top=config.always_on_top,
+        hidden=True,
         confirm_close=False,
         background_color="#fffdf5",
     )
@@ -207,8 +304,13 @@ def main() -> None:
     ) -> None:
         def on_shown() -> None:
             if track_position:
-                _normalize_window_after_show(
-                    target_window, target_state_saver, target_width, target_height
+                _restore_window_from_hidden_start(
+                    target_window,
+                    target_state_saver,
+                    target_width,
+                    target_height,
+                    x,
+                    y,
                 )
             else:
                 _normalize_note_window_after_show(

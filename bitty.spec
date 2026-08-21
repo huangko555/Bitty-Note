@@ -28,6 +28,7 @@ exe = EXE(
     exclude_binaries=True,
     name="Bitty-Note",
     icon="assets/app-icon.ico",
+    manifest="packaging/Bitty-Note.manifest",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
