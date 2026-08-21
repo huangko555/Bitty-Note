@@ -948,7 +948,9 @@ class RowDragHandleView {
   };
 
   private readonly onHoverLeave = (event: PointerEvent): void => {
-    if (!this.source && event.relatedTarget !== this.handle) this.hide();
+    const enteredHandle = event.relatedTarget instanceof Node
+      && this.handle.contains(event.relatedTarget);
+    if (!this.source && !enteredHandle) this.hide();
   };
 
   private readonly onScroll = (): void => {
@@ -1324,7 +1326,12 @@ class RowDragHandleView {
     this.handle.style.top = `${headerRect.top + Math.max(0, (lineHeight - 22) / 2)}px`;
     if (headerRect.bottom < hostRect.top || headerRect.top > hostRect.bottom) {
       this.handle.classList.remove("visible");
-      this.highlight.classList.remove("visible");
+      const blockRect = this.source ? draggedBlockVerticalRect(this.view, row) : headerRect;
+      if (blockRect.bottom < hostRect.top || blockRect.top > hostRect.bottom) {
+        this.highlight.classList.remove("visible");
+      } else if (this.source) {
+        this.highlight.classList.add("visible");
+      }
       return;
     }
     this.handle.classList.add("visible");

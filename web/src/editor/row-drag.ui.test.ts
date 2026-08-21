@@ -129,6 +129,40 @@ describe("row drag handle", () => {
     expect(preview.classList.contains("visible")).toBe(false);
   });
 
+  it("keeps partial handle feedback visible when the pointer enters the handle icon", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const doc = noteSchema.nodes.doc.create(null, [
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("窗口边缘内容")),
+    ]);
+    view = new EditorView(host, {
+      state: EditorState.create({ doc, plugins: [rowDragPlugin()] }),
+    });
+
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    const paragraph = view.dom.querySelector("p")!;
+    vi.spyOn(paragraph, "getBoundingClientRect").mockReturnValue(rect(80, -8, 200, 22));
+    vi.spyOn(view, "posAtCoords").mockReturnValue({ pos: 1, inside: 0 });
+
+    host.dispatchEvent(new MouseEvent("pointermove", {
+      bubbles: true,
+      clientX: 100,
+      clientY: 4,
+    }));
+
+    const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
+    const handleIcon = handle.querySelector<SVGElement>(".lucide-icon")!;
+    const highlight = host.querySelector<HTMLElement>(".block-row-handle-highlight")!;
+    handle.dispatchEvent(new MouseEvent("pointerenter"));
+    host.dispatchEvent(new MouseEvent("pointerleave", { relatedTarget: handleIcon }));
+
+    expect(handle.classList.contains("visible")).toBe(true);
+    expect(highlight.classList.contains("visible")).toBe(true);
+    expect(highlight.style.top).toBe("0px");
+    expect(highlight.style.height).toBe("16px");
+  });
+
   it("highlights a heading and its complete section as one block", () => {
     const host = document.createElement("div");
     document.body.append(host);
@@ -485,6 +519,46 @@ describe("row drag handle", () => {
     host.scrollTop = 0;
     host.dispatchEvent(new Event("scroll"));
     expect(highlight.classList.contains("visible")).toBe(true);
+  });
+
+  it("keeps the visible part of an active heading-section highlight at the document edge", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const doc = noteSchema.nodes.doc.create(null, [
+      noteSchema.nodes.heading.create({ level: 1 }, noteSchema.text("章节")),
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("章节正文")),
+    ]);
+    view = new EditorView(host, {
+      state: EditorState.create({ doc, plugins: [rowDragPlugin()] }),
+    });
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 200));
+    const heading = view.dom.querySelector("h1")!;
+    const paragraph = view.dom.querySelector("p")!;
+    vi.spyOn(heading, "getBoundingClientRect").mockImplementation(
+      () => rect(80, 20 - host.scrollTop, 200, 22),
+    );
+    vi.spyOn(paragraph, "getBoundingClientRect").mockImplementation(
+      () => rect(80, 42 - host.scrollTop, 200, 60),
+    );
+    vi.spyOn(view, "posAtCoords").mockReturnValue({ pos: 1, inside: 0 });
+
+    host.dispatchEvent(new MouseEvent("pointermove", {
+      bubbles: true,
+      clientX: 100,
+      clientY: 30,
+    }));
+    const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
+    const highlight = host.querySelector<HTMLElement>(".block-row-handle-highlight")!;
+    enableDragHandle(handle);
+    handle.dispatchEvent(dragPointerEvent("pointerdown", 30, 44));
+
+    host.scrollTop = 60;
+    host.dispatchEvent(new Event("scroll"));
+
+    expect(highlight.classList.contains("visible")).toBe(true);
+    expect(highlight.style.top).toBe("0px");
+    expect(highlight.style.height).toBe("44px");
   });
 
   it("scrolls the editor when the wheel is used over the drag handle", () => {
