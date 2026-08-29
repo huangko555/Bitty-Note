@@ -11,6 +11,7 @@ from .config import (
     ConfigStore,
     validate_editor_highlight_color,
     validate_editor_preferences,
+    validate_text_highlight_color,
 )
 from .errors import UserVisibleError
 from .fonts import list_system_fonts
@@ -278,10 +279,6 @@ class DesktopBridge:
         self.config_store.update(heading_divider=enabled)
         return {"enabled": enabled}
 
-    def set_spellcheck(self, enabled: bool) -> dict[str, bool]:
-        self.config_store.update(spellcheck=enabled)
-        return {"enabled": enabled}
-
     def set_heading_list_highlight(self, enabled: bool) -> dict[str, bool]:
         self.config_store.update(heading_list_highlight=enabled)
         return {"enabled": enabled}
@@ -294,6 +291,11 @@ class DesktopBridge:
             heading_list_highlight=True,
         )
         return {"color": normalized}
+
+    def set_text_highlight_color(self, color: str) -> dict[str, str]:
+        validate_text_highlight_color(color)
+        self.config_store.update(text_highlight_color=color)
+        return {"color": color}
 
     def start_window_interaction(self, region: str) -> None:
         with self._lock:

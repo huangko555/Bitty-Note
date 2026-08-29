@@ -32,14 +32,10 @@ Bitty-Note is a lightweight Windows note app for ideas, lists, and everyday task
 Open the appearance menu from the right end of the editor toolbar to tailor each note to the way you write:
 
 - Choose the editor font and adjust the text size.
-- Pick a preset highlight color or enter a custom hex value for headings and list markers.
-- Turn spell check and heading dividers on or off.
+- Pick a preset color or enter a custom hex value for headings and list markers.
+- Turn heading dividers on or off.
 
 Changes take effect immediately and are saved automatically.
-
-<p align="center">
-  <img src="./assets/readme/editor-appearance-en.png" width="356" alt="Bitty-Note editor appearance menu in English, with font, text size, highlight color, spell check, and heading divider controls">
-</p>
 
 ## Your Notes Stay Yours
 

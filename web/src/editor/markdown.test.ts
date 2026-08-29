@@ -6,7 +6,7 @@ import { noteSchema } from "./schema";
 describe("strict Markdown mode selection", () => {
   it("renders supported inline formatting as marks", () => {
     const parsed = parseMarkdown(
-      "Preview **bold** and *italic*.\n\n~~Deleted text.~~\n",
+      "Preview **bold**, *italic* and ==highlighted==.\n\n~~Deleted text.~~\n",
     );
     if (parsed.mode === "raw") throw new Error(parsed.reason);
 
@@ -15,11 +15,194 @@ describe("strict Markdown mode selection", () => {
       node.marks.forEach((mark) => marks.add(mark.type.name));
     });
 
-    expect(marks).toEqual(new Set(["strong", "em", "strike"]));
+    expect(marks).toEqual(new Set(["strong", "em", "highlight", "strike"]));
+  });
+
+  it("round-trips highlighted text with double equals markers", () => {
+    const source = "正文包含 ==浅绿色高亮== 文字。\n";
+    const parsed = parseMarkdown(source);
+
+    expect(parsed.mode).toBe("wysiwyg");
+    if (parsed.mode === "wysiwyg") {
+      const highlighted: string[] = [];
+      parsed.doc.descendants((node) => {
+        if (noteSchema.marks.highlight.isInSet(node.marks)) {
+          highlighted.push(node.textContent);
+        }
+      });
+      expect(highlighted).toEqual(["浅绿色高亮"]);
+      expect(serializeMarkdown(parsed.doc)).toBe(source);
+    }
+  });
+
+  it("round-trips named highlight colors while keeping green syntax compatible", () => {
+    const source = "==绿色== =={red}红色== =={yellow}黄色== =={blue}蓝色==\n";
+    const parsed = parseMarkdown(source);
+
+    expect(parsed.mode).toBe("wysiwyg");
+    if (parsed.mode === "wysiwyg") {
+      const colors: string[] = [];
+      parsed.doc.descendants((node) => {
+        const mark = noteSchema.marks.highlight.isInSet(node.marks);
+        if (mark) colors.push(mark.attrs.color as string);
+      });
+      expect(colors).toEqual(["green", "red", "yellow", "blue"]);
+      expect(serializeMarkdown(parsed.doc)).toBe(source);
+    }
+  });
+
+  it("round-trips adjacent highlight spans with different colors", () => {
+    const source = "=={red}前===={blue}中===={red}后==\n";
+    const parsed = parseMarkdown(source);
+
+    expect(parsed.mode).toBe("wysiwyg");
+    if (parsed.mode === "wysiwyg") {
+      const segments: Array<[string, string]> = [];
+      parsed.doc.descendants((node) => {
+        const mark = noteSchema.marks.highlight.isInSet(node.marks);
+        if (node.isText && mark) {
+          segments.push([node.text ?? "", String(mark.attrs.color)]);
+        }
+      });
+      expect(parsed.doc.textContent).toBe("前中后");
+      expect(segments).toEqual([
+        ["前", "red"],
+        ["中", "blue"],
+        ["后", "red"],
+      ]);
+      expect(serializeMarkdown(parsed.doc)).toBe(source);
+    }
+  });
+
+  it("round-trips every color transition across text and punctuation boundaries", () => {
+    const colors = ["red", "yellow", "blue", "green"] as const;
+    const boundaries = [
+      ["（", "字"],
+      ["字", "）"],
+      ["下", "一"],
+    ] as const;
+    const open = (color: typeof colors[number]) => color === "green"
+      ? "=="
+      : `=={${color}}`;
+
+    for (const previousColor of colors) {
+      for (const nextColor of colors) {
+        if (previousColor === nextColor) continue;
+        for (const [left, right] of boundaries) {
+          const source = `${open(previousColor)}${left}==${open(nextColor)}${right}==\n`;
+          const parsed = parseMarkdown(source);
+          expect(parsed.mode).toBe("wysiwyg");
+          if (parsed.mode !== "wysiwyg") continue;
+
+          const segments: Array<[string, string]> = [];
+          parsed.doc.descendants((node) => {
+            const mark = noteSchema.marks.highlight.isInSet(node.marks);
+            if (node.isText && mark) {
+              segments.push([node.text ?? "", String(mark.attrs.color)]);
+            }
+          });
+          expect(parsed.doc.textContent).toBe(`${left}${right}`);
+          expect(segments).toEqual([
+            [left, previousColor],
+            [right, nextColor],
+          ]);
+          expect(serializeMarkdown(parsed.doc)).toBe(source);
+        }
+      }
+    }
+  });
+
+  it("parses a named highlight that starts in the middle of a word", () => {
+    const source = "前=={blue}中==后\n";
+    const parsed = parseMarkdown(source);
+
+    expect(parsed.mode).toBe("wysiwyg");
+    if (parsed.mode === "wysiwyg") {
+      const middle = parsed.doc.firstChild?.child(1);
+      const mark = middle && noteSchema.marks.highlight.isInSet(middle.marks);
+      expect(parsed.doc.textContent).toBe("前中后");
+      expect(middle?.textContent).toBe("中");
+      expect(mark?.attrs.color).toBe("blue");
+      expect(serializeMarkdown(parsed.doc)).toBe(source);
+    }
+  });
+
+  it.each([
+    ["=={red}一行（==子列表？）\n", "red", "一行（", "一行（子列表？）"],
+    ["==（==子列表？）\n", "green", "（", "（子列表？）"],
+  ])("closes a %s highlight after opening punctuation", (
+    source,
+    color,
+    highlighted,
+    expectedText,
+  ) => {
+    const parsed = parseMarkdown(source);
+
+    expect(parsed.mode).toBe("wysiwyg");
+    if (parsed.mode === "wysiwyg") {
+      const markNode = parsed.doc.firstChild?.firstChild;
+      const mark = markNode && noteSchema.marks.highlight.isInSet(markNode.marks);
+      expect(parsed.doc.textContent).toBe(expectedText);
+      expect(markNode?.textContent).toBe(highlighted);
+      expect(mark?.attrs.color).toBe(color);
+      expect(serializeMarkdown(parsed.doc)).toBe(source);
+    }
+  });
+
+  it("keeps spaced equality operators as literal text", () => {
+    const source = "比较 a == b == c\n";
+    const parsed = parseMarkdown(source);
+
+    expect(parsed.mode).toBe("wysiwyg");
+    if (parsed.mode === "wysiwyg") {
+      expect(parsed.doc.textContent).toBe("比较 a == b == c");
+      expect(parsed.doc.firstChild?.firstChild?.marks).toHaveLength(0);
+      expect(serializeMarkdown(parsed.doc)).toBe(source);
+    }
+  });
+
+  it.each([
+    ["==甲===={red}乙====丙==\n", ["green", "red", "green"]],
+    ["=={red}甲====乙===={blue}丙==\n", ["red", "green", "blue"]],
+  ])("round-trips default and named color boundaries in %j", (source, expectedColors) => {
+    const parsed = parseMarkdown(source);
+
+    expect(parsed.mode).toBe("wysiwyg");
+    if (parsed.mode === "wysiwyg") {
+      const colors: string[] = [];
+      parsed.doc.descendants((node) => {
+        const mark = noteSchema.marks.highlight.isInSet(node.marks);
+        if (node.isText && mark) colors.push(String(mark.attrs.color));
+      });
+      expect(parsed.doc.textContent).toBe("甲乙丙");
+      expect(colors).toEqual(expectedColors);
+      expect(serializeMarkdown(parsed.doc)).toBe(source);
+    }
+  });
+
+  it("accepts explicit green syntax but serializes its canonical shorthand", () => {
+    const parsed = parseMarkdown("=={green}绿色==\n");
+
+    expect(parsed.mode).toBe("wysiwyg");
+    if (parsed.mode === "wysiwyg") {
+      expect(serializeMarkdown(parsed.doc)).toBe("==绿色==\n");
+    }
+  });
+
+  it("keeps unknown highlight colors as literal text", () => {
+    const source = "=={orange}橙色文字==\n";
+    const parsed = parseMarkdown(source);
+
+    expect(parsed.mode).toBe("wysiwyg");
+    if (parsed.mode === "wysiwyg") {
+      expect(parsed.doc.firstChild?.textContent).toBe("=={orange}橙色文字==");
+      expect(parsed.doc.firstChild?.firstChild?.marks).toHaveLength(0);
+      expect(serializeMarkdown(parsed.doc)).toBe(source);
+    }
   });
 
   it("round-trips the supported canonical subset", () => {
-    const source = "# 标题\n\n正文有 **粗体**、*斜体* 和 ~~删除线~~。\n\n- 项目\n- [ ] 任务\n";
+    const source = "# 标题\n\n正文有 **粗体**、*斜体*、==高亮== 和 ~~删除线~~。\n\n- 项目\n- [ ] 任务\n";
     const parsed = parseMarkdown(source);
 
     if (parsed.mode === "raw") throw new Error(parsed.reason);

@@ -1,5 +1,7 @@
 import { Schema, type DOMOutputSpec, type NodeSpec } from "prosemirror-model";
 
+import { DEFAULT_HIGHLIGHT_COLOR, isHighlightColor } from "./highlight";
+
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 
 function taskCheckIcon(): SVGElement {
@@ -151,6 +153,25 @@ export const noteSchema = new Schema({
     strike: {
       parseDOM: [{ tag: "s" }, { tag: "del" }, { tag: "strike" }],
       toDOM: () => ["s", 0],
+    },
+    highlight: {
+      attrs: { color: { default: DEFAULT_HIGHLIGHT_COLOR } },
+      parseDOM: ["mark", "span.text-highlight"].map((tag) => ({
+        tag,
+        getAttrs: (element: HTMLElement) => ({
+          color: isHighlightColor(element.dataset.highlightColor)
+            ? element.dataset.highlightColor
+            : DEFAULT_HIGHLIGHT_COLOR,
+        }),
+      })),
+      toDOM: (mark) => [
+        "mark",
+        {
+          class: "text-highlight",
+          "data-highlight-color": mark.attrs.color,
+        },
+        0,
+      ],
     },
   },
 });

@@ -15,6 +15,10 @@ from .i18n import SUPPORTED_LANGUAGES
 DEFAULT_EDITOR_FONT = "DengXian"
 DEFAULT_EDITOR_FONT_SIZE = 14
 DEFAULT_EDITOR_HIGHLIGHT_COLOR = "#456FC4"
+# This is the user's initial toolbar preference. It is intentionally separate
+# from the Markdown fallback color, which remains green for legacy `==text==`.
+DEFAULT_TEXT_HIGHLIGHT_COLOR = "red"
+TEXT_HIGHLIGHT_COLORS = {"red", "yellow", "blue", "green"}
 MIN_EDITOR_FONT_SIZE = 12
 MAX_EDITOR_FONT_SIZE = 22
 LEGACY_EDITOR_FONTS = {
@@ -47,6 +51,11 @@ def validate_editor_highlight_color(color: str) -> None:
         raise ValueError("Unsupported editor highlight color")
 
 
+def validate_text_highlight_color(color: str) -> None:
+    if not isinstance(color, str) or color not in TEXT_HIGHLIGHT_COLORS:
+        raise ValueError("Unsupported text highlight color")
+
+
 @dataclass(frozen=True)
 class AppConfig:
     save_dir: str
@@ -62,10 +71,10 @@ class AppConfig:
     last_note: str | None = None
     editor_font: str = DEFAULT_EDITOR_FONT
     editor_font_size: int = DEFAULT_EDITOR_FONT_SIZE
-    spellcheck: bool = False
     heading_divider: bool = True
     heading_list_highlight: bool = True
     editor_highlight_color: str = DEFAULT_EDITOR_HIGHLIGHT_COLOR
+    text_highlight_color: str = DEFAULT_TEXT_HIGHLIGHT_COLOR
     last_update_check_ms: int | None = None
     available_version: str | None = None
     pending_update_version: str | None = None
@@ -130,6 +139,12 @@ class ConfigStore:
                 )
             except ValueError:
                 values["editor_highlight_color"] = DEFAULT_EDITOR_HIGHLIGHT_COLOR
+            try:
+                validate_text_highlight_color(
+                    values.get("text_highlight_color", DEFAULT_TEXT_HIGHLIGHT_COLOR)
+                )
+            except ValueError:
+                values["text_highlight_color"] = DEFAULT_TEXT_HIGHLIGHT_COLOR
             raw_sizes = values.get("note_window_sizes", {})
             if isinstance(raw_sizes, dict):
                 values["note_window_sizes"] = {

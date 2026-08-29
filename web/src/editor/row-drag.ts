@@ -376,8 +376,8 @@ function changedDocumentRange(
   return { from, previousTo, nextTo };
 }
 
-function nestedListIndex(item: ProseMirrorNode): number | null {
-  for (let index = 0; index < item.childCount; index += 1) {
+function lastNestedListIndex(item: ProseMirrorNode): number | null {
+  for (let index = item.childCount - 1; index >= 0; index -= 1) {
     const child = item.child(index);
     if (
       child.type === noteSchema.nodes.bullet_list
@@ -603,7 +603,7 @@ export function moveRow(
   if (target.type === noteSchema.nodes.list_item) {
     const nextTarget = nodeAtPath(nextDoc, nextTargetPath);
     if (side === "inside") {
-      const childListIndex = nestedListIndex(nextTarget);
+      const childListIndex = lastNestedListIndex(nextTarget);
       if (childListIndex !== null) {
         const childListPath = [...nextTargetPath, childListIndex];
         const childList = nodeAtPath(nextDoc, childListPath);

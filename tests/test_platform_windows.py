@@ -9,6 +9,79 @@ from desktop_notes import platform_windows
 from desktop_notes.errors import UserVisibleError
 
 
+def test_window_interaction_does_not_move_after_left_button_is_released(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[object, ...]] = []
+
+    class FakeFunction:
+        argtypes: object = None
+        restype: object = None
+
+        def __init__(self, callback: object) -> None:
+            self.callback = callback
+
+        def __call__(self, *args: object) -> object:
+            return self.callback(*args)  # type: ignore[operator]
+
+    class FakeUser32:
+        GetAsyncKeyState = FakeFunction(lambda _key: 0)
+
+        @staticmethod
+        def _get_cursor(pointer: object) -> bool:
+            pointer._obj.x = 180  # type: ignore[attr-defined]
+            pointer._obj.y = 160  # type: ignore[attr-defined]
+            return True
+
+        GetCursorPos = FakeFunction(_get_cursor)
+        SetWindowPos = FakeFunction(lambda *args: calls.append(args) or True)
+
+    interaction = platform_windows.WindowInteraction(
+        region="caption",
+        handle=123,
+        cursor_x=100,
+        cursor_y=100,
+        left=20,
+        top=30,
+        right=320,
+        bottom=410,
+        min_width=300,
+        min_height=380,
+    )
+    monkeypatch.setattr(
+        platform_windows.ctypes,
+        "windll",
+        type("FakeWindll", (), {"user32": FakeUser32()})(),
+    )
+
+    platform_windows.update_window_interaction(interaction)
+
+    assert calls == []
+
+
+def test_enable_taskbar_minimize_adds_required_native_styles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeHandle:
+        @staticmethod
+        def ToInt64() -> int:
+            return 123
+
+    window = type("Window", (), {"native": type("Native", (), {"Handle": FakeHandle()})()})()
+    written: list[tuple[int, int]] = []
+    monkeypatch.setattr(platform_windows.sys, "platform", "win32")
+    monkeypatch.setattr(platform_windows, "_get_window_style", lambda _handle: 0x10000000)
+    monkeypatch.setattr(
+        platform_windows,
+        "_set_window_style",
+        lambda handle, style: written.append((handle, style)),
+    )
+
+    platform_windows.enable_taskbar_minimize(window)
+
+    assert written == [(123, 0x100A0000)]
+
+
 def test_open_directory_uses_windows_shell(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     opened: list[str] = []
     monkeypatch.setattr(platform_windows.sys, "platform", "win32")

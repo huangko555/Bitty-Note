@@ -5,7 +5,7 @@ import type {
   SaveResult,
   UpdateState,
 } from "./types";
-import type { AppLanguage } from "./types";
+import type { AppLanguage, TextHighlightColor } from "./types";
 import { t } from "./i18n";
 
 interface PythonApi {
@@ -48,9 +48,9 @@ interface PythonApi {
     editorFontSize: number,
   ): Promise<{ editor_font: BootstrapData["config"]["editor_font"]; editor_font_size: number }>;
   set_heading_divider(enabled: boolean): Promise<{ enabled: boolean }>;
-  set_spellcheck(enabled: boolean): Promise<{ enabled: boolean }>;
   set_heading_list_highlight(enabled: boolean): Promise<{ enabled: boolean }>;
   set_editor_highlight_color(color: string): Promise<{ color: string }>;
+  set_text_highlight_color(color: TextHighlightColor): Promise<{ color: TextHighlightColor }>;
   set_language(language: AppLanguage): Promise<{ language: AppLanguage }>;
   check_update(force: boolean): Promise<UpdateState>;
   install_update(): Promise<UpdateState>;
@@ -109,9 +109,9 @@ export interface DesktopApi {
     editorFontSize: number,
   ): Promise<void>;
   setHeadingDivider(enabled: boolean): Promise<void>;
-  setSpellcheck(enabled: boolean): Promise<void>;
   setHeadingListHighlight(enabled: boolean): Promise<void>;
   setEditorHighlightColor(color: string): Promise<string>;
+  setTextHighlightColor(color: TextHighlightColor): Promise<TextHighlightColor>;
   setLanguage(language: AppLanguage): Promise<AppLanguage>;
   checkUpdate(force?: boolean): Promise<UpdateState>;
   installUpdate(): Promise<UpdateState>;
@@ -171,14 +171,14 @@ function desktopApi(raw: PythonApi): DesktopApi {
     setHeadingDivider: async (enabled) => {
       await raw.set_heading_divider(enabled);
     },
-    setSpellcheck: async (enabled) => {
-      await raw.set_spellcheck(enabled);
-    },
     setHeadingListHighlight: async (enabled) => {
       await raw.set_heading_list_highlight(enabled);
     },
     setEditorHighlightColor: async (color) => (
       await raw.set_editor_highlight_color(color)
+    ).color,
+    setTextHighlightColor: async (color) => (
+      await raw.set_text_highlight_color(color)
     ).color,
     setLanguage: async (language) => (await raw.set_language(language)).language,
     checkUpdate: (force = false) => raw.check_update(force),
@@ -208,6 +208,7 @@ function browserMock(): DesktopApi {
   let autostart = true;
   let alwaysOnTop = false;
   let language: AppLanguage = "en";
+  let textHighlightColor: TextHighlightColor = "red";
   const revision = () => `${Date.now()}-${Math.random()}`;
   const summary = (items: OpenedNote[]) =>
     items.map((note, index) => ({
@@ -243,17 +244,17 @@ function browserMock(): DesktopApi {
         last_note: null,
         editor_font: "DengXian",
         editor_font_size: 14,
-        spellcheck: false,
         heading_divider: true,
         heading_list_highlight: true,
         editor_highlight_color: "#456FC4",
+        text_highlight_color: textHighlightColor,
         last_update_check_ms: null,
         available_version: null,
         pending_update_version: null,
       },
       notes: summary(notes),
       system_fonts: ["Microsoft YaHei", "DengXian", "SimSun", "KaiTi"],
-      app_version: "1.3.10",
+      app_version: "1.4.0",
       update_state: { status: "unsupported", available_version: null },
       update_result: null,
       window_role: "main",
@@ -359,9 +360,12 @@ function browserMock(): DesktopApi {
     getAlwaysOnTop: async () => alwaysOnTop,
     setEditorPreferences: async () => {},
     setHeadingDivider: async () => {},
-    setSpellcheck: async () => {},
     setHeadingListHighlight: async () => {},
     setEditorHighlightColor: async (color) => color.toUpperCase(),
+    setTextHighlightColor: async (color) => {
+      textHighlightColor = color;
+      return color;
+    },
     setLanguage: async (nextLanguage) => {
       language = nextLanguage;
       return language;

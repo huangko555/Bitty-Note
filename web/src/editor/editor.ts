@@ -39,12 +39,18 @@ import {
 } from "./history-viewport";
 import { keepRectVisible } from "./selection-visibility";
 import { documentTailAt } from "./editor-tail";
+import {
+  DEFAULT_HIGHLIGHT_COLOR,
+  type HighlightColor,
+  isHighlightColor,
+} from "./highlight";
 
 export type EditorAction =
   | "heading"
   | "strong"
   | "em"
   | "strike"
+  | "highlight"
   | "bullet"
   | "ordered"
   | "task";
@@ -62,7 +68,9 @@ export interface EditorController {
   getMarkdown(): string;
   run(action: EditorAction): void;
   activeActions(): Set<EditorAction>;
-  setSpellcheck(enabled: boolean): void;
+  applyHighlight(color: HighlightColor): void;
+  toggleHighlight(color: HighlightColor): void;
+  highlightState(): HighlightColor | "mixed" | null;
   undo(): boolean;
   redo(): boolean;
   focus(): void;
@@ -105,7 +113,10 @@ interface EditorCallbacks {
   onInsertBlankLine?: () => void;
 }
 
-function markInputRule(pattern: RegExp, markName: "strong" | "em" | "strike"): InputRule {
+function markInputRule(
+  pattern: RegExp,
+  markName: "strong" | "em" | "strike" | "highlight",
+): InputRule {
   return new InputRule(pattern, (state, match, _start, end) => {
     const marked = match[1];
     const text = match[2];
@@ -115,6 +126,30 @@ function markInputRule(pattern: RegExp, markName: "strong" | "em" | "strike"): I
       .insertText(text, start, end)
       .addMark(start, start + text.length, noteSchema.marks[markName].create());
   });
+}
+
+function highlightInputRule(): InputRule {
+  return new InputRule(
+    /(==(?:\{(red|yellow|blue|green)\})?([^=]+)==)$/,
+    (state, match, _start, end) => {
+      const marked = match[1];
+      const color = isHighlightColor(match[2]) ? match[2] : DEFAULT_HIGHLIGHT_COLOR;
+      const text = match[3];
+      if (!marked || text === undefined) return null;
+      const start = end - marked.length;
+      return state.tr
+        .insertText(text, start, end)
+        .addMark(
+          start,
+          start + text.length,
+          noteSchema.marks.highlight.create({ color }),
+        );
+    },
+  );
+}
+
+function exitsHighlightInput(text: string): boolean {
+  return /^[\s\p{P}]+$/u.test(text);
 }
 
 function taskInputRule(): InputRule {
@@ -149,6 +184,7 @@ function inputRulePlugin() {
       })),
       markInputRule(/(\*\*([^*]+)\*\*)$/, "strong"),
       markInputRule(/(~~([^~]+)~~)$/, "strike"),
+      highlightInputRule(),
       markInputRule(/(?:^|[^*])(\*([^*]+)\*)$/, "em"),
     ],
   });
@@ -325,7 +361,7 @@ export function sinkListItemAcrossTypes(
 ): boolean {
   if (!state.selection.empty) return false;
   const current = nearestList(state);
-  if (!current || current.depth !== 1 || state.selection.$from.index(current.depth) !== 0) {
+  if (!current || state.selection.$from.index(current.depth) !== 0) {
     return false;
   }
 
@@ -431,16 +467,180 @@ function convertedItemContent(
 function convertListNode(listNode: ProseMirrorNode, kind: ListKind): ProseMirrorNode {
   const items: ProseMirrorNode[] = [];
   listNode.forEach((item) => {
-    const converted = convertedItemContent(item.content, item.attrs.checked, kind);
-    items.push(noteSchema.nodes.list_item.create(
-      { ...item.attrs, checked: converted.checked },
-      converted.content,
-    ));
+    items.push(convertListItemNode(item, kind));
   });
+  return createListNode(kind, items);
+}
+
+function convertListItemNode(item: ProseMirrorNode, kind: ListKind): ProseMirrorNode {
+  const converted = convertedItemContent(item.content, item.attrs.checked, kind);
+  return noteSchema.nodes.list_item.create(
+    { ...item.attrs, checked: converted.checked },
+    converted.content,
+  );
+}
+
+function createListNode(kind: ListKind, items: ProseMirrorNode[]): ProseMirrorNode {
   const listType = kind === "ordered"
     ? noteSchema.nodes.ordered_list
     : noteSchema.nodes.bullet_list;
   return listType.create(kind === "ordered" ? { order: 1 } : undefined, items);
+}
+
+function mapConvertedTextOffset(
+  source: ProseMirrorNode,
+  target: ProseMirrorNode,
+  offset: number,
+): number {
+  const sourceText = source.textContent;
+  const targetText = target.textContent;
+  if (targetText.endsWith(sourceText)) {
+    return Math.min(offset + targetText.length - sourceText.length, target.content.size);
+  }
+  if (sourceText.endsWith(targetText)) {
+    return Math.max(0, Math.min(
+      offset - (sourceText.length - targetText.length),
+      target.content.size,
+    ));
+  }
+  return Math.min(offset, target.content.size);
+}
+
+function restoreSelectionInReplacedList(
+  state: EditorState,
+  transaction: Transaction,
+  list: { position: number; depth: number },
+): void {
+  const { $from } = state.selection;
+  if (!state.selection.empty || !$from.parent.isTextblock || $from.depth <= list.depth) return;
+
+  const path: number[] = [];
+  for (let depth = list.depth + 1; depth <= $from.depth; depth += 1) {
+    path.push($from.index(depth));
+  }
+
+  let target = transaction.doc.nodeAt(list.position);
+  let relativePosition = 0;
+  for (const index of path) {
+    if (!target || index < 0 || index >= target.childCount) return;
+    for (let sibling = 0; sibling < index; sibling += 1) {
+      relativePosition += target.child(sibling).nodeSize;
+    }
+    relativePosition += 1;
+    target = target.child(index);
+  }
+  if (!target?.isTextblock) return;
+
+  transaction.setSelection(TextSelection.create(
+    transaction.doc,
+    list.position + relativePosition + 1
+      + mapConvertedTextOffset($from.parent, target, $from.parentOffset),
+  ));
+}
+
+interface NestedListItemUnit {
+  source: ProseMirrorNode;
+  item: ProseMirrorNode;
+  sourceKind: ListKind;
+  kind: ListKind;
+  selected: boolean;
+}
+
+function convertNestedSelectedItems(
+  state: EditorState,
+  dispatch: ((transaction: Transaction) => void) | undefined,
+  kind: ListKind,
+): boolean {
+  const existing = nearestList(state);
+  if (
+    !existing
+    || existing.depth <= 1
+    || state.selection.from <= existing.position
+    || state.selection.to >= existing.position + existing.node.nodeSize
+  ) {
+    return false;
+  }
+
+  const units: NestedListItemUnit[] = [];
+  let itemPosition = existing.position + 1;
+  existing.node.forEach((item) => {
+    const sourceKind: ListKind = existing.node.type === noteSchema.nodes.ordered_list
+      ? "ordered"
+      : typeof item.attrs.checked === "boolean" ? "task" : "bullet";
+    const selected = selectionIntersects(
+      state.selection,
+      itemPosition,
+      itemPosition + item.nodeSize,
+    );
+    units.push({
+      source: item,
+      item: selected ? convertListItemNode(item, kind) : item,
+      sourceKind,
+      kind: selected ? kind : sourceKind,
+      selected,
+    });
+    itemPosition += item.nodeSize;
+  });
+
+  const selected = units.filter((unit) => unit.selected);
+  if (selected.length === 0 || selected.every((unit) => unit.sourceKind === kind)) {
+    return false;
+  }
+  if (!dispatch) return true;
+
+  const groups: NestedListItemUnit[][] = [];
+  for (const unit of units) {
+    const previous = groups[groups.length - 1];
+    if (previous?.[0]?.kind === unit.kind) previous.push(unit);
+    else groups.push([unit]);
+  }
+
+  const replacement: ProseMirrorNode[] = [];
+  let replacementPosition = existing.position;
+  let anchor = -1;
+  let head = -1;
+  for (const group of groups) {
+    const list = createListNode(group[0]!.kind, group.map((unit) => unit.item));
+    let itemOffset = 0;
+    for (const unit of group) {
+      const paragraph = unit.item.firstChild;
+      if (paragraph?.isTextblock) {
+        const textPosition = replacementPosition + itemOffset + 3;
+        if (unit.source.firstChild === state.selection.$from.parent) {
+          anchor = textPosition + mapConvertedTextOffset(
+            state.selection.$from.parent,
+            paragraph,
+            state.selection.$from.parentOffset,
+          );
+        }
+        if (unit.source.firstChild === state.selection.$to.parent) {
+          head = textPosition + mapConvertedTextOffset(
+            state.selection.$to.parent,
+            paragraph,
+            state.selection.$to.parentOffset,
+          );
+        }
+      }
+      itemOffset += unit.item.nodeSize;
+    }
+    replacement.push(list);
+    replacementPosition += list.nodeSize;
+  }
+
+  const transaction = state.tr.replaceWith(
+    existing.position,
+    existing.position + existing.node.nodeSize,
+    replacement,
+  );
+  if (anchor >= 0) {
+    transaction.setSelection(TextSelection.create(
+      transaction.doc,
+      anchor,
+      state.selection.empty || head < 0 ? undefined : head,
+    ));
+  }
+  dispatch(transaction.scrollIntoView());
+  return true;
 }
 
 function listKind(state: EditorState): ListKind | null {
@@ -653,6 +853,7 @@ export function toggleList(
   dispatch: ((tr: Transaction) => void) | undefined,
   kind: ListKind,
 ): boolean {
+  if (convertNestedSelectedItems(state, dispatch, kind)) return true;
   if (convertSelectedUnits(state, dispatch, kind)) return true;
 
   const current = listKind(state);
@@ -660,17 +861,28 @@ export function toggleList(
     if (current === "task" && dispatch) {
       const existing = nearestList(state);
       if (!existing) return false;
+      const itemIndex = state.selection.$from.index(existing.depth);
+      const items: ProseMirrorNode[] = [];
+      existing.node.forEach((item, _offset, index) => {
+        items.push(index === itemIndex ? convertListItemNode(item, "bullet") : item);
+      });
       const transaction = state.tr.replaceWith(
         existing.position,
         existing.position + existing.node.nodeSize,
-        convertListNode(existing.node, "bullet"),
+        createListNode("bullet", items),
       );
+      restoreSelectionInReplacedList(state, transaction, existing);
       const preparedState = state.apply(transaction);
       let liftTransaction: Transaction | null = null;
       if (!liftListItem(noteSchema.nodes.list_item)(preparedState, (next) => {
         liftTransaction = next;
       }) || !liftTransaction) return false;
       for (const step of (liftTransaction as Transaction).steps) transaction.step(step);
+      transaction.setSelection(TextSelection.create(
+        transaction.doc,
+        (liftTransaction as Transaction).selection.from,
+        (liftTransaction as Transaction).selection.to,
+      ));
       dispatch(transaction.scrollIntoView());
       return true;
     }
@@ -688,6 +900,7 @@ export function toggleList(
         existing.position + existing.node.nodeSize,
         convertListNode(existing.node, kind),
       );
+      restoreSelectionInReplacedList(state, transaction, existing);
       dispatch(transaction.scrollIntoView());
     }
     return true;
@@ -718,9 +931,9 @@ class RichEditor implements EditorController {
   readonly mode = "wysiwyg" as const;
   private readonly view: EditorView;
 
-  constructor(private readonly host: HTMLElement, doc: ProseMirrorNode, private readonly callbacks: EditorCallbacks, spellcheck: boolean) {
+  constructor(private readonly host: HTMLElement, doc: ProseMirrorNode, private readonly callbacks: EditorCallbacks) {
     this.view = new EditorView(host, {
-      attributes: { spellcheck: String(spellcheck) },
+      attributes: { spellcheck: "false" },
       scrollMargin: { top: 8, right: 0, bottom: 8, left: 0 },
       state: EditorState.create({
         schema: noteSchema,
@@ -822,6 +1035,20 @@ class RichEditor implements EditorController {
           return false;
         },
       },
+      handleTextInput: (view, from, to, text) => {
+        if (!view.state.selection.empty || !exitsHighlightInput(text)) return false;
+        const markType = noteSchema.marks.highlight;
+        const activeMark = markType.isInSet(
+          view.state.storedMarks ?? view.state.selection.$from.marks(),
+        );
+        if (!activeMark) return false;
+      const transaction = view.state.tr
+        .insertText(text, from, to)
+        .removeMark(from, from + text.length, markType)
+        .removeStoredMark(markType);
+        view.dispatch(transaction);
+        return true;
+      },
       handlePaste: (view, event) => {
         const text = event.clipboardData?.getData("text/plain");
         if (text === undefined) return false;
@@ -845,8 +1072,16 @@ class RichEditor implements EditorController {
   }
 
   run(action: EditorAction): void {
+    if (action === "highlight") {
+      this.toggleHighlight(DEFAULT_HIGHLIGHT_COLOR);
+      return;
+    }
     preserveViewportDuring(this.host, () => {
-      if (action === "strong" || action === "em" || action === "strike") {
+      if (
+        action === "strong"
+        || action === "em"
+        || action === "strike"
+      ) {
         toggleMark(noteSchema.marks[action])(
           this.view.state,
           this.dispatchPreservingViewport,
@@ -861,10 +1096,72 @@ class RichEditor implements EditorController {
     this.callbacks.onSelectionChange(false);
   }
 
+  applyHighlight(color: HighlightColor): void {
+    this.updateHighlight(color, false);
+  }
+
+  toggleHighlight(color: HighlightColor): void {
+    this.updateHighlight(color, true);
+  }
+
+  highlightState(): HighlightColor | "mixed" | null {
+    const state = this.view.state;
+    const markType = noteSchema.marks.highlight;
+    if (state.selection.empty) {
+      const mark = markType.isInSet(state.storedMarks ?? state.selection.$from.marks());
+      return mark && isHighlightColor(mark.attrs.color)
+        ? mark.attrs.color
+        : null;
+    }
+
+    let selectedColor: HighlightColor | null | undefined;
+    let mixed = false;
+    let sawText = false;
+    state.doc.nodesBetween(state.selection.from, state.selection.to, (node, position) => {
+      if (!node.isText) return;
+      const from = Math.max(state.selection.from, position);
+      const to = Math.min(state.selection.to, position + node.nodeSize);
+      if (from >= to) return;
+      sawText = true;
+      const mark = markType.isInSet(node.marks);
+      const color = mark && isHighlightColor(mark.attrs.color) ? mark.attrs.color : null;
+      if (selectedColor === undefined) selectedColor = color;
+      else if (selectedColor !== color) mixed = true;
+    });
+    if (!sawText) return null;
+    return mixed ? "mixed" : selectedColor ?? null;
+  }
+
+  private updateHighlight(color: HighlightColor, toggle: boolean): void {
+    preserveViewportDuring(this.host, () => {
+      const state = this.view.state;
+      const markType = noteSchema.marks.highlight;
+      const current = this.highlightState();
+      const remove = toggle && current !== null && current !== "mixed";
+      let transaction = state.tr;
+      if (state.selection.empty) {
+        transaction = transaction.removeStoredMark(markType);
+        if (!remove) transaction = transaction.addStoredMark(markType.create({ color }));
+      } else {
+        transaction = transaction.removeMark(state.selection.from, state.selection.to, markType);
+        if (!remove) {
+          transaction = transaction.addMark(
+            state.selection.from,
+            state.selection.to,
+            markType.create({ color }),
+          );
+        }
+      }
+      this.dispatchPreservingViewport(transaction);
+      this.view.focus();
+    });
+    this.callbacks.onSelectionChange(false);
+  }
+
   activeActions(): Set<EditorAction> {
     const active = new Set<EditorAction>();
     const state = this.view.state;
-    for (const markName of ["strong", "em", "strike"] as const) {
+    for (const markName of ["strong", "em", "strike", "highlight"] as const) {
       const mark = noteSchema.marks[markName];
       if (state.selection.empty ? mark.isInSet(state.storedMarks ?? state.selection.$from.marks()) : state.doc.rangeHasMark(state.selection.from, state.selection.to, mark)) {
         active.add(markName);
@@ -874,10 +1171,6 @@ class RichEditor implements EditorController {
     const kind = listKind(state);
     if (kind) active.add(kind);
     return active;
-  }
-
-  setSpellcheck(enabled: boolean): void {
-    this.view.dom.spellcheck = enabled;
   }
 
   undo(): boolean {
@@ -958,11 +1251,11 @@ class RawEditor implements EditorController {
   readonly mode = "raw" as const;
   private readonly textarea: HTMLTextAreaElement;
 
-  constructor(host: HTMLElement, content: string, callbacks: EditorCallbacks, spellcheck: boolean) {
+  constructor(host: HTMLElement, content: string, callbacks: EditorCallbacks) {
     this.textarea = document.createElement("textarea");
     this.textarea.className = "raw-editor";
     this.textarea.value = content;
-    this.textarea.setAttribute("spellcheck", String(spellcheck));
+    this.textarea.setAttribute("spellcheck", "false");
     this.textarea.addEventListener("input", () => callbacks.onChange(this.textarea.value));
     this.textarea.addEventListener("focus", () => callbacks.onFocusChange(true));
     this.textarea.addEventListener("blur", () => callbacks.onFocusChange(false));
@@ -979,8 +1272,12 @@ class RawEditor implements EditorController {
     return new Set();
   }
 
-  setSpellcheck(enabled: boolean): void {
-    this.textarea.spellcheck = enabled;
+  applyHighlight(_color: HighlightColor): void {}
+
+  toggleHighlight(_color: HighlightColor): void {}
+
+  highlightState(): HighlightColor | "mixed" | null {
+    return null;
   }
 
   undo(): boolean {
@@ -1010,17 +1307,16 @@ export function createEditor(
   host: HTMLElement,
   markdown: string,
   callbacks: EditorCallbacks,
-  spellcheck = false,
 ): { controller: EditorController; snapshot: EditorSnapshot } {
   const parsed = parseMarkdown(markdown);
   if (parsed.mode === "raw") {
     return {
-      controller: new RawEditor(host, parsed.markdown, callbacks, spellcheck),
+      controller: new RawEditor(host, parsed.markdown, callbacks),
       snapshot: { mode: "raw", markdown: parsed.markdown, rawReason: parsed.reason },
     };
   }
   return {
-    controller: new RichEditor(host, parsed.doc, callbacks, spellcheck),
+    controller: new RichEditor(host, parsed.doc, callbacks),
     snapshot: { mode: "wysiwyg", markdown: parsed.markdown },
   };
 }

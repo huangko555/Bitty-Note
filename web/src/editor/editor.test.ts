@@ -233,6 +233,204 @@ describe("task checkbox rendering", () => {
     host.remove();
   });
 
+  it("applies highlight formatting and saves double equals markers", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const { controller } = createEditor(host, "高亮正文\n", {
+      onChange: () => {},
+      onFocusChange: () => {},
+      onSelectionChange: () => {},
+    });
+    const view = (controller as unknown as { view: EditorView }).view;
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, 3)));
+
+    controller.run("highlight");
+
+    expect(controller.getMarkdown()).toBe("==高亮==正文\n");
+    expect(controller.activeActions()).toContain("highlight");
+    expect(host.querySelector("mark.text-highlight")?.textContent).toBe("高亮");
+    controller.destroy();
+    host.remove();
+  });
+
+  it("applies, reports, replaces, and removes named highlight colors", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const { controller } = createEditor(host, "高亮正文\n", {
+      onChange: () => {},
+      onFocusChange: () => {},
+      onSelectionChange: () => {},
+    });
+    const view = (controller as unknown as { view: EditorView }).view;
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, 3)));
+
+    controller.applyHighlight("red");
+    expect(controller.getMarkdown()).toBe("=={red}高亮==正文\n");
+    expect(controller.highlightState()).toBe("red");
+    expect(host.querySelector("mark.text-highlight")?.getAttribute("data-highlight-color"))
+      .toBe("red");
+
+    controller.applyHighlight("blue");
+    expect(controller.getMarkdown()).toBe("=={blue}高亮==正文\n");
+    expect(controller.highlightState()).toBe("blue");
+
+    controller.toggleHighlight("yellow");
+    expect(controller.getMarkdown()).toBe("高亮正文\n");
+    expect(controller.highlightState()).toBeNull();
+    controller.destroy();
+    host.remove();
+  });
+
+  it("normalizes a mixed selection to the preferred highlight color", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const { controller } = createEditor(host, "红色普通\n", {
+      onChange: () => {},
+      onFocusChange: () => {},
+      onSelectionChange: () => {},
+    });
+    const view = (controller as unknown as { view: EditorView }).view;
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, 3)));
+    controller.applyHighlight("red");
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, 5)));
+
+    expect(controller.highlightState()).toBe("mixed");
+    controller.toggleHighlight("yellow");
+
+    expect(controller.getMarkdown()).toBe("=={yellow}红色普通==\n");
+    expect(controller.highlightState()).toBe("yellow");
+    controller.destroy();
+    host.remove();
+  });
+
+  it("reopens overlapping highlight edits without exposing Markdown markers", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const { controller } = createEditor(host, "前中后\n", {
+      onChange: () => {},
+      onFocusChange: () => {},
+      onSelectionChange: () => {},
+    });
+    const view = (controller as unknown as { view: EditorView }).view;
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, 4)));
+    controller.applyHighlight("red");
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 2, 3)));
+    controller.applyHighlight("blue");
+    const saved = controller.getMarkdown();
+    expect(saved).toBe("=={red}前===={blue}中===={red}后==\n");
+    controller.destroy();
+    host.remove();
+
+    const reopenedHost = document.createElement("div");
+    document.body.append(reopenedHost);
+    const { controller: reopened } = createEditor(reopenedHost, saved, {
+      onChange: () => {},
+      onFocusChange: () => {},
+      onSelectionChange: () => {},
+    });
+    const segments = [...reopenedHost.querySelectorAll<HTMLElement>("mark.text-highlight")]
+      .map((mark) => [mark.textContent, mark.dataset.highlightColor]);
+
+    expect(reopenedHost.querySelector(".ProseMirror")?.textContent).toBe("前中后");
+    expect(segments).toEqual([
+      ["前", "red"],
+      ["中", "blue"],
+      ["后", "red"],
+    ]);
+    expect(reopened.getMarkdown()).toBe(saved);
+    reopened.destroy();
+    reopenedHost.remove();
+  });
+
+  it("reopens four sequentially nested highlight colors without marker pollution", () => {
+    const text = "改变列表模式后光标会移到下一行（子列表？）";
+    const host = document.createElement("div");
+    document.body.append(host);
+    const { controller } = createEditor(host, `- [ ] ${text}\n`, {
+      onChange: () => {},
+      onFocusChange: () => {},
+      onSelectionChange: () => {},
+    });
+    const view = (controller as unknown as { view: EditorView }).view;
+    let paragraphPosition = -1;
+    view.state.doc.descendants((node, position) => {
+      if (node.type === noteSchema.nodes.paragraph && node.textContent === text) {
+        paragraphPosition = position;
+      }
+    });
+    const textStart = paragraphPosition + 1;
+    const apply = (from: number, to: number, color: "red" | "yellow" | "blue" | "green") => {
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(
+        view.state.doc,
+        textStart + from,
+        textStart + to,
+      )));
+      controller.applyHighlight(color);
+    };
+    apply(1, 16, "red");
+    apply(3, 13, "yellow");
+    apply(4, 10, "blue");
+    apply(6, 8, "green");
+    const saved = controller.getMarkdown();
+    expect(saved).toBe(
+      "- [ ] 改=={red}变列===={yellow}表===={blue}模式====后光===={blue}标会===={yellow}移到下===={red}一行（==子列表？）\n",
+    );
+    controller.destroy();
+    host.remove();
+
+    const reopenedHost = document.createElement("div");
+    document.body.append(reopenedHost);
+    const { controller: reopened } = createEditor(reopenedHost, saved, {
+      onChange: () => {},
+      onFocusChange: () => {},
+      onSelectionChange: () => {},
+    });
+    const segments = [...reopenedHost.querySelectorAll<HTMLElement>("mark.text-highlight")]
+      .map((mark) => [mark.textContent, mark.dataset.highlightColor]);
+
+    expect(reopenedHost.querySelector(".ProseMirror")?.textContent).toBe(text);
+    expect(segments).toEqual([
+      ["变列", "red"],
+      ["表", "yellow"],
+      ["模式", "blue"],
+      ["后光", "green"],
+      ["标会", "blue"],
+      ["移到下", "yellow"],
+      ["一行（", "red"],
+    ]);
+    expect(reopened.getMarkdown()).toBe(saved);
+    reopened.destroy();
+    reopenedHost.remove();
+  });
+
+  it.each([" ", "。", ","])(
+    "ends highlight input before inserting the delimiter %j",
+    (delimiter) => {
+      const host = document.createElement("div");
+      document.body.append(host);
+      const { controller } = createEditor(host, "", {
+        onChange: () => {},
+        onFocusChange: () => {},
+        onSelectionChange: () => {},
+      });
+      const view = (controller as unknown as { view: EditorView }).view;
+      controller.toggleHighlight("red");
+      view.dispatch(view.state.tr.insertText("高亮"));
+      const position = view.state.selection.from;
+
+      const handled = view.someProp("handleTextInput", (handler) =>
+        handler(view, position, position, delimiter, () =>
+          view.state.tr.insertText(delimiter, position, position)));
+      expect(handled).toBe(true);
+      view.dispatch(view.state.tr.insertText("普通"));
+
+      expect(controller.getMarkdown()).toBe(`=={red}高亮==${delimiter}普通\n`);
+      expect(controller.highlightState()).toBeNull();
+      controller.destroy();
+      host.remove();
+    },
+  );
+
   it("preserves the viewport intent when folding is undone and redone", () => {
     const host = document.createElement("div");
     document.body.append(host);
@@ -279,18 +477,38 @@ describe("task checkbox rendering", () => {
     host.remove();
   });
 
-  it("updates spell checking without recreating the editor", () => {
+  it("keeps highlight color markers unchanged when a task is checked", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const markdown = "- [ ] =={red}红色===={blue}蓝色==\n";
+    const { controller } = createEditor(host, markdown, {
+      onChange: () => {},
+      onFocusChange: () => {},
+      onSelectionChange: () => {},
+    });
+
+    host.querySelector<HTMLInputElement>("[data-task-checkbox]")!.click();
+
+    expect(controller.getMarkdown()).toBe("- [x] =={red}红色===={blue}蓝色==\n");
+    expect(
+      [...host.querySelectorAll<HTMLElement>("mark.text-highlight")]
+        .map((mark) => mark.dataset.highlightColor),
+    ).toEqual(["red", "blue"]);
+
+    controller.destroy();
+    host.remove();
+  });
+
+  it("keeps browser spell checking disabled in the rich editor", () => {
     const host = document.createElement("div");
     document.body.append(host);
     const { controller } = createEditor(host, "Text\n", {
       onChange: () => {},
       onFocusChange: () => {},
       onSelectionChange: () => {},
-    }, false);
+    });
 
-    controller.setSpellcheck(true);
-
-    expect(host.querySelector<HTMLElement>(".ProseMirror")?.spellcheck).toBe(true);
+    expect(host.querySelector(".ProseMirror")?.getAttribute("spellcheck")).toBe("false");
 
     controller.destroy();
     host.remove();
@@ -365,23 +583,6 @@ describe("task checkbox rendering", () => {
     expect(view.state.selection.$from.parent.textContent).toBe("body");
     expect(view.state.selection.$from.parentOffset).toBe(4);
     expect(document.activeElement).toBe(view.dom);
-
-    controller.destroy();
-    host.remove();
-  });
-});
-
-describe("spell checking", () => {
-  it("applies the preference to the editor", () => {
-    const host = document.createElement("div");
-    document.body.append(host);
-    const { controller } = createEditor(host, "正文", {
-      onChange: () => {},
-      onFocusChange: () => {},
-      onSelectionChange: () => {},
-    }, true);
-
-    expect(host.querySelector(".ProseMirror")?.getAttribute("spellcheck")).toBe("true");
 
     controller.destroy();
     host.remove();
@@ -599,6 +800,81 @@ function nestedListState(): EditorState {
   });
 }
 
+function nestedListWithFollowingItemState(): EditorState {
+  const childParagraph = noteSchema.nodes.paragraph.create(null, noteSchema.text("子项"));
+  const childItem = noteSchema.nodes.list_item.create({ checked: null }, childParagraph);
+  const childList = noteSchema.nodes.bullet_list.create(null, childItem);
+  const parentParagraph = noteSchema.nodes.paragraph.create(null, noteSchema.text("父项"));
+  const parentItem = noteSchema.nodes.list_item.create(
+    { checked: null },
+    [parentParagraph, childList],
+  );
+  const followingItem = noteSchema.nodes.list_item.create(
+    { checked: null },
+    noteSchema.nodes.paragraph.create(null, noteSchema.text("后项")),
+  );
+  const list = noteSchema.nodes.ordered_list.create({ order: 1 }, [parentItem, followingItem]);
+  const doc = noteSchema.nodes.doc.create(null, list);
+  let childPosition = -1;
+  doc.descendants((node, position) => {
+    if (node.type === noteSchema.nodes.paragraph && node.textContent === "子项") {
+      childPosition = position;
+    }
+  });
+  return EditorState.create({
+    doc,
+    selection: TextSelection.create(doc, childPosition + 2),
+  });
+}
+
+function nestedSiblingItemsState(
+  kind: ListKind,
+  fromText = "子项一",
+  fromOffset = 1,
+  toText = fromText,
+  toOffset = fromOffset,
+): EditorState {
+  const paragraph = (text: string) => noteSchema.nodes.paragraph.create(
+    null,
+    noteSchema.text(text),
+  );
+  const checked = kind === "task" ? [true, false] : [null, null];
+  const children = ["子项一", "子项二"].map((text, index) =>
+    noteSchema.nodes.list_item.create(
+      { checked: checked[index], collapsed: false },
+      paragraph(text),
+    ),
+  );
+  const childList = (kind === "ordered"
+    ? noteSchema.nodes.ordered_list
+    : noteSchema.nodes.bullet_list).create(
+    kind === "ordered" ? { order: 1 } : undefined,
+    children,
+  );
+  const parent = noteSchema.nodes.list_item.create(
+    { checked: null, collapsed: false },
+    [paragraph("父项"), childList],
+  );
+  const following = noteSchema.nodes.list_item.create(
+    { checked: null, collapsed: false },
+    paragraph("后项"),
+  );
+  const outer = noteSchema.nodes.ordered_list.create({ order: 1 }, [parent, following]);
+  const doc = noteSchema.nodes.doc.create(null, outer);
+  const positions = new Map<string, number>();
+  doc.descendants((node, position) => {
+    if (node.type === noteSchema.nodes.paragraph) positions.set(node.textContent, position);
+  });
+  return EditorState.create({
+    doc,
+    selection: TextSelection.create(
+      doc,
+      positions.get(fromText)! + 1 + fromOffset,
+      positions.get(toText)! + 1 + toOffset,
+    ),
+  });
+}
+
 function adjacentDifferentListState(): EditorState {
   const createItem = (text: string, checked: boolean | null = null) =>
     noteSchema.nodes.list_item.create(
@@ -734,6 +1010,131 @@ describe("nested list types", () => {
     expect(outer.type).toBe(noteSchema.nodes.ordered_list);
     expect(inner.type).toBe(noteSchema.nodes.bullet_list);
     expect(inner.firstChild?.attrs.checked).toBe(false);
+  });
+
+  it("keeps the cursor in a nested item when a following sibling exists", () => {
+    const state = nestedListWithFollowingItemState();
+    let converted = state;
+
+    expect(toggleList(state, (transaction) => {
+      converted = state.apply(transaction);
+    }, "ordered")).toBe(true);
+
+    expect(converted.selection.$from.parent.textContent).toBe("子项");
+    expect(converted.selection.$from.parentOffset).toBe(1);
+  });
+
+  it("removes a nested task item without changing the following outer item", () => {
+    const state = nestedSiblingItemsState("task");
+    let converted = state;
+
+    expect(toggleList(state, (transaction) => {
+      converted = state.apply(transaction);
+    }, "task")).toBe(true);
+
+    const outer = converted.doc.firstChild!;
+    expect(outer.type).toBe(noteSchema.nodes.ordered_list);
+    expect(outer.childCount).toBe(3);
+    expect(outer.child(0).firstChild?.textContent).toBe("父项");
+    expect(outer.child(1).firstChild?.textContent).toBe("[✓] 子项一");
+    expect(outer.child(1).lastChild?.textContent).toBe("子项二");
+    expect(outer.child(1).lastChild?.lastChild?.attrs.checked).toBe(false);
+    expect(outer.child(2).firstChild?.textContent).toBe("后项");
+    expect(converted.selection.$from.parent.textContent).toBe("[✓] 子项一");
+    expect(converted.selection.$from.parentOffset).toBe(5);
+  });
+
+  it("changes only the current nested item type", () => {
+    const state = nestedSiblingItemsState("bullet");
+    let converted = state;
+
+    expect(toggleList(state, (transaction) => {
+      converted = state.apply(transaction);
+    }, "ordered")).toBe(true);
+
+    const parent = converted.doc.firstChild!.firstChild!;
+    expect(parent.childCount).toBe(3);
+    expect(parent.child(1).type).toBe(noteSchema.nodes.ordered_list);
+    expect(parent.child(1).textContent).toBe("子项一");
+    expect(parent.child(2).type).toBe(noteSchema.nodes.bullet_list);
+    expect(parent.child(2).textContent).toBe("子项二");
+    expect(converted.selection.$from.parent.textContent).toBe("子项一");
+    expect(converted.selection.$from.parentOffset).toBe(1);
+  });
+
+  it("changes a selected nested range without lifting its parent", () => {
+    const state = nestedSiblingItemsState("bullet", "子项一", 0, "子项二", 3);
+    let converted = state;
+
+    expect(toggleList(state, (transaction) => {
+      converted = state.apply(transaction);
+    }, "ordered")).toBe(true);
+
+    const outer = converted.doc.firstChild!;
+    const parent = outer.firstChild!;
+    expect(outer.type).toBe(noteSchema.nodes.ordered_list);
+    expect(outer.childCount).toBe(2);
+    expect(parent.firstChild?.textContent).toBe("父项");
+    expect(parent.lastChild?.type).toBe(noteSchema.nodes.ordered_list);
+    expect(parent.lastChild?.childCount).toBe(2);
+    expect(converted.selection.$from.parent.textContent).toBe("子项一");
+    expect(converted.selection.$to.parent.textContent).toBe("子项二");
+  });
+
+  it("keeps the caret beside task text when adding a completion prefix", () => {
+    const state = nestedSiblingItemsState("task", "子项一", 2);
+    let converted = state;
+
+    expect(toggleList(state, (transaction) => {
+      converted = state.apply(transaction);
+    }, "ordered")).toBe(true);
+
+    expect(converted.selection.$from.parent.textContent).toBe("[✓] 子项一");
+    expect(converted.selection.$from.parentOffset).toBe(6);
+  });
+
+  it("indents across different list types at a nested level", () => {
+    const paragraph = (text: string) => noteSchema.nodes.paragraph.create(
+      null,
+      noteSchema.text(text),
+    );
+    const item = (text: string) => noteSchema.nodes.list_item.create(
+      { checked: null, collapsed: false },
+      paragraph(text),
+    );
+    const previous = noteSchema.nodes.bullet_list.create(null, item("前项"));
+    const current = noteSchema.nodes.ordered_list.create({ order: 1 }, item("当前项"));
+    const parent = noteSchema.nodes.list_item.create(
+      { checked: null, collapsed: false },
+      [paragraph("父项"), previous, current],
+    );
+    const doc = noteSchema.nodes.doc.create(
+      null,
+      noteSchema.nodes.bullet_list.create(null, parent),
+    );
+    let currentPosition = -1;
+    doc.descendants((node, position) => {
+      if (node.type === noteSchema.nodes.paragraph && node.textContent === "当前项") {
+        currentPosition = position;
+      }
+    });
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, currentPosition + 1),
+    });
+    let indented = state;
+
+    expect(sinkListItemAcrossTypes(state, (transaction) => {
+      indented = state.apply(transaction);
+    })).toBe(true);
+
+    const nextParent = indented.doc.firstChild!.firstChild!;
+    expect(nextParent.childCount).toBe(2);
+    expect(nextParent.lastChild?.type).toBe(noteSchema.nodes.bullet_list);
+    expect(nextParent.lastChild?.firstChild?.lastChild?.type)
+      .toBe(noteSchema.nodes.ordered_list);
+    expect(nextParent.lastChild?.firstChild?.lastChild?.textContent).toBe("当前项");
+    expect(indented.selection.$from.parent.textContent).toBe("当前项");
   });
 
   it("round-trips mixed nested list types", () => {

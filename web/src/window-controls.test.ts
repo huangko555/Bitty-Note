@@ -1,8 +1,36 @@
 import { describe, expect, it } from "vitest";
 
-import { prepareForWindowMinimize, syncPinButtons } from "./window-controls";
+import {
+  prepareForWindowMinimize,
+  prepareForWindowStartup,
+  syncPinButtons,
+} from "./window-controls";
 
 describe("window controls", () => {
+  it("suppresses restored title focus only until the first real input", () => {
+    const root = document.createElement("div");
+    const pointerSource = new EventTarget();
+    const titleBar = document.createElement("header");
+    const button = document.createElement("button");
+    titleBar.className = "title-bar";
+    titleBar.append(button);
+    document.body.append(titleBar);
+
+    const release = prepareForWindowStartup(root, pointerSource, document);
+    button.focus();
+
+    expect(document.activeElement).not.toBe(button);
+    expect(root.classList.contains("window-hover-suppressed")).toBe(true);
+
+    pointerSource.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab" }));
+    button.focus();
+
+    expect(root.classList.contains("window-hover-suppressed")).toBe(false);
+    expect(document.activeElement).toBe(button);
+    release();
+    titleBar.remove();
+  });
+
   it("keeps stale hover suppressed until the pointer moves after focus returns", () => {
     const root = document.createElement("div");
     const button = document.createElement("button");

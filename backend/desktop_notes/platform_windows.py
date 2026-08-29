@@ -15,6 +15,9 @@ from .i18n import text as message
 _APP_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 _APP_RUN_NAME = "Bitty"
 _LEGACY_APP_RUN_NAME = "DesktopNotes"
+_GWL_STYLE = -16
+_WS_MINIMIZEBOX = 0x00020000
+_WS_SYSMENU = 0x00080000
 _WINDOW_REGIONS = {
     "caption",
     "left",
@@ -97,6 +100,41 @@ def focus_window(window: object) -> None:
     handle = int(handle_object.ToInt64())
     ctypes.windll.user32.ShowWindowAsync(handle, 9)  # SW_RESTORE
     ctypes.windll.user32.SetForegroundWindow(handle)
+
+
+def _get_window_style(handle: int) -> int:
+    get_window_long = ctypes.windll.user32.GetWindowLongW
+    get_window_long.argtypes = [ctypes.wintypes.HWND, ctypes.c_int]
+    get_window_long.restype = ctypes.c_long
+    return int(get_window_long(handle, _GWL_STYLE)) & 0xFFFFFFFF
+
+
+def _set_window_style(handle: int, style: int) -> None:
+    set_window_long = ctypes.windll.user32.SetWindowLongW
+    set_window_long.argtypes = [ctypes.wintypes.HWND, ctypes.c_int, ctypes.c_long]
+    set_window_long.restype = ctypes.c_long
+    set_window_long(handle, _GWL_STYLE, style)
+
+
+def enable_taskbar_minimize(window: object) -> None:
+    """Keep shell minimize semantics on pywebview's borderless WinForms window."""
+    if sys.platform != "win32":
+        return
+
+    native = getattr(window, "native", None)
+    handle_object = getattr(native, "Handle", None)
+    if handle_object is None:
+        return
+
+    handle = int(handle_object.ToInt64())
+    style = _get_window_style(handle)
+    required = _WS_SYSMENU | _WS_MINIMIZEBOX
+    if style & required != required:
+        # FormBorderStyle.None removes these flags even though Bitty still
+        # supports minimization through its custom title bar. Restoring only
+        # these flags lets the Windows taskbar toggle an active window without
+        # bringing back a native caption or resize frame.
+        _set_window_style(handle, style | required)
 
 
 def move_window_to_physical(window: object, x: int, y: int) -> None:
@@ -262,6 +300,15 @@ def start_window_interaction(window: object, region: str) -> WindowInteraction:
 
 
 def update_window_interaction(interaction: WindowInteraction) -> None:
+    get_async_key_state = ctypes.windll.user32.GetAsyncKeyState
+    get_async_key_state.argtypes = [ctypes.c_int]
+    get_async_key_state.restype = ctypes.c_short
+    if not (get_async_key_state(0x01) & 0x8000):  # VK_LBUTTON
+        # Pointer capture can be lost while an asynchronously positioned
+        # frameless window is moving. Never let a missed browser pointer-up
+        # keep moving or resizing the window after the physical button is up.
+        return
+
     cursor = ctypes.wintypes.POINT()
     if not ctypes.windll.user32.GetCursorPos(ctypes.byref(cursor)):
         return

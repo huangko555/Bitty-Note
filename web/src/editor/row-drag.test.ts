@@ -334,6 +334,27 @@ describe("row dragging", () => {
     )).toEqual(["子项一", "子项二", "移动项"]);
   });
 
+  it("appends inside mixed child lists without changing the source type", () => {
+    const parent = item("父项", null, [
+      bulletList([item("无序子项")]),
+      orderedList([item("有序子项")]),
+    ]);
+    const doc = noteSchema.nodes.doc.create(null, [
+      bulletList([parent]),
+      orderedList([item("移动有序项")]),
+    ]);
+
+    const next = moved(doc, "移动有序项", "父项", "inside");
+    const movedParent = next.doc.firstChild!.firstChild!;
+    const lastChildList = movedParent.lastChild!;
+
+    expect(movedParent.childCount).toBe(3);
+    expect(lastChildList.type).toBe(noteSchema.nodes.ordered_list);
+    expect(Array.from({ length: lastChildList.childCount }, (_, index) =>
+      lastChildList.child(index).firstChild?.textContent,
+    )).toEqual(["有序子项", "移动有序项"]);
+  });
+
   it("expands a collapsed list target when content is dropped inside", () => {
     const nested = bulletList([item("原子项")]);
     const parent = noteSchema.nodes.list_item.create(

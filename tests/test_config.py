@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
+from desktop_notes.bridge import DesktopBridge
 from desktop_notes.config import ConfigStore
 
 
@@ -18,10 +21,10 @@ def test_existing_config_gets_editor_defaults(tmp_path: Path) -> None:
     assert config.autostart is True
     assert config.editor_font == "DengXian"
     assert config.editor_font_size == 14
-    assert config.spellcheck is False
     assert config.heading_divider is True
     assert config.heading_list_highlight is True
     assert config.editor_highlight_color == "#456FC4"
+    assert config.text_highlight_color == "red"
     assert config.language == "en"
     assert config.window_width == 350
     assert config.window_height == 530
@@ -71,14 +74,16 @@ def test_heading_divider_preference_is_persisted(tmp_path: Path) -> None:
     assert reloaded.heading_divider is False
 
 
-def test_spellcheck_preference_is_persisted(tmp_path: Path) -> None:
+def test_legacy_spellcheck_preference_is_ignored(tmp_path: Path) -> None:
     config_path = tmp_path / "config.json"
-    store = ConfigStore(config_path, tmp_path / "notes")
+    config_path.write_text(
+        json.dumps({"save_dir": str(tmp_path / "notes"), "spellcheck": True}),
+        encoding="utf-8",
+    )
 
-    store.update(spellcheck=True)
-    reloaded = ConfigStore(config_path, tmp_path / "notes").config
+    config = ConfigStore(config_path, tmp_path / "fallback").config
 
-    assert reloaded.spellcheck is True
+    assert "spellcheck" not in config.to_dict()
 
 
 def test_heading_list_highlight_preference_is_persisted(tmp_path: Path) -> None:
@@ -119,6 +124,30 @@ def test_invalid_editor_highlight_color_falls_back_without_discarding_config(
 
     assert config.autostart is False
     assert config.editor_highlight_color == "#456FC4"
+
+
+def test_text_highlight_color_is_validated_and_persisted(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.json"
+    store = ConfigStore(config_path, tmp_path / "notes")
+
+    store.update(text_highlight_color="blue")
+    assert ConfigStore(config_path, tmp_path / "notes").config.text_highlight_color == "blue"
+
+    config_path.write_text(
+        json.dumps({"save_dir": str(tmp_path / "notes"), "text_highlight_color": "orange"}),
+        encoding="utf-8",
+    )
+    assert ConfigStore(config_path, tmp_path / "notes").config.text_highlight_color == "red"
+
+
+def test_text_highlight_color_bridge_rejects_unsupported_colors(tmp_path: Path) -> None:
+    store = ConfigStore(tmp_path / "config.json", tmp_path / "notes")
+    bridge = DesktopBridge(store)
+
+    assert bridge.set_text_highlight_color("blue") == {"color": "blue"}
+    assert store.config.text_highlight_color == "blue"
+    with pytest.raises(ValueError, match="Unsupported text highlight color"):
+        bridge.set_text_highlight_color("orange")
 
 
 def test_legacy_font_id_is_migrated(tmp_path: Path) -> None:

@@ -1,4 +1,8 @@
-import MarkdownIt from "markdown-it";
+import MarkdownIt, {
+  type Delimiter,
+  type MarkdownIt as MarkdownItInstance,
+  type StateInline,
+} from "markdown-it";
 import taskLists from "markdown-it-task-lists";
 import {
   DOMParser as ProseMirrorDOMParser,
@@ -7,6 +11,10 @@ import {
 } from "prosemirror-model";
 import { MarkdownSerializer } from "prosemirror-markdown";
 
+import {
+  DEFAULT_HIGHLIGHT_COLOR,
+  isHighlightColor,
+} from "./highlight";
 import { noteSchema } from "./schema";
 import { t } from "../i18n";
 
@@ -16,11 +24,117 @@ export const FOLDED_MARKER = "<!-- bitty-folded -->";
 const FOLDED_SENTINEL = "BITTY_FOLDED_ROW_7F4D";
 const FOLDED_MARKER_PATTERN = /^(\s*(?:#\s+|(?:[-+*]|\d+[.)])\s+(?:\[[ xX]\]\s+)?))<!-- bitty-folded -->\s?/gm;
 
+function highlightTokenize(state: StateInline, silent: boolean): boolean {
+  const marker = state.src.charCodeAt(state.pos);
+  if (silent || marker !== 61) return false;
+  const scanned = state.scanDelims(state.pos, true);
+  let length = scanned.length;
+  if (length < 2) return false;
+
+  const colorPrefix = length >= 2
+    ? state.src.slice(state.pos + length).match(/^\{([^}]+)\}/)
+    : null;
+  if (colorPrefix && !isHighlightColor(colorPrefix[1])) return false;
+  const color = colorPrefix?.[1];
+  const hasHighlightOpener = state.delimiters.some((delimiter) =>
+    delimiter.marker === marker && delimiter.open && delimiter.end === -1,
+  );
+  const nextCharacter = state.src.charAt(
+    state.pos + scanned.length + (colorPrefix?.[0].length ?? 0),
+  );
+  const canOpenPlain = scanned.can_open
+    || (nextCharacter !== "" && !/\s/u.test(nextCharacter));
+  const canClosePlain = scanned.can_close || hasHighlightOpener;
+
+  if (length % 2) {
+    const textMarker = state.push("text", "", 0);
+    textMarker.content = "=";
+    length -= 1;
+  }
+  const pairCount = length / 2;
+  // Adjacent highlights serialize as `===={blue}`. The first pair closes the
+  // previous color and the last opens the next; the color prefix also forces
+  // opening because scanDelims sees `{` rather than the highlighted text.
+  const splitBoundary = pairCount > 1;
+  for (let index = 0; index < length; index += 2) {
+    const pairIndex = index / 2;
+    const isFirstPair = pairIndex === 0;
+    const isLastPair = pairIndex === pairCount - 1;
+    const ownsColorPrefix = color !== undefined && isLastPair;
+    const textMarker = state.push("text", "", 0);
+    textMarker.content = "==";
+    if (ownsColorPrefix) textMarker.attrSet("data-highlight-color", color);
+    const delimiterTokenIndex = state.tokens.length - 1;
+    state.delimiters.push({
+      marker,
+      length: 0,
+      ["token"]: delimiterTokenIndex,
+      end: -1,
+      open: splitBoundary ? isLastPair : ownsColorPrefix || canOpenPlain,
+      close: splitBoundary ? isFirstPair : !ownsColorPrefix && canClosePlain,
+    });
+  }
+  state.pos += scanned.length + (colorPrefix?.[0].length ?? 0);
+  return true;
+}
+
+function processHighlightDelimiters(state: StateInline, delimiters: Delimiter[]): void {
+  const loneMarkers: number[] = [];
+  for (const startDelimiter of delimiters) {
+    if (startDelimiter.marker !== 61 || startDelimiter.end === -1) continue;
+    const endDelimiter = delimiters[startDelimiter.end];
+    if (!endDelimiter) continue;
+    const opening = state.tokens[startDelimiter.token];
+    const closing = state.tokens[endDelimiter.token];
+    if (!opening || !closing) continue;
+
+    opening.type = "mark_open";
+    opening.tag = "mark";
+    opening.nesting = 1;
+    opening.markup = "==";
+    opening.content = "";
+    closing.type = "mark_close";
+    closing.tag = "mark";
+    closing.nesting = -1;
+    closing.markup = "==";
+    closing.content = "";
+    const previous = state.tokens[endDelimiter.token - 1];
+    if (previous?.type === "text" && previous.content === "=") {
+      loneMarkers.push(endDelimiter.token - 1);
+    }
+  }
+
+  while (loneMarkers.length) {
+    const index = loneMarkers.pop()!;
+    let closingIndex = index + 1;
+    while (state.tokens[closingIndex]?.type === "mark_close") closingIndex += 1;
+    closingIndex -= 1;
+    if (index === closingIndex) continue;
+    const marker = state.tokens[index];
+    const closing = state.tokens[closingIndex];
+    if (!marker || !closing) continue;
+    state.tokens[index] = closing;
+    state.tokens[closingIndex] = marker;
+  }
+}
+
+function highlightPostProcess(state: StateInline): void {
+  processHighlightDelimiters(state, state.delimiters);
+  for (const metadata of state.tokens_meta) {
+    if (metadata?.delimiters) processHighlightDelimiters(state, metadata.delimiters);
+  }
+}
+
+function highlightPlugin(markdown: MarkdownItInstance): void {
+  markdown.inline.ruler.before("emphasis", "highlight", highlightTokenize);
+  markdown.inline.ruler2.before("fragments_join", "highlight", highlightPostProcess);
+}
+
 const inspector = new MarkdownIt("commonmark", {
   html: true,
   linkify: false,
   typographer: false,
-}).enable("strikethrough");
+}).enable("strikethrough").use(highlightPlugin);
 
 const renderer = new MarkdownIt("commonmark", {
   html: false,
@@ -28,6 +142,7 @@ const renderer = new MarkdownIt("commonmark", {
   typographer: false,
 })
   .enable("strikethrough")
+  .use(highlightPlugin)
   .use(taskLists, { enabled: true, label: false });
 
 const blockTokens = new Set([
@@ -52,6 +167,8 @@ const inlineTokens = new Set([
   "em_close",
   "s_open",
   "s_close",
+  "mark_open",
+  "mark_close",
 ]);
 
 const serializer = new MarkdownSerializer(
@@ -109,6 +226,14 @@ const serializer = new MarkdownSerializer(
     strike: {
       open: "~~",
       close: "~~",
+      mixable: true,
+      expelEnclosingWhitespace: true,
+    },
+    highlight: {
+      open: (_state, mark) => mark.attrs.color === DEFAULT_HIGHLIGHT_COLOR
+        ? "=="
+        : `=={${String(mark.attrs.color)}}`,
+      close: "==",
       mixable: true,
       expelEnclosingWhitespace: true,
     },

@@ -14,6 +14,10 @@ import {
   type EditorController,
 } from "./editor/editor";
 import {
+  HIGHLIGHT_COLORS,
+  type HighlightColor,
+} from "./editor/highlight";
+import {
   createSelectionVisibilityCoordinator,
   trackWindowActivity,
 } from "./editor/selection-visibility";
@@ -29,7 +33,11 @@ import type {
   SaveResult,
   UpdateState,
 } from "./types";
-import { prepareForWindowMinimize, syncPinButtons } from "./window-controls";
+import {
+  prepareForWindowMinimize,
+  prepareForWindowStartup,
+  syncPinButtons,
+} from "./window-controls";
 import {
   clearRenameFailure,
   showRenameFailure,
@@ -38,6 +46,7 @@ import {
 
 const app = document.querySelector<HTMLElement>("#app")!;
 trackWindowActivity(window);
+prepareForWindowStartup();
 
 let api: DesktopApi;
 let config: AppConfig;
@@ -55,6 +64,7 @@ let archiveTimer: number | null = null;
 let deleteCandidate: string | null = null;
 let deleteTimer: number | null = null;
 let editorPreferenceSave: Promise<void> = Promise.resolve();
+let textHighlightColorSave: Promise<void> = Promise.resolve();
 let systemFonts: string[] = [];
 let overlayScrollbarCleanup: (() => void) | null = null;
 let toolbarInteractionCleanup: (() => void) | null = null;
@@ -92,6 +102,21 @@ function queueEditorPreferenceSave(): void {
     .catch(showError);
 }
 
+function setPreferredTextHighlightColor(color: HighlightColor): void {
+  config.text_highlight_color = color;
+  updateToolbar();
+  textHighlightColorSave = textHighlightColorSave
+    .catch(() => {})
+    .then(async () => {
+      const saved = await api.setTextHighlightColor(color);
+      if (config.text_highlight_color === color) {
+        config.text_highlight_color = saved;
+        updateToolbar();
+      }
+    })
+    .catch(showError);
+}
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -106,9 +131,11 @@ type IconName =
   | "back"
   | "bold"
   | "check"
+  | "chevronUp"
   | "close"
   | "copy"
   | "heading"
+  | "highlighter"
   | "github"
   | "italic"
   | "list"
@@ -130,9 +157,11 @@ function icon(name: IconName): string {
     back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
     bold: '<path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8"/>',
     check: '<path d="m5 12 4 4L19 6"/>',
+    chevronUp: '<path d="m18 15-6-6-6 6"/>',
     close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
     copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
     heading: '<path d="M6 12h12"/><path d="M6 20V4"/><path d="M18 20V4"/>',
+    highlighter: '<path class="highlight-icon-fill" d="m14 4 8 8-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4Z"/><path class="highlight-icon-fill" d="m9 11-6 6v3h9l3-3Z"/><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/>',
     github: '<path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3.3-.4 6.8-1.6 6.8-7A5.4 5.4 0 0 0 19.4 4 5 5 0 0 0 19.3.5S18 0 15 2a13.4 13.4 0 0 0-7 0C5-.1 3.7.5 3.7.5A5 5 0 0 0 3.6 4a5.4 5.4 0 0 0-1.4 3.7c0 5.4 3.5 6.5 6.8 7A4.8 4.8 0 0 0 8 18v4"/><path d="M8 19c-3 .9-3-1.5-4-2"/>',
     italic: '<line x1="19" x2="10" y1="4" y2="4"/><line x1="14" x2="5" y1="20" y2="20"/><line x1="15" x2="9" y1="4" y2="20"/>',
     list: '<path d="M3 5h.01"/><path d="M3 12h.01"/><path d="M3 19h.01"/><path d="M8 5h13"/><path d="M8 12h13"/><path d="M8 19h13"/>',
@@ -178,7 +207,7 @@ function titleBar(
       <span class="window-title-text">${escapeHtml(title)}</span>
     </div>
     <div class="window-actions">
-      <button class="window-button no-drag ${config.always_on_top ? "is-active" : ""}" data-action="pin" aria-label="${t("pin")}" aria-pressed="${config.always_on_top}">${icon("pin")}</button>
+      <button id="window-pin-button" class="window-button no-drag ${config.always_on_top ? "is-active" : ""}" data-action="pin" aria-label="${t("pin")}" aria-pressed="${config.always_on_top}">${icon("pin")}</button>
       <button class="window-button no-drag" data-action="minimize" aria-label="${t("minimize")}">${icon("minimize")}</button>
     </div>`;
   if (back) bar.querySelector('[data-action="back"]')?.addEventListener("click", back);
@@ -914,10 +943,10 @@ async function confirmArchive(name: string): Promise<void> {
   }
 }
 
-async function openNote(name: string): Promise<boolean> {
+async function openNote(name: string, showToolbarOnOpen = true): Promise<boolean> {
   try {
     if (!(await api.acquireNote(name))) return false;
-    await showNote(await api.openNote(name));
+    await showNote(await api.openNote(name), showToolbarOnOpen);
     return true;
   } catch (error) {
     showError(error);
@@ -927,7 +956,7 @@ async function openNote(name: string): Promise<boolean> {
   }
 }
 
-async function showNote(note: OpenedNote): Promise<void> {
+async function showNote(note: OpenedNote, showToolbarOnOpen = true): Promise<void> {
   currentNote = note;
   currentContent = note.content;
   dirty = false;
@@ -963,7 +992,7 @@ async function showNote(note: OpenedNote): Promise<void> {
       selectionVisibility.selectionChanged(reveal);
     },
     onInsertBlankLine: () => selectionVisibility.show(),
-  }, config.spellcheck);
+  });
   noteEditor = created.controller;
   editor = noteEditor;
   host.addEventListener("mousedown", (event) => {
@@ -979,7 +1008,7 @@ async function showNote(note: OpenedNote): Promise<void> {
   shell.append(main);
   attachOverlayScrollbar(host);
   window.setTimeout(() => {
-    if (editor !== noteEditor) return;
+    if (editor !== noteEditor || !showToolbarOnOpen) return;
     noteEditor.focus();
     selectionVisibility.show();
   }, 0);
@@ -990,14 +1019,25 @@ const toolbarItems: { action: EditorAction; icon: IconName; title: Parameters<ty
   { action: "strong", icon: "bold", title: "bold" },
   { action: "em", icon: "italic", title: "italic" },
   { action: "strike", icon: "strikethrough", title: "strikethrough" },
+  { action: "highlight", icon: "highlighter", title: "highlight" },
   { action: "bullet", icon: "list", title: "bulletList" },
   { action: "ordered", icon: "listOrdered", title: "orderedList" },
   { action: "task", icon: "squareCheck", title: "taskList" },
 ];
 
+const highlightColorTitles: Record<HighlightColor, Parameters<typeof t>[0]> = {
+  red: "redHighlight",
+  yellow: "yellowHighlight",
+  blue: "blueHighlight",
+  green: "greenHighlight",
+};
+
 function renderToolbar(toolbar: HTMLElement, onWindowFocusLost: () => void): void {
+  let highlightControl: HTMLDivElement | null = null;
+  let highlightMenuButton: HTMLButtonElement | null = null;
+  let highlightPalette: HTMLDivElement | null = null;
   for (const [index, item] of toolbarItems.entries()) {
-    if (index === 4) {
+    if (index === 5) {
       const separator = document.createElement("span");
       separator.className = "format-toolbar-separator";
       separator.setAttribute("aria-hidden", "true");
@@ -1011,9 +1051,46 @@ function renderToolbar(toolbar: HTMLElement, onWindowFocusLost: () => void): voi
     button.innerHTML = icon(item.icon);
     button.addEventListener("mousedown", (event) => {
       event.preventDefault();
-      if (!locked) editor?.run(item.action);
+      if (locked) return;
+      if (item.action === "highlight") editor?.toggleHighlight(config.text_highlight_color);
+      else editor?.run(item.action);
     });
-    toolbar.append(button);
+    if (item.action !== "highlight") {
+      toolbar.append(button);
+      continue;
+    }
+
+    button.classList.add("highlight-main-button");
+    highlightControl = document.createElement("div");
+    highlightControl.className = "highlight-control";
+    highlightMenuButton = document.createElement("button");
+    highlightMenuButton.type = "button";
+    highlightMenuButton.className = "highlight-menu-button";
+    highlightMenuButton.title = t("highlightColors");
+    highlightMenuButton.setAttribute("aria-label", t("highlightColors"));
+    highlightMenuButton.setAttribute("aria-haspopup", "menu");
+    highlightMenuButton.setAttribute("aria-expanded", "false");
+    highlightMenuButton.innerHTML = icon("chevronUp");
+    highlightPalette = document.createElement("div");
+    highlightPalette.className = "highlight-color-palette";
+    highlightPalette.setAttribute("role", "menu");
+    highlightPalette.setAttribute("aria-label", t("highlightColors"));
+    for (const color of HIGHLIGHT_COLORS) {
+      const swatch = document.createElement("button");
+      swatch.type = "button";
+      swatch.className = "color-swatch highlight-color-swatch";
+      swatch.dataset.highlightColor = color;
+      swatch.style.setProperty("--swatch", `var(--text-highlight-${color})`);
+      swatch.title = t(highlightColorTitles[color]);
+      swatch.setAttribute("aria-label", swatch.title);
+      swatch.setAttribute("role", "menuitemradio");
+      highlightPalette.append(swatch);
+    }
+    highlightControl.append(button, highlightMenuButton, highlightPalette);
+    toolbar.append(highlightControl);
+  }
+  if (!highlightControl || !highlightMenuButton || !highlightPalette) {
+    throw new Error("Highlight toolbar control was not created");
   }
   const separator = document.createElement("span");
   separator.className = "format-toolbar-separator";
@@ -1037,8 +1114,75 @@ function renderToolbar(toolbar: HTMLElement, onWindowFocusLost: () => void): voi
     settingsButton.setAttribute("aria-expanded", "false");
     if (restoreEditorFocus) editor?.focus();
   };
+  let highlightOpenTimer: number | null = null;
+  let highlightCloseTimer: number | null = null;
+  const clearHighlightTimers = () => {
+    if (highlightOpenTimer !== null) window.clearTimeout(highlightOpenTimer);
+    if (highlightCloseTimer !== null) window.clearTimeout(highlightCloseTimer);
+    highlightOpenTimer = null;
+    highlightCloseTimer = null;
+  };
+  const closeHighlightPalette = (restoreEditorFocus = true) => {
+    clearHighlightTimers();
+    const wasVisible = highlightPalette?.classList.contains("visible") ?? false;
+    highlightPalette?.classList.remove("visible");
+    highlightMenuButton?.classList.remove("is-active");
+    highlightMenuButton?.setAttribute("aria-expanded", "false");
+    if (wasVisible && restoreEditorFocus) editor?.focus();
+  };
+  const openHighlightPalette = () => {
+    clearHighlightTimers();
+    closePopover(false);
+    highlightPalette?.classList.add("visible");
+    highlightMenuButton?.classList.add("is-active");
+    highlightMenuButton?.setAttribute("aria-expanded", "true");
+    updateToolbar(toolbar);
+  };
+  highlightControl?.querySelector<HTMLButtonElement>(".highlight-main-button")
+    ?.addEventListener("mousedown", () => closeHighlightPalette(false));
+  highlightMenuButton?.addEventListener("pointerenter", () => {
+    if (highlightPalette?.classList.contains("visible")) return;
+    if (highlightOpenTimer !== null) window.clearTimeout(highlightOpenTimer);
+    highlightOpenTimer = window.setTimeout(openHighlightPalette, 150);
+  });
+  highlightMenuButton?.addEventListener("pointerleave", () => {
+    if (highlightPalette?.classList.contains("visible")) return;
+    if (highlightOpenTimer !== null) window.clearTimeout(highlightOpenTimer);
+    highlightOpenTimer = null;
+  });
+  highlightControl?.addEventListener("pointerenter", () => {
+    if (highlightCloseTimer !== null) window.clearTimeout(highlightCloseTimer);
+    highlightCloseTimer = null;
+  });
+  highlightControl?.addEventListener("pointerleave", () => {
+    if (highlightOpenTimer !== null) window.clearTimeout(highlightOpenTimer);
+    highlightOpenTimer = null;
+    highlightCloseTimer = window.setTimeout(() => closeHighlightPalette(false), 250);
+  });
+  highlightMenuButton?.addEventListener("click", () => {
+    if (highlightPalette?.classList.contains("visible")) closeHighlightPalette();
+    else openHighlightPalette();
+  });
+  highlightMenuButton?.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowDown") return;
+    event.preventDefault();
+    openHighlightPalette();
+    highlightPalette?.querySelector<HTMLButtonElement>("button")?.focus();
+  });
+  highlightPalette?.querySelectorAll<HTMLButtonElement>(".highlight-color-swatch")
+    .forEach((swatch) => {
+      swatch.addEventListener("click", () => {
+        const color = swatch.dataset.highlightColor as HighlightColor;
+        if (!locked) {
+          setPreferredTextHighlightColor(color);
+          editor?.applyHighlight(color);
+        }
+        closeHighlightPalette();
+      });
+    });
   settingsButton.addEventListener("click", () => {
     const visible = !popover.classList.contains("visible");
+    if (visible) closeHighlightPalette(false);
     popover.classList.toggle("visible", visible);
     settingsButton.classList.toggle("is-active", visible);
     settingsButton.setAttribute("aria-expanded", String(visible));
@@ -1046,6 +1190,12 @@ function renderToolbar(toolbar: HTMLElement, onWindowFocusLost: () => void): voi
   });
   const onOutsidePress = (event: PointerEvent) => {
     const target = event.target as Node;
+    if (
+      highlightPalette?.classList.contains("visible")
+      && !highlightControl?.contains(target)
+    ) {
+      closeHighlightPalette();
+    }
     if (
       popover.classList.contains("visible")
       && !popover.contains(target)
@@ -1055,17 +1205,23 @@ function renderToolbar(toolbar: HTMLElement, onWindowFocusLost: () => void): voi
     }
   };
   const onToolbarKeydown = (event: KeyboardEvent) => {
-    if (event.key === "Escape" && popover.classList.contains("visible")) closePopover();
+    if (event.key !== "Escape") return;
+    if (highlightPalette?.classList.contains("visible")) closeHighlightPalette();
+    if (popover.classList.contains("visible")) closePopover();
   };
   const handleWindowBlur = () => {
-    if (!popover.classList.contains("visible")) return;
+    const hadOpenPopover = popover.classList.contains("visible")
+      || (highlightPalette?.classList.contains("visible") ?? false);
+    if (!hadOpenPopover) return;
     closePopover(false);
+    closeHighlightPalette(false);
     onWindowFocusLost();
   };
   document.addEventListener("pointerdown", onOutsidePress, true);
   document.addEventListener("keydown", onToolbarKeydown);
   window.addEventListener("blur", handleWindowBlur);
   toolbarInteractionCleanup = () => {
+    clearHighlightTimers();
     document.removeEventListener("pointerdown", onOutsidePress, true);
     document.removeEventListener("keydown", onToolbarKeydown);
     window.removeEventListener("blur", handleWindowBlur);
@@ -1099,14 +1255,13 @@ function createEditorSettingsPopover(): HTMLElement {
         </div>
       </div>
       <div class="editor-settings-control color-control">
-        <span>${t("highlightColor")}</span>
+        <span>${t("headingListColor")}</span>
         <div class="color-presets">
           ${["#456FC4", "#24231F", "#C36B32", "#4F7D5B"].map((color) => `<button type="button" class="color-swatch" data-color="${color}" style="--swatch:${color}" aria-label="${color}"></button>`).join("")}
         </div>
         <label class="hex-color-field"><span>#</span><input data-editor-setting="color" value="${escapeHtml(config.editor_highlight_color.replace(/^#/, ""))}" maxlength="7" inputmode="text" aria-label="${t("customColor")}" /></label>
         <small class="color-error" aria-live="polite"></small>
       </div>
-      <label class="toggle-row editor-settings-toggle"><span>${t("spellcheck")}</span><input data-editor-setting="spellcheck" type="checkbox" ${config.spellcheck ? "checked" : ""} /></label>
       <label class="toggle-row editor-settings-toggle"><span>${t("headingDivider")}</span><input data-editor-setting="divider" type="checkbox" ${config.heading_divider ? "checked" : ""} /></label>
     </div>`;
 
@@ -1172,30 +1327,22 @@ function createEditorSettingsPopover(): HTMLElement {
     colorInput.dispatchEvent(new Event("input", { bubbles: true }));
   });
 
-  const wireToggle = (
-    selector: string,
-    key: "spellcheck" | "heading_divider",
-    save: (enabled: boolean) => Promise<void>,
-  ) => {
-    const input = popover.querySelector<HTMLInputElement>(selector)!;
-    input.addEventListener("change", async () => {
-      const previous = config[key];
-      config[key] = input.checked;
-      if (key === "spellcheck") editor?.setSpellcheck(input.checked);
+  const dividerInput = popover.querySelector<HTMLInputElement>(
+    '[data-editor-setting="divider"]',
+  )!;
+  dividerInput.addEventListener("change", async () => {
+    const previous = config.heading_divider;
+    config.heading_divider = dividerInput.checked;
+    applyEditorAppearance();
+    try {
+      await api.setHeadingDivider(dividerInput.checked);
+    } catch (error) {
+      config.heading_divider = previous;
+      dividerInput.checked = previous;
       applyEditorAppearance();
-      try {
-        await save(input.checked);
-      } catch (error) {
-        config[key] = previous;
-        input.checked = previous;
-        if (key === "spellcheck") editor?.setSpellcheck(previous);
-        applyEditorAppearance();
-        showError(error);
-      }
-    });
-  };
-  wireToggle('[data-editor-setting="spellcheck"]', "spellcheck", (enabled) => api.setSpellcheck(enabled));
-  wireToggle('[data-editor-setting="divider"]', "heading_divider", (enabled) => api.setHeadingDivider(enabled));
+      showError(error);
+    }
+  });
   syncColors();
   return popover;
 }
@@ -1233,11 +1380,29 @@ function updateFontSizeButtons(root: ParentNode = document): void {
 
 function updateToolbar(root: ParentNode = document): void {
   const active = editor?.activeActions() ?? new Set();
+  const highlightState = editor?.highlightState() ?? null;
   const toolbar = root instanceof HTMLElement && root.classList.contains("format-toolbar")
     ? root
     : root.querySelector<HTMLElement>(".format-toolbar");
   toolbar?.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((button) => {
-    button.classList.toggle("is-active", active.has(button.dataset.action as EditorAction));
+    const action = button.dataset.action as EditorAction;
+    if (action === "highlight") {
+      const displayedColor = highlightState !== null && highlightState !== "mixed"
+        ? highlightState
+        : config.text_highlight_color;
+      button.dataset.highlightColor = displayedColor;
+      button.classList.toggle(
+        "is-active",
+        highlightState !== null && highlightState !== "mixed",
+      );
+      return;
+    }
+    button.classList.toggle("is-active", active.has(action));
+  });
+  toolbar?.querySelectorAll<HTMLButtonElement>(".highlight-color-swatch").forEach((swatch) => {
+    const selected = swatch.dataset.highlightColor === config.text_highlight_color;
+    swatch.classList.toggle("is-active", selected);
+    swatch.setAttribute("aria-checked", String(selected));
   });
 }
 
@@ -1651,7 +1816,7 @@ async function start(): Promise<void> {
   const startupNote = windowRole === "note" ? bootstrap.initial_note : config.last_note;
   if (startupNote) {
     try {
-      restoredNote = await openNote(startupNote);
+      restoredNote = await openNote(startupNote, false);
     } catch {
       if (windowRole === "main") config.last_note = null;
     }

@@ -17,6 +17,7 @@ from .distribution import is_store_package
 from .i18n import set_language, text
 from .platform_windows import (
     documents_directory,
+    enable_taskbar_minimize,
     local_config_path,
     move_window_to_physical,
     set_autostart,
@@ -303,6 +304,7 @@ def main() -> None:
         unregister_session: str | None = None,
     ) -> None:
         def on_shown() -> None:
+            enable_taskbar_minimize(target_window)
             if track_position:
                 _restore_window_from_hidden_start(
                     target_window,

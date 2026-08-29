@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.4.0 — 2026-08-29
+
+### English
+
+- Added text background highlighting in red, yellow, blue, and green, with Markdown-compatible syntax, a persisted preferred color, and a compact toolbar palette.
+- Made overlapping and nested highlights serialize and reopen reliably, allowed spaces and punctuation to exit active highlight input, and rendered highlights in completed task rows as gray without changing their Markdown.
+- Preserved the caret and child-list structure when converting list types, including indented sublists and mixed task, bullet, and ordered lists.
+- Restored native taskbar-button behavior for the custom Windows frame: clicking the active app minimizes it, while clicking a minimized window restores it.
+- Kept the menu bar and editing toolbar hidden and the editor unfocused on startup, and fixed title-bar dragging so the window stops immediately when the mouse button is released.
+- Renamed the heading and list accent-color setting for clarity, removed spell-check settings and behavior, and strengthened the Windows pin and taskbar E2E checks against layout changes.
+
+### 简体中文
+
+- 新增红、黄、蓝、绿四色文字背景高亮，支持兼容 Markdown 的语法、持久化常用颜色和紧凑的工具栏色板。
+- 提升交叠及嵌套高亮的序列化与重新打开稳定性；支持通过空格或标点退出高亮输入；已完成任务行中的高亮仅以灰色显示，不修改原 Markdown。
+- 切换列表类型时保留光标和子列表结构，覆盖缩进子列表以及任务、项目符号和有序列表的混合场景。
+- 为 Windows 自绘窗口恢复原生任务栏按钮行为：点击当前前台应用时最小化，点击已最小化窗口时恢复。
+- 启动时保持菜单栏和编辑工具栏隐藏且编辑器不自动获得焦点，并修复标题栏拖动在松开鼠标后仍持续跟随的问题。
+- 将标题与列表强调色设置改为更准确的名称，移除拼写检查设置及行为，并增强置顶与任务栏 E2E 脚本对工具栏布局变化的适应性。
+
 ## v1.3.10 — 2026-08-21
 
 ### English

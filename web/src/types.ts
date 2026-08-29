@@ -21,6 +21,7 @@ export interface SaveResult {
 }
 
 export type AppLanguage = "en" | "zh-CN";
+export type TextHighlightColor = "red" | "yellow" | "blue" | "green";
 
 export interface UpdateState {
   status: "idle" | "available" | "unsupported" | "store";
@@ -45,10 +46,10 @@ export interface AppConfig {
   last_note: string | null;
   editor_font: string;
   editor_font_size: number;
-  spellcheck: boolean;
   heading_divider: boolean;
   heading_list_highlight: boolean;
   editor_highlight_color: string;
+  text_highlight_color: TextHighlightColor;
   last_update_check_ms: number | null;
   available_version: string | null;
   pending_update_version: string | null;

@@ -1,7 +1,8 @@
 param(
     [string]$ExecutablePath = '',
     [string[]]$ArgumentList = @(),
-    [string]$LogPath = ''
+    [string]$LogPath = '',
+    [switch]$DragReleaseOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -49,9 +50,6 @@ public static class NativeWindowTest {
 
     [DllImport("user32.dll")]
     public static extern bool ShowWindow(IntPtr hWnd, int command);
-
-    [DllImport("user32.dll")]
-    public static extern uint GetDpiForWindow(IntPtr hWnd);
 
     [DllImport("user32.dll")]
     public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
@@ -148,19 +146,34 @@ try {
     [NativeWindowTest]::SetForegroundWindow($handle) | Out-Null
     $rootElement = [System.Windows.Automation.AutomationElement]::FromHandle($handle)
     $pinLabel = "$([char]0x7f6e)$([char]0x9876)"
-    $pinCondition = New-Object System.Windows.Automation.PropertyCondition(
+    $pinIdCondition = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::AutomationIdProperty,
+        'window-pin-button'
+    )
+    $pinChineseNameCondition = New-Object System.Windows.Automation.PropertyCondition(
         [System.Windows.Automation.AutomationElement]::NameProperty,
         $pinLabel
     )
+    $pinEnglishNameCondition = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::NameProperty,
+        'Pin'
+    )
+    $pinConditions = @($pinIdCondition, $pinChineseNameCondition, $pinEnglishNameCondition)
     $pinElement = $null
     $readyDeadline = [DateTime]::UtcNow.AddSeconds(5)
     do {
-        $pinElement = $rootElement.FindFirst(
-            [System.Windows.Automation.TreeScope]::Descendants,
-            $pinCondition
-        )
+        foreach ($condition in $pinConditions) {
+            $pinElement = $rootElement.FindFirst(
+                [System.Windows.Automation.TreeScope]::Descendants,
+                $condition
+            )
+            if ($null -ne $pinElement) { break }
+        }
         if ($null -eq $pinElement) { Start-Sleep -Milliseconds 100 }
     } while ($null -eq $pinElement -and [DateTime]::UtcNow -lt $readyDeadline)
+    if ($null -eq $pinElement) {
+        throw 'The pin button was not exposed through UI Automation.'
+    }
 
     $moveRect = New-Object NativeWindowTest+RECT
     [NativeWindowTest]::GetWindowRect($handle, [ref]$moveRect) | Out-Null
@@ -179,6 +192,19 @@ try {
     }
     Write-Host 'PASS: The title bar moved the window.'
 
+    $releasedCursor = New-Object NativeWindowTest+POINT
+    [NativeWindowTest]::GetCursorPos([ref]$releasedCursor) | Out-Null
+    [NativeWindowTest]::SetCursorPos(($releasedCursor.X + 80), ($releasedCursor.Y + 60)) | Out-Null
+    Start-Sleep -Milliseconds 350
+    $afterReleaseRect = New-Object NativeWindowTest+RECT
+    [NativeWindowTest]::GetWindowRect($handle, [ref]$afterReleaseRect) | Out-Null
+    if ([Math]::Abs($afterReleaseRect.Left - $movedRect.Left) -gt 3 -or
+        [Math]::Abs($afterReleaseRect.Top - $movedRect.Top) -gt 3) {
+        throw 'The window kept following the pointer after the drag button was released.'
+    }
+    Write-Host 'PASS: The window stopped moving when the drag button was released.'
+    if ($DragReleaseOnly) { return }
+
     $widthBefore = $movedRect.Right - $movedRect.Left
     $heightBefore = $movedRect.Bottom - $movedRect.Top
     Invoke-PointerDrag ($movedRect.Right - 4) ($movedRect.Bottom - 4) ($movedRect.Right + 66) ($movedRect.Bottom + 46)
@@ -192,35 +218,33 @@ try {
     }
     Write-Host 'PASS: The bottom-right corner resized the window.'
 
-    if ($null -ne $pinElement) {
+    try {
+        $invokePattern = $pinElement.GetCurrentPattern(
+            [System.Windows.Automation.InvokePattern]::Pattern
+        )
+        $invokePattern.Invoke()
+        Write-Host 'INFO: Invoked the pin button through UI Automation.'
+    }
+    catch {
+        # Some WebView2 versions expose the semantic element without InvokePattern.
+        # Click the element's own accessibility bounds instead of a title-bar offset.
         try {
-            $invokePattern = $pinElement.GetCurrentPattern(
-                [System.Windows.Automation.InvokePattern]::Pattern
-            )
-            $invokePattern.Invoke()
-            Write-Host 'INFO: Invoked the pin button through UI Automation.'
+            $point = $pinElement.GetClickablePoint()
+            $pinX = [int]$point.X
+            $pinY = [int]$point.Y
         }
         catch {
-            # WebView2 may expose the button name without exposing InvokePattern.
-            $pinElement = $null
+            $bounds = $pinElement.Current.BoundingRectangle
+            if ($bounds.IsEmpty -or $bounds.Width -le 0 -or $bounds.Height -le 0) {
+                throw 'The pin button has no clickable accessibility bounds.'
+            }
+            $pinX = [int]($bounds.Left + ($bounds.Width / 2))
+            $pinY = [int]($bounds.Top + ($bounds.Height / 2))
         }
-    }
-    if ($null -eq $pinElement) {
-        # Some WebView2 versions do not expose web buttons to UI Automation.
-        # The five-second readiness wait makes coordinate fallback deterministic.
-        $rect = New-Object NativeWindowTest+RECT
-        if (-not [NativeWindowTest]::GetWindowRect($handle, [ref]$rect)) {
-            throw 'Could not read the application window bounds.'
-        }
-        $dpi = [NativeWindowTest]::GetDpiForWindow($handle)
-        if ($dpi -eq 0) { $dpi = 96 }
-        $scale = $dpi / 96.0
-        $pinX = [int][Math]::Round($rect.Right - (89 * $scale))
-        $pinY = [int][Math]::Round($rect.Top + (21 * $scale))
         [NativeWindowTest]::SetCursorPos($pinX, $pinY) | Out-Null
         [NativeWindowTest]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
         [NativeWindowTest]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
-        Write-Host "INFO: Used the title-bar coordinate fallback (DPI=$dpi, X=$pinX, Y=$pinY)."
+        Write-Host "INFO: Clicked the pin button through its accessibility bounds (X=$pinX, Y=$pinY)."
     }
 
     $toggleDeadline = [DateTime]::UtcNow.AddSeconds(2)
