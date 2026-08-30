@@ -31,6 +31,62 @@ describe("window controls", () => {
     titleBar.remove();
   });
 
+  it("suppresses restored title focus again after the window is reactivated", () => {
+    const root = document.createElement("div");
+    const pointerSource = new EventTarget();
+    const titleBar = document.createElement("header");
+    const button = document.createElement("button");
+    titleBar.className = "title-bar";
+    titleBar.append(button);
+    document.body.append(titleBar);
+
+    const stopPreparing = prepareForWindowStartup(root, pointerSource, document);
+    pointerSource.dispatchEvent(new PointerEvent("pointerdown"));
+    expect(root.classList.contains("window-hover-suppressed")).toBe(false);
+
+    pointerSource.dispatchEvent(new Event("focus"));
+    button.focus();
+
+    expect(document.activeElement).not.toBe(button);
+    expect(root.classList.contains("window-hover-suppressed")).toBe(true);
+    stopPreparing();
+    titleBar.remove();
+  });
+
+  it("clears retained editor focus and toolbar visibility after reactivation", () => {
+    const root = document.createElement("div");
+    const pointerSource = new EventTarget();
+    const editor = document.createElement("div");
+    const toolbar = document.createElement("div");
+    editor.className = "ProseMirror";
+    editor.tabIndex = 0;
+    toolbar.className = "format-toolbar visible";
+    editor.addEventListener("focus", () => toolbar.classList.add("visible"));
+    document.body.append(editor, toolbar);
+
+    const stopPreparing = prepareForWindowStartup(root, pointerSource, document);
+    pointerSource.dispatchEvent(new PointerEvent("pointerdown"));
+    editor.focus();
+    pointerSource.dispatchEvent(new Event("focus"));
+
+    expect(document.activeElement).not.toBe(editor);
+    expect(toolbar.classList.contains("visible")).toBe(false);
+
+    editor.focus();
+    expect(document.activeElement).not.toBe(editor);
+    expect(toolbar.classList.contains("visible")).toBe(false);
+
+    pointerSource.dispatchEvent(new PointerEvent("pointerdown"));
+    editor.focus();
+    expect(document.activeElement).toBe(editor);
+    expect(root.classList.contains("window-hover-suppressed")).toBe(false);
+    expect(toolbar.classList.contains("visible")).toBe(true);
+
+    stopPreparing();
+    editor.remove();
+    toolbar.remove();
+  });
+
   it("keeps stale hover suppressed until the pointer moves after focus returns", () => {
     const root = document.createElement("div");
     const button = document.createElement("button");

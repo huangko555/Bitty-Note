@@ -5,8 +5,21 @@ export function prepareForWindowStartup(
   pointerSource: EventTarget = window,
   focusRoot: Document = document,
 ): () => void {
-  root.classList.add(WINDOW_HOVER_SUPPRESSED_CLASS);
-  let active = true;
+  let active = false;
+  let stopped = false;
+  const hideRestoredEditorChrome = () => {
+    focusRoot.querySelector<HTMLElement>(".format-toolbar.visible")
+      ?.classList.remove("visible");
+  };
+  const blurRestoredFocus = (target: Element | null) => {
+    if (!(target instanceof HTMLElement)) return;
+    if (
+      (target instanceof HTMLButtonElement && target.closest(".title-bar"))
+      || target.matches(".ProseMirror, .raw-editor")
+    ) {
+      target.blur();
+    }
+  };
   const release = () => {
     if (!active) return;
     active = false;
@@ -14,22 +27,33 @@ export function prepareForWindowStartup(
     pointerSource.removeEventListener("pointermove", release);
     pointerSource.removeEventListener("pointerdown", release);
     pointerSource.removeEventListener("keydown", release);
-    focusRoot.removeEventListener("focusin", blurRestoredTitleControl);
+    focusRoot.removeEventListener("focusin", blurRestoredControl);
   };
-  const blurRestoredTitleControl = (event: Event) => {
-    const target = event.target;
-    if (
-      target instanceof HTMLButtonElement
-      && target.closest(".title-bar")
-    ) {
-      target.blur();
+  const blurRestoredControl = (event: Event) => {
+    blurRestoredFocus(event.target instanceof Element ? event.target : null);
+    hideRestoredEditorChrome();
+  };
+  const prepare = () => {
+    if (stopped) return;
+    if (!active) {
+      active = true;
+      pointerSource.addEventListener("pointermove", release);
+      pointerSource.addEventListener("pointerdown", release);
+      pointerSource.addEventListener("keydown", release);
+      focusRoot.addEventListener("focusin", blurRestoredControl);
     }
+    root.classList.add(WINDOW_HOVER_SUPPRESSED_CLASS);
+    hideRestoredEditorChrome();
+    blurRestoredFocus(focusRoot.activeElement);
   };
-  pointerSource.addEventListener("pointermove", release);
-  pointerSource.addEventListener("pointerdown", release);
-  pointerSource.addEventListener("keydown", release);
-  focusRoot.addEventListener("focusin", blurRestoredTitleControl);
-  return release;
+  const stop = () => {
+    stopped = true;
+    release();
+    pointerSource.removeEventListener("focus", prepare);
+  };
+  pointerSource.addEventListener("focus", prepare);
+  prepare();
+  return stop;
 }
 
 export function prepareForWindowMinimize(
