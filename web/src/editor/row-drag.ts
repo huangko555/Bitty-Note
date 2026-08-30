@@ -28,8 +28,12 @@ export type RowDropSide = "before" | "after" | "inside";
 
 type ListKind = "bullet" | "ordered" | "task";
 type DocumentEndAnchorEdge = "top" | "bottom";
-const DELETE_TARGET_HIT_PADDING = 6;
+const DELETE_TARGET_GAP = 48;
 const DELETE_TARGET_VIEWPORT_MARGIN = 8;
+const DELETE_TARGET_ENTER_OVERLAP = 0.5;
+const DELETE_TARGET_EXIT_OVERLAP = 0.25;
+const DELETE_TARGET_ENTER_VERTICAL_DISTANCE = 18;
+const DELETE_TARGET_EXIT_VERTICAL_DISTANCE = 26;
 const FEEDBACK_LEFT_INSET = 3;
 const FEEDBACK_RIGHT_INSET = 12;
 const MIN_FEEDBACK_WIDTH = 24;
@@ -803,11 +807,13 @@ class RowDragHandleView {
   private readonly host: HTMLElement;
   private readonly handle: HTMLButtonElement;
   private readonly highlight: HTMLDivElement;
+  private readonly highlightShadow: HTMLDivElement;
   private readonly indicator: HTMLDivElement;
   private readonly insideIndicator: HTMLDivElement;
   private readonly preview: HTMLDivElement;
   private readonly previewText: HTMLSpanElement;
   private readonly previewMeta: HTMLSpanElement;
+  private readonly deleteHint: HTMLSpanElement;
   private readonly deleteTarget: HTMLDivElement;
   private hovered: RowDescriptor | null = null;
   private foldHovered: RowDescriptor | null = null;
@@ -823,6 +829,15 @@ class RowDragHandleView {
   private activePointerId: number | null = null;
   private restoreEditorFocus = false;
   private finishing = false;
+  private previewWidth = 0;
+  private deleteTargetBounds: {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+    width: number;
+    height: number;
+  } | null = null;
 
   constructor(
     private readonly view: EditorView,
@@ -843,6 +858,8 @@ class RowDragHandleView {
     }));
     this.highlight = document.createElement("div");
     this.highlight.className = "block-row-handle-highlight";
+    this.highlightShadow = document.createElement("div");
+    this.highlightShadow.className = "block-row-handle-shadow";
     this.indicator = document.createElement("div");
     this.indicator.className = "block-drop-indicator";
     this.insideIndicator = document.createElement("div");
@@ -858,7 +875,10 @@ class RowDragHandleView {
     this.previewText.className = "block-drag-preview-text";
     this.previewMeta = document.createElement("span");
     this.previewMeta.className = "block-drag-preview-meta";
-    this.preview.append(previewHandle, this.previewText, this.previewMeta);
+    this.deleteHint = document.createElement("span");
+    this.deleteHint.className = "block-drag-delete-hint";
+    this.deleteHint.textContent = t("releaseToDelete");
+    this.preview.append(previewHandle, this.previewText, this.previewMeta, this.deleteHint);
     this.deleteTarget = document.createElement("div");
     this.deleteTarget.className = "block-delete-target";
     this.deleteTarget.setAttribute("aria-hidden", "true");
@@ -866,9 +886,6 @@ class RowDragHandleView {
       class: "lucide-icon",
       "aria-hidden": "true",
     }));
-    const deleteLabel = document.createElement("span");
-    deleteLabel.textContent = t("releaseToDelete");
-    this.deleteTarget.append(deleteLabel);
     this.host.append(
       this.highlight,
       this.handle,
@@ -877,6 +894,7 @@ class RowDragHandleView {
       this.preview,
       this.deleteTarget,
     );
+    (this.host.parentElement ?? this.host).append(this.highlightShadow);
 
     this.host.addEventListener("pointermove", this.onHoverMove);
     this.host.addEventListener("pointerleave", this.onHoverLeave);
@@ -925,6 +943,7 @@ class RowDragHandleView {
     this.handle.removeEventListener("wheel", this.onHandleWheel);
     this.handle.removeEventListener("lostpointercapture", this.onLostPointerCapture);
     this.highlight.remove();
+    this.highlightShadow.remove();
     this.handle.remove();
     this.indicator.remove();
     this.insideIndicator.remove();
@@ -982,14 +1001,14 @@ class RowDragHandleView {
     const { position, visible } = (event as CustomEvent<FoldHoverDetail>).detail;
     if (!visible) {
       this.foldHovered = null;
-      this.highlight.classList.remove("visible");
+      this.highlight.classList.remove("visible", "is-fold-range");
       return;
     }
     const row = rowAtPosition(this.view, position);
     if (!row) return;
     if (row.node.attrs.collapsed) {
       this.foldHovered = null;
-      this.highlight.classList.remove("visible");
+      this.highlight.classList.remove("visible", "is-fold-range");
       return;
     }
     this.foldHovered = row;
@@ -1021,7 +1040,9 @@ class RowDragHandleView {
     this.positionHighlight(this.source);
     this.highlight.classList.add("visible");
     this.showPreview(this.source, event.clientX, event.clientY);
+    this.prepareDeleteTarget();
     this.handle.classList.add("is-dragging");
+    this.highlightShadow.classList.add("is-suppressed");
     try {
       this.handle.setPointerCapture(event.pointerId);
     } catch {
@@ -1288,8 +1309,13 @@ class RowDragHandleView {
       this.reparentLevel = null;
       this.indicator.classList.remove("visible");
       this.insideIndicator.classList.remove("visible");
-      this.deleteTarget.classList.remove("visible", "is-armed");
+      this.highlightShadow.classList.remove("is-suppressed");
+      this.setDeleteArmed(false);
+      this.deleteTarget.classList.remove("visible");
+      this.deleteTarget.style.left = "";
       this.deleteTarget.style.top = "";
+      this.previewWidth = 0;
+      this.deleteTargetBounds = null;
       this.preview.classList.remove("visible");
       this.highlight.classList.remove("visible");
       this.setDraggedSource([]);
@@ -1404,6 +1430,7 @@ class RowDragHandleView {
   }
 
   private positionHighlight(row: RowDescriptor): void {
+    this.highlight.classList.remove("is-fold-range");
     const hostRect = this.host.getBoundingClientRect();
     const blockRect = draggedBlockVerticalRect(this.view, row);
     const left = hostRect.left + FEEDBACK_LEFT_INSET;
@@ -1414,6 +1441,7 @@ class RowDragHandleView {
   }
 
   private positionFoldHighlight(row: RowDescriptor): void {
+    this.highlight.classList.add("is-fold-range");
     const hostRect = this.host.getBoundingClientRect();
     const headerRect = rowHeaderVerticalRect(row.header);
     const blockRect = draggedBlockVerticalRect(this.view, row);
@@ -1430,10 +1458,14 @@ class RowDragHandleView {
   }
 
   private setHighlightRect(left: number, top: number, right: number, bottom: number): void {
-    this.highlight.style.left = `${left}px`;
-    this.highlight.style.top = `${top}px`;
-    this.highlight.style.width = `${Math.max(MIN_FEEDBACK_WIDTH, right - left)}px`;
-    this.highlight.style.height = `${Math.max(0, bottom - top)}px`;
+    const width = `${Math.max(MIN_FEEDBACK_WIDTH, right - left)}px`;
+    const height = `${Math.max(0, bottom - top)}px`;
+    for (const element of [this.highlight, this.highlightShadow]) {
+      element.style.left = `${left}px`;
+      element.style.top = `${top}px`;
+      element.style.width = width;
+      element.style.height = height;
+    }
   }
 
   private positionDropTarget(
@@ -1700,44 +1732,105 @@ class RowDragHandleView {
     this.reparentLevel = desiredLevel;
   }
 
-  private updateDeleteTarget(clientX: number, clientY: number): void {
-    if (!this.moved) {
-      this.deleteTarget.classList.remove("visible", "is-armed");
+  private prepareDeleteTarget(): void {
+    const previewBounds = this.preview.getBoundingClientRect();
+    this.previewWidth = previewBounds.width || this.preview.offsetWidth;
+    if (this.previewWidth <= 0) {
+      this.deleteTargetBounds = null;
       return;
     }
-    if (!this.deleteTarget.classList.contains("visible")) {
-      const height = this.deleteTarget.offsetHeight
-        || this.deleteTarget.getBoundingClientRect().height;
-      const shell = this.host.closest(".app-shell");
-      const titleBar = shell?.querySelector<HTMLElement>(":scope > .title-bar");
-      const toolbar = this.host.parentElement?.querySelector<HTMLElement>(
-        ":scope > .format-toolbar.visible:not(.is-unavailable)",
-      );
-      const minimumTop = titleBar
-        ? titleBar.getBoundingClientRect().bottom + DELETE_TARGET_VIEWPORT_MARGIN
-        : DELETE_TARGET_VIEWPORT_MARGIN;
-      const lowerBoundary = toolbar
-        ? toolbar.getBoundingClientRect().top
-        : window.innerHeight;
-      const maximumTop = Math.max(
-        minimumTop,
-        lowerBoundary - height - DELETE_TARGET_VIEWPORT_MARGIN,
-      );
-      const top = Math.round(Math.min(
-        Math.max(clientY - height / 2, minimumTop),
-        maximumTop,
-      ));
-      this.deleteTarget.style.top = `${top}px`;
-      this.deleteTarget.classList.add("visible");
-    }
-    const bounds = this.deleteTarget.getBoundingClientRect();
-    this.deleteTarget.classList.toggle(
-      "is-armed",
-      clientX >= bounds.left - DELETE_TARGET_HIT_PADDING
-        && clientX <= bounds.right + DELETE_TARGET_HIT_PADDING
-        && clientY >= bounds.top - DELETE_TARGET_HIT_PADDING
-        && clientY <= bounds.bottom + DELETE_TARGET_HIT_PADDING,
+    const previewHeight = previewBounds.height || this.preview.offsetHeight || 36;
+    const targetWidth = this.deleteTarget.offsetWidth
+      || this.deleteTarget.getBoundingClientRect().width
+      || 44;
+    const targetHeight = this.deleteTarget.offsetHeight
+      || this.deleteTarget.getBoundingClientRect().height
+      || 44;
+    const shell = this.host.closest(".app-shell");
+    const titleBar = shell?.querySelector<HTMLElement>(":scope > .title-bar");
+    const toolbar = this.host.parentElement?.querySelector<HTMLElement>(
+      ":scope > .format-toolbar.visible:not(.is-unavailable)",
     );
+    const minimumTop = titleBar
+      ? titleBar.getBoundingClientRect().bottom + DELETE_TARGET_VIEWPORT_MARGIN
+      : DELETE_TARGET_VIEWPORT_MARGIN;
+    const lowerBoundary = toolbar
+      ? toolbar.getBoundingClientRect().top
+      : window.innerHeight;
+    const maximumTop = Math.max(
+      minimumTop,
+      lowerBoundary - targetHeight - DELETE_TARGET_VIEWPORT_MARGIN,
+    );
+    const desiredLeft = previewBounds.left + this.previewWidth + DELETE_TARGET_GAP;
+    const maximumLeft = Math.max(
+      DELETE_TARGET_VIEWPORT_MARGIN,
+      window.innerWidth - targetWidth - DELETE_TARGET_VIEWPORT_MARGIN,
+    );
+    const left = Math.round(Math.min(Math.max(
+      desiredLeft,
+      DELETE_TARGET_VIEWPORT_MARGIN,
+    ), maximumLeft));
+    const top = Math.round(Math.min(Math.max(
+      previewBounds.top + (previewHeight - targetHeight) / 2,
+      minimumTop,
+    ), maximumTop));
+    this.deleteTarget.style.left = `${left}px`;
+    this.deleteTarget.style.top = `${top}px`;
+    this.deleteTargetBounds = {
+      left,
+      top,
+      right: left + targetWidth,
+      bottom: top + targetHeight,
+      width: targetWidth,
+      height: targetHeight,
+    };
+  }
+
+  private setDeleteArmed(armed: boolean): void {
+    this.deleteTarget.classList.toggle("is-armed", armed);
+    this.preview.classList.toggle("is-delete-armed", armed);
+    if (!armed) {
+      this.preview.classList.remove("is-delete-hint-above");
+    }
+  }
+
+  private updateDeleteHintPlacement(clientY: number): void {
+    const toolbar = this.host.parentElement?.querySelector<HTMLElement>(
+      ":scope > .format-toolbar.visible:not(.is-unavailable)",
+    );
+    const lowerBoundary = toolbar
+      ? toolbar.getBoundingClientRect().top
+      : window.innerHeight;
+    this.preview.classList.toggle(
+      "is-delete-hint-above",
+      clientY + 18 + 38 > lowerBoundary - DELETE_TARGET_VIEWPORT_MARGIN,
+    );
+  }
+
+  private updateDeleteTarget(clientX: number, clientY: number): void {
+    const bounds = this.deleteTargetBounds;
+    if (!this.moved || !bounds || this.previewWidth <= 0) {
+      this.deleteTarget.classList.remove("visible");
+      this.setDeleteArmed(false);
+      return;
+    }
+    this.deleteTarget.classList.add("visible");
+    const previewLeft = clientX - 4;
+    const previewRight = previewLeft + this.previewWidth;
+    const overlapWidth = Math.max(
+      0,
+      Math.min(previewRight, bounds.right) - Math.max(previewLeft, bounds.left),
+    );
+    const overlap = overlapWidth / bounds.width;
+    const verticalDistance = Math.abs(clientY - (bounds.top + bounds.height / 2));
+    const wasArmed = this.deleteTarget.classList.contains("is-armed");
+    const armed = wasArmed
+      ? overlap >= DELETE_TARGET_EXIT_OVERLAP
+        && verticalDistance <= DELETE_TARGET_EXIT_VERTICAL_DISTANCE
+      : overlap >= DELETE_TARGET_ENTER_OVERLAP
+        && verticalDistance <= DELETE_TARGET_ENTER_VERTICAL_DISTANCE;
+    this.setDeleteArmed(armed);
+    if (armed) this.updateDeleteHintPlacement(clientY);
   }
 }
 

@@ -85,7 +85,11 @@ describe("row drag handle", () => {
 
     const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
     const highlight = host.querySelector<HTMLElement>(".block-row-handle-highlight")!;
+    const highlightShadow = document.querySelector<HTMLElement>(".block-row-handle-shadow")!;
     const preview = host.querySelector<HTMLElement>(".block-drag-preview")!;
+    expect(highlightShadow).not.toBeNull();
+    expect(highlightShadow.parentElement).toBe(host.parentElement);
+    expect(host.contains(highlightShadow)).toBe(false);
     expect(handle.classList.contains("visible")).toBe(true);
     expect(handle.style.left).toBe("13px");
     expect(host.querySelector(".block-row-highlight")).toBeNull();
@@ -94,6 +98,10 @@ describe("row drag handle", () => {
     handle.dispatchEvent(new MouseEvent("pointerenter"));
     expect(highlight.classList.contains("visible")).toBe(true);
     expect(highlight.style.left).toBe("13px");
+    expect(highlightShadow.style.left).toBe(highlight.style.left);
+    expect(highlightShadow.style.top).toBe(highlight.style.top);
+    expect(highlightShadow.style.width).toBe(highlight.style.width);
+    expect(highlightShadow.style.height).toBe(highlight.style.height);
     view.updateState(view.state);
     expect(handle.classList.contains("visible")).toBe(true);
     expect(highlight.classList.contains("visible")).toBe(true);
@@ -111,6 +119,7 @@ describe("row drag handle", () => {
       clientY: 50,
     }));
     expect(highlight.classList.contains("visible")).toBe(true);
+    expect(highlightShadow.classList.contains("is-suppressed")).toBe(true);
     expect(preview.classList.contains("visible")).toBe(true);
     expect(preview.firstElementChild?.classList.contains("block-drag-preview-handle")).toBe(true);
     expect(preview.querySelector(".block-drag-preview-text")?.textContent).toBe("缩进内容");
@@ -287,6 +296,7 @@ describe("row drag handle", () => {
     button.dispatchEvent(new MouseEvent("pointerenter"));
 
     expect(highlight.classList.contains("visible")).toBe(true);
+    expect(highlight.classList.contains("is-fold-range")).toBe(true);
     expect(highlight.style.left).toBe("72px");
     expect(highlight.style.top).toBe("47px");
     expect(highlight.style.width).toBe("208px");
@@ -294,6 +304,7 @@ describe("row drag handle", () => {
 
     button.dispatchEvent(new MouseEvent("pointerleave"));
     expect(highlight.classList.contains("visible")).toBe(false);
+    expect(highlight.classList.contains("is-fold-range")).toBe(false);
 
     button.click();
     vi.spyOn(view.dom.querySelector("h1")!, "getBoundingClientRect")
@@ -312,6 +323,7 @@ describe("row drag handle", () => {
     host.querySelector<HTMLElement>(".block-drag-handle")!
       .dispatchEvent(new MouseEvent("pointerenter"));
     expect(highlight.classList.contains("visible")).toBe(true);
+    expect(highlight.classList.contains("is-fold-range")).toBe(false);
     expect(highlight.style.height).toBe("29px");
   });
 
@@ -1660,7 +1672,7 @@ describe("row drag handle", () => {
     expect(handle.classList.contains("visible")).toBe(true);
   });
 
-  it("deletes only when released over the visible delete target", () => {
+  it("arms deletion when the dragged preview overlaps half of its fixed target", () => {
     const host = document.createElement("div");
     const shell = document.createElement("div");
     shell.className = "app-shell";
@@ -1673,6 +1685,7 @@ describe("row drag handle", () => {
     page.append(host, toolbar);
     shell.append(titleBar, page);
     document.body.append(shell);
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(300);
     vi.spyOn(titleBar, "getBoundingClientRect").mockReturnValue(rect(0, 0, 300, 44));
     vi.spyOn(toolbar, "getBoundingClientRect").mockReturnValue(rect(0, 156, 300, 44));
     const doc = noteSchema.nodes.doc.create(null, [
@@ -1694,9 +1707,15 @@ describe("row drag handle", () => {
       clientY: 30,
     }));
     const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
+    const preview = host.querySelector<HTMLElement>(".block-drag-preview")!;
+    const deleteHint = preview.querySelector<HTMLElement>(".block-drag-delete-hint")!;
     const deleteTarget = host.querySelector<HTMLElement>(".block-delete-target")!;
-    vi.spyOn(deleteTarget, "getBoundingClientRect")
-      .mockReturnValue(rect(238, 135, 44, 44));
+    vi.spyOn(preview, "getBoundingClientRect").mockImplementation(() => rect(
+      Number.parseFloat(preview.style.left) || 0,
+      Number.parseFloat(preview.style.top) || 0,
+      120,
+      36,
+    ));
     Object.defineProperties(handle, {
       setPointerCapture: { value: vi.fn() },
       hasPointerCapture: { value: vi.fn(() => false) },
@@ -1718,39 +1737,56 @@ describe("row drag handle", () => {
     window.dispatchEvent(pointerEvent("pointermove", 120, 2));
     expect(deleteTarget.classList.contains("visible")).toBe(true);
     expect(deleteTarget.classList.contains("is-armed")).toBe(false);
+    expect(deleteTarget.style.left).toBe("248px");
     expect(deleteTarget.style.top).toBe("52px");
 
-    window.dispatchEvent(pointerEvent("pointermove", 120, 40));
-    expect(deleteTarget.style.top).toBe("52px");
-    window.dispatchEvent(pointerEvent("pointermove", 120, window.innerHeight - 2));
-    expect(deleteTarget.style.top).toBe("52px");
-
-    window.dispatchEvent(pointerEvent("pointerup", 120, 40));
-    expect(view.state.doc.textContent).toBe("甲乙");
-    expect(deleteTarget.classList.contains("visible")).toBe(false);
-
-    handle.dispatchEvent(pointerEvent("pointerdown", 100, 30));
-    window.dispatchEvent(pointerEvent("pointermove", 120, 100.4));
-    expect(deleteTarget.style.top).toBe("78px");
-    window.dispatchEvent(pointerEvent("pointerup", 120, 100.4));
-
-    handle.dispatchEvent(pointerEvent("pointerdown", 100, 30));
-    window.dispatchEvent(pointerEvent("pointermove", 160, 190));
+    window.dispatchEvent(pointerEvent("pointermove", 154, 100));
     expect(deleteTarget.classList.contains("is-armed")).toBe(false);
-    expect(deleteTarget.style.top).toBe("104px");
+    expect(deleteTarget.style.top).toBe("52px");
 
-    window.dispatchEvent(pointerEvent("pointermove", 250, 150));
+    window.dispatchEvent(pointerEvent("pointermove", 150, 74));
+    expect(deleteTarget.classList.contains("is-armed")).toBe(false);
+
+    window.dispatchEvent(pointerEvent("pointermove", 154, 74));
     expect(deleteTarget.classList.contains("is-armed")).toBe(true);
-    expect(deleteTarget.style.top).toBe("104px");
+    expect(preview.classList.contains("is-delete-armed")).toBe(true);
+    expect(deleteHint.textContent).toBe("Release to delete");
 
-    window.dispatchEvent(pointerEvent("pointerup", 120, 40));
+    window.dispatchEvent(pointerEvent("pointermove", 144, 74));
+    expect(deleteTarget.classList.contains("is-armed")).toBe(true);
+
+    window.dispatchEvent(pointerEvent("pointermove", 142, 74));
+    expect(deleteTarget.classList.contains("is-armed")).toBe(false);
+    expect(preview.classList.contains("is-delete-armed")).toBe(false);
+
+    window.dispatchEvent(pointerEvent("pointermove", 154, 74));
+    expect(deleteTarget.classList.contains("is-armed")).toBe(true);
+
+    window.dispatchEvent(pointerEvent("pointermove", 310, 74));
+    expect(deleteTarget.classList.contains("is-armed")).toBe(false);
+    expect(preview.classList.contains("is-delete-armed")).toBe(false);
+
+    window.dispatchEvent(pointerEvent("pointermove", 274, 74));
+    expect(deleteTarget.classList.contains("is-armed")).toBe(true);
+
+    window.dispatchEvent(pointerEvent("pointermove", 154, 101));
+    expect(deleteTarget.classList.contains("is-armed")).toBe(false);
+
+    window.dispatchEvent(pointerEvent("pointerup", 154, 101));
     expect(view.state.doc.textContent).toBe("甲乙");
-    expect(deleteTarget.classList.contains("visible")).toBe(false);
+
+    handle.dispatchEvent(pointerEvent("pointerdown", 100, 130));
+    window.dispatchEvent(pointerEvent("pointermove", 154, 126));
+    expect(deleteTarget.classList.contains("is-armed")).toBe(true);
+    expect(preview.classList.contains("is-delete-hint-above")).toBe(true);
+    window.dispatchEvent(pointerEvent("pointermove", 142, 126));
+    window.dispatchEvent(pointerEvent("pointerup", 142, 126));
+    expect(view.state.doc.textContent).toBe("甲乙");
 
     handle.dispatchEvent(pointerEvent("pointerdown", 100, 30));
-    window.dispatchEvent(pointerEvent("pointermove", 160, 40));
+    window.dispatchEvent(pointerEvent("pointermove", 154, 74));
     host.scrollTop = 80;
-    window.dispatchEvent(pointerEvent("pointerup", 250, 150));
+    window.dispatchEvent(pointerEvent("pointerup", 154, 74));
 
     expect(view.state.doc.textContent).toBe("乙");
     expect(host.scrollTop).toBe(80);
