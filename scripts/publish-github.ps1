@@ -35,9 +35,18 @@ function Invoke-Checked {
 function Get-ReleaseInfo {
     param([Parameter(Mandatory)] [string]$Tag)
 
-    $json = & gh release view $Tag --repo $repository `
-        --json 'url,isDraft,isPrerelease,tagName,targetCommitish,publishedAt,assets' 2>$null
-    if ($LASTEXITCODE -ne 0) {
+    # Windows PowerShell 5 promotes native stderr to a terminating error when
+    # ErrorActionPreference is Stop. A missing release is an expected branch.
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $json = & gh release view $Tag --repo $repository `
+            --json 'url,isDraft,isPrerelease,tagName,targetCommitish,publishedAt,assets' 2>$null
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    if ($exitCode -ne 0) {
         return $null
     }
     return $json | ConvertFrom-Json
@@ -157,9 +166,13 @@ if ($existingRelease -and -not $existingRelease.isDraft) {
     if ($existingRelease.isPrerelease) {
         throw "$tag already exists as a prerelease."
     }
-    $tagCommitOutput = & git rev-list -n 1 $tag 2>$null
-    if ($LASTEXITCODE -ne 0 -or -not $tagCommitOutput) {
+    & git show-ref --verify --quiet "refs/tags/$tag"
+    if ($LASTEXITCODE -ne 0) {
         throw "$tag is already published but the local tag is missing."
+    }
+    $tagCommitOutput = & git rev-list -n 1 $tag
+    if ($LASTEXITCODE -ne 0 -or -not $tagCommitOutput) {
+        throw "Unable to read local tag $tag."
     }
     $tagCommit = ([string]$tagCommitOutput).Trim()
     if ($tagCommit -ne $head) {
@@ -230,16 +243,22 @@ if ($manifestAsset[0].Size -ne $fullPackage.Length -or
     throw 'releases.win.json does not match the full package size and SHA-256.'
 }
 
-$localTagOutput = & git rev-list -n 1 $tag 2>$null
-if ($LASTEXITCODE -ne 0 -or -not $localTagOutput) {
+& git show-ref --verify --quiet "refs/tags/$tag"
+if ($LASTEXITCODE -ne 0) {
     git -c user.name='huangko555' `
         -c user.email='43404722+huangko555@users.noreply.github.com' `
         tag -a $tag -m "Bitty Note $tag"
     if ($LASTEXITCODE -ne 0) {
         throw "Unable to create tag $tag."
     }
-} elseif (([string]$localTagOutput).Trim() -ne $head) {
-    throw "Existing local tag $tag does not point to the current commit."
+} else {
+    $localTagOutput = & git rev-list -n 1 $tag
+    if ($LASTEXITCODE -ne 0 -or -not $localTagOutput) {
+        throw "Unable to read existing local tag $tag."
+    }
+    if (([string]$localTagOutput).Trim() -ne $head) {
+        throw "Existing local tag $tag does not point to the current commit."
+    }
 }
 
 Invoke-Checked -FailureMessage 'Unable to push main and the release tag.' -Command {

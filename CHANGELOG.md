@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.5.0 — 2026-08-30
+
+### English
+
+- Redesigned row drag deletion with a nearby target, overlap-based activation and hysteresis, clearer danger feedback, stronger depth shadows, and a solid red delete button with a white icon.
+- Kept nested-list drop guides close to the pointer by treating the space below an expanded parent as the first visible child slot, while collapsed parents continue to move as a single block.
+- Kept the menu bar, formatting toolbar, and editor caret hidden when a window starts or returns from the taskbar, preventing stale focus from appearing on controls or in the editor.
+- Made GitHub release preflight compatible with Windows PowerShell 5 and added a regression test for the missing-release path.
+
+### 简体中文
+
+- 重新设计行拖拽删除：删除目标靠近拖拽行，基于重叠和迟滞进入危险态，并强化危险反馈、立体阴影以及红底白色图标的删除按钮。
+- 让嵌套列表的插入提示保持在鼠标附近：展开父项下方对应第一个可见子项槽位，收起父项仍作为整体移动。
+- 窗口启动或从任务栏恢复时，保持菜单栏、格式工具栏和编辑器光标隐藏，避免控件或编辑器残留焦点。
+- 提升 GitHub 发布预检对 Windows PowerShell 5 的兼容性，并为 Release 不存在的路径补充回归测试。
+
 ## v1.4.0 — 2026-08-29
 
 ### English

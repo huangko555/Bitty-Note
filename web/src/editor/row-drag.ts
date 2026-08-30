@@ -803,6 +803,23 @@ function rowAtPosition(view: EditorView, position: number): RowDescriptor | null
   return header ? { node, position, dom, header } : null;
 }
 
+function firstVisibleChildRow(
+  view: EditorView,
+  row: RowDescriptor,
+): RowDescriptor | null {
+  if (row.node.type !== noteSchema.nodes.list_item || row.node.attrs.collapsed) return null;
+  const childListIndex = lastNestedListIndex(row.node);
+  if (childListIndex === null) return null;
+  const childList = row.node.child(childListIndex);
+  if (childList.childCount === 0) return null;
+
+  let childListPosition = row.position + 1;
+  for (let index = 0; index < childListIndex; index += 1) {
+    childListPosition += row.node.child(index).nodeSize;
+  }
+  return rowAtPosition(view, childListPosition + 1);
+}
+
 class RowDragHandleView {
   private readonly host: HTMLElement;
   private readonly handle: HTMLButtonElement;
@@ -1178,6 +1195,13 @@ class RowDragHandleView {
       side = relativeY < 0.25 ? "before" : relativeY > 0.75 ? "after" : "inside";
     } else {
       side = event.clientY < headerRect.top + lineHeight / 2 ? "before" : "after";
+    }
+    if (this.source.node.type !== noteSchema.nodes.heading && side === "after") {
+      const firstChild = firstVisibleChildRow(this.view, row);
+      if (firstChild) {
+        this.positionDropTarget(firstChild, "before", firstChild.header);
+        return;
+      }
     }
     this.positionDropTarget(row, side, row.header);
   };

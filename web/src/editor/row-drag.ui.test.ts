@@ -841,11 +841,11 @@ describe("row drag handle", () => {
     );
     const item = (text: string, children: readonly ReturnType<typeof noteSchema.nodes.bullet_list.create>[] = []) =>
       noteSchema.nodes.list_item.create({ checked: null }, [paragraph(text), ...children]);
-    const parent = item("父项", [noteSchema.nodes.bullet_list.create(null, item("子项"))]);
     const source = item("移动项");
+    const parent = item("父项", [noteSchema.nodes.bullet_list.create(null, [source, item("子项")])]);
     const doc = noteSchema.nodes.doc.create(
       null,
-      noteSchema.nodes.bullet_list.create(null, [parent, source]),
+      noteSchema.nodes.bullet_list.create(null, parent),
     );
     view = new EditorView(host, {
       state: EditorState.create({ doc, plugins: [rowDragPlugin()] }),
@@ -856,8 +856,8 @@ describe("row drag handle", () => {
     const paragraphs = view.dom.querySelectorAll("p");
     vi.spyOn(listItems[0]!, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 70));
     vi.spyOn(paragraphs[0]!, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 22));
-    vi.spyOn(listItems[2]!, "getBoundingClientRect").mockReturnValue(rect(80, 110, 200, 22));
-    vi.spyOn(paragraphs[2]!, "getBoundingClientRect").mockReturnValue(rect(80, 110, 200, 22));
+    vi.spyOn(listItems[1]!, "getBoundingClientRect").mockReturnValue(rect(100, 60, 180, 22));
+    vi.spyOn(paragraphs[1]!, "getBoundingClientRect").mockReturnValue(rect(100, 60, 180, 22));
     let parentPosition = -1;
     let sourcePosition = -1;
     doc.descendants((node, position) => {
@@ -866,14 +866,14 @@ describe("row drag handle", () => {
       if (node.firstChild?.textContent === "移动项") sourcePosition = position;
       return true;
     });
-    vi.spyOn(view, "posAtCoords").mockImplementation(({ top }) => top > 100
+    vi.spyOn(view, "posAtCoords").mockImplementation(({ top }) => top > 50
       ? { pos: sourcePosition + 1, inside: sourcePosition }
       : { pos: parentPosition + 1, inside: parentPosition });
 
     host.dispatchEvent(new MouseEvent("pointermove", {
       bubbles: true,
       clientX: 100,
-      clientY: 120,
+      clientY: 60,
     }));
     const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
     const indicator = host.querySelector<HTMLElement>(".block-drop-indicator")!;
@@ -893,15 +893,15 @@ describe("row drag handle", () => {
       return event;
     };
 
-    handle.dispatchEvent(pointerEvent("pointerdown", 120));
+    handle.dispatchEvent(pointerEvent("pointerdown", 60));
     window.dispatchEvent(pointerEvent("pointermove", 40));
 
     expect(indicator.classList.contains("visible")).toBe(false);
     expect(insideIndicator.classList.contains("visible")).toBe(false);
     window.dispatchEvent(pointerEvent("pointercancel", 40));
 
-    host.dispatchEvent(pointerEvent("pointermove", 120));
-    handle.dispatchEvent(pointerEvent("pointerdown", 120));
+    host.dispatchEvent(pointerEvent("pointermove", 60));
+    handle.dispatchEvent(pointerEvent("pointerdown", 60));
     window.dispatchEvent(pointerEvent("pointermove", 31));
 
     expect(indicator.classList.contains("visible")).toBe(false);
@@ -910,6 +910,92 @@ describe("row drag handle", () => {
     expect(insideIndicator.style.top).toBe("17px");
     expect(insideIndicator.style.height).toBe("76px");
     window.dispatchEvent(pointerEvent("pointercancel", 31));
+  });
+
+  it.each([
+    {
+      collapsed: false,
+      expectedTop: "89px",
+      expectedRootItems: ["父项", "尾项"],
+      expectedChildItems: ["移动项", "子项"],
+      state: "expanded",
+    },
+    {
+      collapsed: true,
+      expectedTop: "81px",
+      expectedRootItems: ["父项", "移动项", "尾项"],
+      expectedChildItems: ["子项"],
+      state: "collapsed",
+    },
+  ])("uses the nearest visible slot below a $state list parent", ({
+    collapsed,
+    expectedTop,
+    expectedRootItems,
+    expectedChildItems,
+  }) => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const paragraph = (text: string) => noteSchema.nodes.paragraph.create(
+      null,
+      noteSchema.text(text),
+    );
+    const item = (text: string, children: readonly ReturnType<typeof noteSchema.nodes.bullet_list.create>[] = []) =>
+      noteSchema.nodes.list_item.create({ checked: null }, [paragraph(text), ...children]);
+    const source = item("移动项");
+    const parent = noteSchema.nodes.list_item.create(
+      { checked: null, collapsed },
+      [paragraph("父项"), noteSchema.nodes.bullet_list.create(null, item("子项"))],
+    );
+    const tail = item("尾项");
+    const doc = noteSchema.nodes.doc.create(
+      null,
+      noteSchema.nodes.bullet_list.create(null, [source, parent, tail]),
+    );
+    view = new EditorView(host, {
+      state: EditorState.create({ doc, plugins: [rowDragPlugin()] }),
+    });
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 220));
+    vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(10, 0, 300, 220));
+    const listItems = view.dom.querySelectorAll("li");
+    const paragraphs = view.dom.querySelectorAll("p");
+    vi.spyOn(listItems[0]!, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 22));
+    vi.spyOn(paragraphs[0]!, "getBoundingClientRect").mockReturnValue(rect(80, 20, 200, 22));
+    vi.spyOn(listItems[1]!, "getBoundingClientRect").mockReturnValue(rect(80, 60, 200, 70));
+    vi.spyOn(paragraphs[1]!, "getBoundingClientRect").mockReturnValue(rect(80, 60, 200, 22));
+    vi.spyOn(listItems[2]!, "getBoundingClientRect").mockReturnValue(rect(100, 90, 180, 22));
+    vi.spyOn(paragraphs[2]!, "getBoundingClientRect").mockReturnValue(rect(100, 90, 180, 22));
+    vi.spyOn(listItems[3]!, "getBoundingClientRect").mockReturnValue(rect(80, 150, 200, 22));
+    vi.spyOn(paragraphs[3]!, "getBoundingClientRect").mockReturnValue(rect(80, 150, 200, 22));
+    let sourcePosition = -1;
+    let parentPosition = -1;
+    doc.descendants((node, position) => {
+      if (node.type !== noteSchema.nodes.list_item) return true;
+      if (node.firstChild?.textContent === "移动项") sourcePosition = position;
+      if (node.firstChild?.textContent === "父项") parentPosition = position;
+      return true;
+    });
+    vi.spyOn(view, "posAtCoords").mockImplementation(({ top }) => top < 50
+      ? { pos: sourcePosition + 1, inside: sourcePosition }
+      : { pos: parentPosition + 1, inside: parentPosition });
+
+    host.dispatchEvent(dragPointerEvent("pointermove", 30, 91));
+    const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
+    const indicator = host.querySelector<HTMLElement>(".block-drop-indicator")!;
+    enableDragHandle(handle);
+    handle.dispatchEvent(dragPointerEvent("pointerdown", 30, 91));
+    window.dispatchEvent(dragPointerEvent("pointermove", 79, 91));
+
+    expect(indicator.classList.contains("visible")).toBe(true);
+    expect(indicator.style.top).toBe(expectedTop);
+    window.dispatchEvent(dragPointerEvent("pointerup", 79, 91));
+
+    const rootList = view.state.doc.firstChild!;
+    const movedParent = rootList.firstChild!;
+    const childList = movedParent.lastChild!;
+    expect(Array.from({ length: rootList.childCount }, (_, index) =>
+      rootList.child(index).firstChild?.textContent)).toEqual(expectedRootItems);
+    expect(Array.from({ length: childList.childCount }, (_, index) =>
+      childList.child(index).firstChild?.textContent)).toEqual(expectedChildItems);
   });
 
   it("uses one guide-line inset for a shared heading and list boundary", () => {
