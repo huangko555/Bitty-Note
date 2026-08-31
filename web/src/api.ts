@@ -254,7 +254,7 @@ function browserMock(): DesktopApi {
       },
       notes: summary(notes),
       system_fonts: ["Microsoft YaHei", "DengXian", "SimSun", "KaiTi"],
-      app_version: "1.5.0",
+      app_version: "1.5.1",
       update_state: { status: "unsupported", available_version: null },
       update_result: null,
       window_role: "main",

@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.5.1 — 2026-08-31
+
+### English
+
+- Restored row-handle range feedback to the subtle filled background, removing the distracting outer shadow while preserving the full affected range.
+- Moved the drag-to-delete target farther from the floating preview, increasing the separation to reduce accidental deletion activation.
+
+### 简体中文
+
+- 将行拖动手柄的范围反馈恢复为轻量背景填色，移除干扰视觉的外阴影，同时继续覆盖完整受影响范围。
+- 将拖动删除目标进一步移离浮动预览卡，增大间距以降低误触删除的可能性。
+
 ## v1.5.0 — 2026-08-30
 
 ### English

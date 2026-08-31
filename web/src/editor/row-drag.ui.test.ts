@@ -85,11 +85,7 @@ describe("row drag handle", () => {
 
     const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
     const highlight = host.querySelector<HTMLElement>(".block-row-handle-highlight")!;
-    const highlightShadow = document.querySelector<HTMLElement>(".block-row-handle-shadow")!;
     const preview = host.querySelector<HTMLElement>(".block-drag-preview")!;
-    expect(highlightShadow).not.toBeNull();
-    expect(highlightShadow.parentElement).toBe(host.parentElement);
-    expect(host.contains(highlightShadow)).toBe(false);
     expect(handle.classList.contains("visible")).toBe(true);
     expect(handle.style.left).toBe("13px");
     expect(host.querySelector(".block-row-highlight")).toBeNull();
@@ -98,10 +94,6 @@ describe("row drag handle", () => {
     handle.dispatchEvent(new MouseEvent("pointerenter"));
     expect(highlight.classList.contains("visible")).toBe(true);
     expect(highlight.style.left).toBe("13px");
-    expect(highlightShadow.style.left).toBe(highlight.style.left);
-    expect(highlightShadow.style.top).toBe(highlight.style.top);
-    expect(highlightShadow.style.width).toBe(highlight.style.width);
-    expect(highlightShadow.style.height).toBe(highlight.style.height);
     view.updateState(view.state);
     expect(handle.classList.contains("visible")).toBe(true);
     expect(highlight.classList.contains("visible")).toBe(true);
@@ -119,7 +111,6 @@ describe("row drag handle", () => {
       clientY: 50,
     }));
     expect(highlight.classList.contains("visible")).toBe(true);
-    expect(highlightShadow.classList.contains("is-suppressed")).toBe(true);
     expect(preview.classList.contains("visible")).toBe(true);
     expect(preview.firstElementChild?.classList.contains("block-drag-preview-handle")).toBe(true);
     expect(preview.querySelector(".block-drag-preview-text")?.textContent).toBe("缩进内容");
@@ -1771,7 +1762,7 @@ describe("row drag handle", () => {
     page.append(host, toolbar);
     shell.append(titleBar, page);
     document.body.append(shell);
-    vi.spyOn(window, "innerWidth", "get").mockReturnValue(300);
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(420);
     vi.spyOn(titleBar, "getBoundingClientRect").mockReturnValue(rect(0, 0, 300, 44));
     vi.spyOn(toolbar, "getBoundingClientRect").mockReturnValue(rect(0, 156, 300, 44));
     const doc = noteSchema.nodes.doc.create(null, [
@@ -1823,56 +1814,56 @@ describe("row drag handle", () => {
     window.dispatchEvent(pointerEvent("pointermove", 120, 2));
     expect(deleteTarget.classList.contains("visible")).toBe(true);
     expect(deleteTarget.classList.contains("is-armed")).toBe(false);
-    expect(deleteTarget.style.left).toBe("248px");
+    expect(deleteTarget.style.left).toBe("336px");
     expect(deleteTarget.style.top).toBe("52px");
 
     window.dispatchEvent(pointerEvent("pointermove", 154, 100));
     expect(deleteTarget.classList.contains("is-armed")).toBe(false);
     expect(deleteTarget.style.top).toBe("52px");
 
-    window.dispatchEvent(pointerEvent("pointermove", 150, 74));
+    window.dispatchEvent(pointerEvent("pointermove", 238, 74));
     expect(deleteTarget.classList.contains("is-armed")).toBe(false);
 
-    window.dispatchEvent(pointerEvent("pointermove", 154, 74));
+    window.dispatchEvent(pointerEvent("pointermove", 242, 74));
     expect(deleteTarget.classList.contains("is-armed")).toBe(true);
     expect(preview.classList.contains("is-delete-armed")).toBe(true);
     expect(deleteHint.textContent).toBe("Release to delete");
 
-    window.dispatchEvent(pointerEvent("pointermove", 144, 74));
+    window.dispatchEvent(pointerEvent("pointermove", 232, 74));
     expect(deleteTarget.classList.contains("is-armed")).toBe(true);
 
-    window.dispatchEvent(pointerEvent("pointermove", 142, 74));
+    window.dispatchEvent(pointerEvent("pointermove", 230, 74));
     expect(deleteTarget.classList.contains("is-armed")).toBe(false);
     expect(preview.classList.contains("is-delete-armed")).toBe(false);
 
-    window.dispatchEvent(pointerEvent("pointermove", 154, 74));
+    window.dispatchEvent(pointerEvent("pointermove", 242, 74));
     expect(deleteTarget.classList.contains("is-armed")).toBe(true);
 
-    window.dispatchEvent(pointerEvent("pointermove", 310, 74));
+    window.dispatchEvent(pointerEvent("pointermove", 470, 74));
     expect(deleteTarget.classList.contains("is-armed")).toBe(false);
     expect(preview.classList.contains("is-delete-armed")).toBe(false);
 
-    window.dispatchEvent(pointerEvent("pointermove", 274, 74));
+    window.dispatchEvent(pointerEvent("pointermove", 362, 74));
     expect(deleteTarget.classList.contains("is-armed")).toBe(true);
 
-    window.dispatchEvent(pointerEvent("pointermove", 154, 101));
+    window.dispatchEvent(pointerEvent("pointermove", 242, 101));
     expect(deleteTarget.classList.contains("is-armed")).toBe(false);
 
     window.dispatchEvent(pointerEvent("pointerup", 154, 101));
     expect(view.state.doc.textContent).toBe("甲乙");
 
     handle.dispatchEvent(pointerEvent("pointerdown", 100, 130));
-    window.dispatchEvent(pointerEvent("pointermove", 154, 126));
+    window.dispatchEvent(pointerEvent("pointermove", 242, 126));
     expect(deleteTarget.classList.contains("is-armed")).toBe(true);
     expect(preview.classList.contains("is-delete-hint-above")).toBe(true);
-    window.dispatchEvent(pointerEvent("pointermove", 142, 126));
-    window.dispatchEvent(pointerEvent("pointerup", 142, 126));
+    window.dispatchEvent(pointerEvent("pointermove", 230, 126));
+    window.dispatchEvent(pointerEvent("pointerup", 230, 126));
     expect(view.state.doc.textContent).toBe("甲乙");
 
     handle.dispatchEvent(pointerEvent("pointerdown", 100, 30));
-    window.dispatchEvent(pointerEvent("pointermove", 154, 74));
+    window.dispatchEvent(pointerEvent("pointermove", 242, 74));
     host.scrollTop = 80;
-    window.dispatchEvent(pointerEvent("pointerup", 154, 74));
+    window.dispatchEvent(pointerEvent("pointerup", 242, 74));
 
     expect(view.state.doc.textContent).toBe("乙");
     expect(host.scrollTop).toBe(80);

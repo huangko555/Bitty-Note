@@ -338,12 +338,8 @@ h1.has-fold-toggle, .has-fold-toggle > p:first-child, .has-fold-toggle > .task-c
 .is-folded-content { display: none !important; }
 .is-collapsed-list-item:not(.task-list-item) > :not(:first-child) { display: none; }
 .task-list-item.is-collapsed-list-item > .task-content > :not(:first-child) { display: none; }
-.block-row-handle-highlight { position: fixed; z-index: 0; display: none; border-radius: var(--radius-control); background: transparent; pointer-events: none; }
+.block-row-handle-highlight { position: fixed; z-index: 0; display: none; border-radius: var(--radius-control); background: var(--block-hover-surface); pointer-events: none; }
 .block-row-handle-highlight.visible { display: block; }
-.block-row-handle-highlight.is-fold-range { background: var(--block-hover-surface); }
-.editor-host:has(.block-drag-handle.is-dragging) .block-row-handle-highlight { background: var(--block-hover-surface); }
-.block-row-handle-shadow { position: fixed; z-index: 11; display: none; border-radius: var(--radius-control); box-shadow: 0 0 5px rgb(32 30 24 / 20%), 0 0 18px rgb(32 30 24 / 17%); pointer-events: none; }
-.note-page:has(> .editor-host .block-row-handle-highlight.visible:not(.is-fold-range)) > .block-row-handle-shadow:not(.is-suppressed) { display: block; }
 .block-drag-handle { position: fixed; z-index: 8; display: none; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 8px; color: var(--muted); background: transparent; cursor: grab; }
 .block-drag-handle.visible { display: grid; }
 .block-drag-handle:hover { color: var(--ink); background: transparent; }

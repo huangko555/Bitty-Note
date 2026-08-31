@@ -28,7 +28,7 @@ export type RowDropSide = "before" | "after" | "inside";
 
 type ListKind = "bullet" | "ordered" | "task";
 type DocumentEndAnchorEdge = "top" | "bottom";
-const DELETE_TARGET_GAP = 48;
+const DELETE_TARGET_GAP = 120;
 const DELETE_TARGET_VIEWPORT_MARGIN = 8;
 const DELETE_TARGET_ENTER_OVERLAP = 0.5;
 const DELETE_TARGET_EXIT_OVERLAP = 0.25;
@@ -824,7 +824,6 @@ class RowDragHandleView {
   private readonly host: HTMLElement;
   private readonly handle: HTMLButtonElement;
   private readonly highlight: HTMLDivElement;
-  private readonly highlightShadow: HTMLDivElement;
   private readonly indicator: HTMLDivElement;
   private readonly insideIndicator: HTMLDivElement;
   private readonly preview: HTMLDivElement;
@@ -875,8 +874,6 @@ class RowDragHandleView {
     }));
     this.highlight = document.createElement("div");
     this.highlight.className = "block-row-handle-highlight";
-    this.highlightShadow = document.createElement("div");
-    this.highlightShadow.className = "block-row-handle-shadow";
     this.indicator = document.createElement("div");
     this.indicator.className = "block-drop-indicator";
     this.insideIndicator = document.createElement("div");
@@ -911,7 +908,6 @@ class RowDragHandleView {
       this.preview,
       this.deleteTarget,
     );
-    (this.host.parentElement ?? this.host).append(this.highlightShadow);
 
     this.host.addEventListener("pointermove", this.onHoverMove);
     this.host.addEventListener("pointerleave", this.onHoverLeave);
@@ -960,7 +956,6 @@ class RowDragHandleView {
     this.handle.removeEventListener("wheel", this.onHandleWheel);
     this.handle.removeEventListener("lostpointercapture", this.onLostPointerCapture);
     this.highlight.remove();
-    this.highlightShadow.remove();
     this.handle.remove();
     this.indicator.remove();
     this.insideIndicator.remove();
@@ -1059,7 +1054,6 @@ class RowDragHandleView {
     this.showPreview(this.source, event.clientX, event.clientY);
     this.prepareDeleteTarget();
     this.handle.classList.add("is-dragging");
-    this.highlightShadow.classList.add("is-suppressed");
     try {
       this.handle.setPointerCapture(event.pointerId);
     } catch {
@@ -1333,7 +1327,6 @@ class RowDragHandleView {
       this.reparentLevel = null;
       this.indicator.classList.remove("visible");
       this.insideIndicator.classList.remove("visible");
-      this.highlightShadow.classList.remove("is-suppressed");
       this.setDeleteArmed(false);
       this.deleteTarget.classList.remove("visible");
       this.deleteTarget.style.left = "";
@@ -1482,14 +1475,10 @@ class RowDragHandleView {
   }
 
   private setHighlightRect(left: number, top: number, right: number, bottom: number): void {
-    const width = `${Math.max(MIN_FEEDBACK_WIDTH, right - left)}px`;
-    const height = `${Math.max(0, bottom - top)}px`;
-    for (const element of [this.highlight, this.highlightShadow]) {
-      element.style.left = `${left}px`;
-      element.style.top = `${top}px`;
-      element.style.width = width;
-      element.style.height = height;
-    }
+    this.highlight.style.left = `${left}px`;
+    this.highlight.style.top = `${top}px`;
+    this.highlight.style.width = `${Math.max(MIN_FEEDBACK_WIDTH, right - left)}px`;
+    this.highlight.style.height = `${Math.max(0, bottom - top)}px`;
   }
 
   private positionDropTarget(
