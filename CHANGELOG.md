@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.5.2 — 2026-08-31
+
+### English
+
+- Required at least 180 px of current rightward travel before drag-to-delete can activate, even when a long preview overlaps a viewport-clamped target in a narrow window.
+- Increased the preferred gap between the floating preview and delete target to 180 px, and cancel deletion immediately when the pointer moves back inside the travel threshold.
+
+### 简体中文
+
+- 行拖动删除必须保持至少 180px 的当前向右位移才能激活；即使窄窗口中的长预览卡提前重叠被边界限制的删除目标，也不会误进入删除态。
+- 将浮动预览卡与删除目标的期望间距增加到 180px；指针退回位移门槛以内时立即取消删除态。
+
 ## v1.5.1 — 2026-08-31
 
 ### English

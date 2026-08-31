@@ -28,7 +28,8 @@ export type RowDropSide = "before" | "after" | "inside";
 
 type ListKind = "bullet" | "ordered" | "task";
 type DocumentEndAnchorEdge = "top" | "bottom";
-const DELETE_TARGET_GAP = 120;
+const DELETE_TARGET_GAP = 180;
+const DELETE_MIN_RIGHT_TRAVEL = 180;
 const DELETE_TARGET_VIEWPORT_MARGIN = 8;
 const DELETE_TARGET_ENTER_OVERLAP = 0.5;
 const DELETE_TARGET_EXIT_OVERLAP = 0.25;
@@ -1828,6 +1829,10 @@ class RowDragHandleView {
       return;
     }
     this.deleteTarget.classList.add("visible");
+    if (clientX - this.startX < DELETE_MIN_RIGHT_TRAVEL) {
+      this.setDeleteArmed(false);
+      return;
+    }
     const previewLeft = clientX - 4;
     const previewRight = previewLeft + this.previewWidth;
     const overlapWidth = Math.max(
