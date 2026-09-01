@@ -31,6 +31,7 @@ type DocumentEndAnchorEdge = "top" | "bottom";
 const DELETE_TARGET_GAP = 180;
 const DELETE_MIN_RIGHT_TRAVEL = 180;
 const DELETE_TARGET_VIEWPORT_MARGIN = 8;
+const DELETE_HINT_HORIZONTAL_PADDING = 8;
 const DELETE_TARGET_ENTER_OVERLAP = 0.5;
 const DELETE_TARGET_EXIT_OVERLAP = 0.25;
 const DELETE_TARGET_ENTER_VERTICAL_DISTANCE = 18;
@@ -831,6 +832,7 @@ class RowDragHandleView {
   private readonly previewText: HTMLSpanElement;
   private readonly previewMeta: HTMLSpanElement;
   private readonly deleteHint: HTMLSpanElement;
+  private readonly deleteHintText: HTMLSpanElement;
   private readonly deleteTarget: HTMLDivElement;
   private hovered: RowDescriptor | null = null;
   private foldHovered: RowDescriptor | null = null;
@@ -842,6 +844,8 @@ class RowDragHandleView {
   private reparentLevel: number | null = null;
   private startX = 0;
   private startY = 0;
+  private pointerX = 0;
+  private pointerY = 0;
   private moved = false;
   private activePointerId: number | null = null;
   private restoreEditorFocus = false;
@@ -892,7 +896,10 @@ class RowDragHandleView {
     this.previewMeta.className = "block-drag-preview-meta";
     this.deleteHint = document.createElement("span");
     this.deleteHint.className = "block-drag-delete-hint";
-    this.deleteHint.textContent = t("releaseToDelete");
+    this.deleteHintText = document.createElement("span");
+    this.deleteHintText.className = "block-drag-delete-hint-text";
+    this.deleteHintText.textContent = t("releaseToDelete");
+    this.deleteHint.append(this.deleteHintText);
     this.preview.append(previewHandle, this.previewText, this.previewMeta, this.deleteHint);
     this.deleteTarget = document.createElement("div");
     this.deleteTarget.className = "block-delete-target";
@@ -1047,6 +1054,8 @@ class RowDragHandleView {
     this.activePointerId = event.pointerId;
     this.startX = event.clientX;
     this.startY = event.clientY;
+    this.pointerX = event.clientX;
+    this.pointerY = event.clientY;
     this.moved = false;
     this.restoreEditorFocus = this.view.hasFocus();
     this.showDraggedSource();
@@ -1065,10 +1074,13 @@ class RowDragHandleView {
     window.addEventListener("pointercancel", this.onDragCancel, true);
     window.addEventListener("blur", this.onWindowBlur);
     window.addEventListener("keydown", this.onWindowKeyDown, true);
+    window.addEventListener("resize", this.onWindowResize);
   };
 
   private readonly onDragMove = (event: PointerEvent): void => {
     if (!this.source) return;
+    this.pointerX = event.clientX;
+    this.pointerY = event.clientY;
     this.positionPreview(event.clientX, event.clientY);
     if (
       !this.moved
@@ -1301,6 +1313,11 @@ class RowDragHandleView {
     if (event.key === "Escape" && this.source) this.finishDrag();
   };
 
+  private readonly onWindowResize = (): void => {
+    if (!this.source || !this.deleteTarget.classList.contains("is-armed")) return;
+    this.updateDeleteHintPlacement(this.pointerX, this.pointerY);
+  };
+
   private finishDrag(pointerId: number | null = this.activePointerId): void {
     if (this.finishing) return;
     this.finishing = true;
@@ -1311,6 +1328,7 @@ class RowDragHandleView {
       window.removeEventListener("pointercancel", this.onDragCancel, true);
       window.removeEventListener("blur", this.onWindowBlur);
       window.removeEventListener("keydown", this.onWindowKeyDown, true);
+      window.removeEventListener("resize", this.onWindowResize);
       if (pointerId !== null && this.handle.hasPointerCapture(pointerId)) {
         try {
           this.handle.releasePointerCapture(pointerId);
@@ -1805,10 +1823,11 @@ class RowDragHandleView {
     this.preview.classList.toggle("is-delete-armed", armed);
     if (!armed) {
       this.preview.classList.remove("is-delete-hint-above");
+      this.deleteHintText.style.removeProperty("--delete-hint-text-offset-x");
     }
   }
 
-  private updateDeleteHintPlacement(clientY: number): void {
+  private updateDeleteHintPlacement(clientX: number, clientY: number): void {
     const toolbar = this.host.parentElement?.querySelector<HTMLElement>(
       ":scope > .format-toolbar.visible:not(.is-unavailable)",
     );
@@ -1818,6 +1837,41 @@ class RowDragHandleView {
     this.preview.classList.toggle(
       "is-delete-hint-above",
       clientY + 18 + 38 > lowerBoundary - DELETE_TARGET_VIEWPORT_MARGIN,
+    );
+
+    const hintWidth = this.deleteHint.offsetWidth
+      || this.deleteHint.getBoundingClientRect().width;
+    const textWidth = this.deleteHintText.offsetWidth
+      || this.deleteHintText.getBoundingClientRect().width;
+    if (hintWidth <= 0 || textWidth <= 0) {
+      this.deleteHintText.style.removeProperty("--delete-hint-text-offset-x");
+      return;
+    }
+
+    const hintLeft = clientX - 4 + (this.previewWidth - hintWidth) / 2;
+    const centeredTextLeft = hintLeft + (hintWidth - textWidth) / 2;
+    const minimumCardOffset = hintLeft + DELETE_HINT_HORIZONTAL_PADDING
+      - centeredTextLeft;
+    const maximumCardOffset = hintLeft + hintWidth - DELETE_HINT_HORIZONTAL_PADDING
+      - (centeredTextLeft + textWidth);
+    if (minimumCardOffset > maximumCardOffset) {
+      this.deleteHintText.style.setProperty("--delete-hint-text-offset-x", "0px");
+      return;
+    }
+
+    const minimumViewportOffset = DELETE_TARGET_VIEWPORT_MARGIN - centeredTextLeft;
+    const maximumViewportOffset = window.innerWidth - DELETE_TARGET_VIEWPORT_MARGIN
+      - (centeredTextLeft + textWidth);
+    const preferredOffset = minimumViewportOffset <= maximumViewportOffset
+      ? Math.min(Math.max(0, minimumViewportOffset), maximumViewportOffset)
+      : window.innerWidth / 2 - (centeredTextLeft + textWidth / 2);
+    const offset = Math.min(
+      Math.max(preferredOffset, minimumCardOffset),
+      maximumCardOffset,
+    );
+    this.deleteHintText.style.setProperty(
+      "--delete-hint-text-offset-x",
+      `${Math.round(offset)}px`,
     );
   }
 
@@ -1848,7 +1902,7 @@ class RowDragHandleView {
       : overlap >= DELETE_TARGET_ENTER_OVERLAP
         && verticalDistance <= DELETE_TARGET_ENTER_VERTICAL_DISTANCE;
     this.setDeleteArmed(armed);
-    if (armed) this.updateDeleteHintPlacement(clientY);
+    if (armed) this.updateDeleteHintPlacement(clientX, clientY);
   }
 }
 

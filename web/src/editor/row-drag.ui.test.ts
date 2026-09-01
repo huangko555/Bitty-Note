@@ -1786,6 +1786,9 @@ describe("row drag handle", () => {
     const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
     const preview = host.querySelector<HTMLElement>(".block-drag-preview")!;
     const deleteHint = preview.querySelector<HTMLElement>(".block-drag-delete-hint")!;
+    const deleteHintText = preview.querySelector<HTMLElement>(
+      ".block-drag-delete-hint-text",
+    )!;
     const deleteTarget = host.querySelector<HTMLElement>(".block-delete-target")!;
     vi.spyOn(preview, "getBoundingClientRect").mockImplementation(() => rect(
       Number.parseFloat(preview.style.left) || 0,
@@ -1793,6 +1796,12 @@ describe("row drag handle", () => {
       120,
       36,
     ));
+    Object.defineProperties(deleteHint, {
+      offsetWidth: { value: 128 },
+    });
+    Object.defineProperties(deleteHintText, {
+      offsetWidth: { value: 80 },
+    });
     Object.defineProperties(handle, {
       setPointerCapture: { value: vi.fn() },
       hasPointerCapture: { value: vi.fn(() => false) },
@@ -1828,6 +1837,8 @@ describe("row drag handle", () => {
     expect(deleteTarget.classList.contains("is-armed")).toBe(true);
     expect(preview.classList.contains("is-delete-armed")).toBe(true);
     expect(deleteHint.textContent).toBe("Release to delete");
+    expect(deleteHintText.style.getPropertyValue("--delete-hint-text-offset-x"))
+      .toBe("0px");
 
     window.dispatchEvent(pointerEvent("pointermove", 405, 74));
     expect(deleteTarget.classList.contains("is-armed")).toBe(true);
@@ -1913,6 +1924,10 @@ describe("row drag handle", () => {
     host.dispatchEvent(pointerEvent("pointermove", 14, 30));
     const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
     const preview = host.querySelector<HTMLElement>(".block-drag-preview")!;
+    const deleteHint = preview.querySelector<HTMLElement>(".block-drag-delete-hint")!;
+    const deleteHintText = preview.querySelector<HTMLElement>(
+      ".block-drag-delete-hint-text",
+    )!;
     const deleteTarget = host.querySelector<HTMLElement>(".block-delete-target")!;
     vi.spyOn(preview, "getBoundingClientRect").mockImplementation(() => rect(
       Number.parseFloat(preview.style.left) || 0,
@@ -1920,6 +1935,12 @@ describe("row drag handle", () => {
       220,
       36,
     ));
+    Object.defineProperties(deleteHint, {
+      offsetWidth: { value: 228 },
+    });
+    Object.defineProperties(deleteHintText, {
+      offsetWidth: { value: 80 },
+    });
     enableDragHandle(handle);
 
     handle.dispatchEvent(pointerEvent("pointerdown", 14, 30));
@@ -1929,8 +1950,16 @@ describe("row drag handle", () => {
 
     window.dispatchEvent(pointerEvent("pointermove", 194, 74));
     expect(deleteTarget.classList.contains("is-armed")).toBe(true);
+    expect(deleteHintText.style.getPropertyValue("--delete-hint-text-offset-x"))
+      .toBe("-48px");
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(260);
+    window.dispatchEvent(new Event("resize"));
+    expect(deleteHintText.style.getPropertyValue("--delete-hint-text-offset-x"))
+      .toBe("-66px");
     window.dispatchEvent(pointerEvent("pointermove", 54, 74));
     expect(deleteTarget.classList.contains("is-armed")).toBe(false);
+    expect(deleteHintText.style.getPropertyValue("--delete-hint-text-offset-x"))
+      .toBe("");
     window.dispatchEvent(pointerEvent("pointerup", 54, 74));
     expect(view.state.doc.textContent).toBe("甲乙");
 
