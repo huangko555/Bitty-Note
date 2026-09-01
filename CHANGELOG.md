@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.5.3 — 2026-09-01
+
+### English
+
+- Kept drag-to-delete danger-card text centered while fully visible, shifting it only as far as needed when the card extends beyond the window.
+- Constrained the text to the card's inner padding, maximized its visible area when full visibility is impossible, and recalculated placement during dragging and window resizing.
+
+### 简体中文
+
+- 拖动删除危险卡片的文字在可完整显示时保持居中；卡片超出窗口时，仅做保证可见所需的最小偏移。
+- 文字始终受卡片内边距约束；无法完整显示时选择窗口内可见面积最大的位置，并在拖动及窗口尺寸变化时重新计算。
+
 ## v1.5.2 — 2026-08-31
 
 ### English
