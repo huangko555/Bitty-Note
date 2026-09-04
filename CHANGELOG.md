@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.5.4 — 2026-09-04
+
+### English
+
+- Made title-bar actions respond to the first click when a note window is inactive, including Back, New note, Always on top, and Minimize across main and separate note windows.
+- Preserved startup cleanup for stale hover and focus states without disabling title-bar pointer handling during normal window activation.
+
+### 简体中文
+
+- 便签窗口失去焦点后，标题栏的返回、新建、置顶和最小化按钮现在首次点击即可生效，覆盖主窗口和独立便签窗口。
+- 保留启动时对陈旧悬浮及焦点状态的清理，同时避免在普通窗口激活时临时关闭标题栏指针响应。
+
 ## v1.5.3 — 2026-09-01
 
 ### English

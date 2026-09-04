@@ -280,6 +280,27 @@ try {
         throw "The first click on the inactive main window only focused it. stderr: $stderrText"
     }
 
+    [NativeMultiWindowTest]::SetForegroundWindow($alphaHandle) | Out-Null
+    Start-Sleep -Milliseconds 250
+    $mainPin = Find-NamedElement $mainRoot '置顶'
+    Invoke-ElementClick $mainPin
+    $configPath = Join-Path $configDirectory 'config.json'
+    $pinDeadline = [DateTime]::UtcNow.AddSeconds(3)
+    do {
+        Start-Sleep -Milliseconds 50
+        $alwaysOnTop = [bool]((Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json).always_on_top)
+    } while (-not $alwaysOnTop -and [DateTime]::UtcNow -lt $pinDeadline)
+    if (-not $alwaysOnTop) {
+        throw 'The first click on the inactive note title-bar pin only focused the window.'
+    }
+    Invoke-ElementClick $mainPin
+    $unpinDeadline = [DateTime]::UtcNow.AddSeconds(3)
+    do {
+        Start-Sleep -Milliseconds 50
+        $alwaysOnTop = [bool]((Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json).always_on_top)
+    } while ($alwaysOnTop -and [DateTime]::UtcNow -lt $unpinDeadline)
+    if ($alwaysOnTop) { throw 'The title-bar pin could not be reset after inactive-click testing.' }
+
     [NativeMultiWindowTest]::SetForegroundWindow($mainHandle) | Out-Null
     Start-Sleep -Milliseconds 250
     $back = Find-NamedElement $mainRoot '返回'
@@ -372,7 +393,7 @@ try {
     [NativeMultiWindowTest]::PostMessage($mainHandle, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
     if (-not $process.WaitForExit(8000)) { throw 'The multi-window app did not close normally.' }
     if ($process.ExitCode -ne 0) { throw "The app returned exit code $($process.ExitCode)." }
-    Write-Host 'PASS: Cross-window rename, quick-create window, title double-click and drag, auxiliary close, inactive first click, and dynamic titles all worked.'
+    Write-Host 'PASS: Cross-window rename, quick-create window, title double-click and drag, auxiliary close, inactive content and title-button clicks, and dynamic titles all worked.'
 }
 finally {
     $env:LOCALAPPDATA = $originalLocalAppData

@@ -33,7 +33,7 @@ export function prepareForWindowStartup(
     blurRestoredFocus(event.target instanceof Element ? event.target : null);
     hideRestoredEditorChrome();
   };
-  const prepare = () => {
+  const prepare = (suppressHover: boolean) => {
     if (stopped) return;
     if (!active) {
       active = true;
@@ -42,17 +42,21 @@ export function prepareForWindowStartup(
       pointerSource.addEventListener("keydown", release);
       focusRoot.addEventListener("focusin", blurRestoredControl);
     }
-    root.classList.add(WINDOW_HOVER_SUPPRESSED_CLASS);
+    // Startup and minimize restoration can leave a stale CSS hover state. A
+    // normal activation may be caused by clicking a title control, so hiding
+    // its pointer region here would turn that first click into activation only.
+    if (suppressHover) root.classList.add(WINDOW_HOVER_SUPPRESSED_CLASS);
     hideRestoredEditorChrome();
     blurRestoredFocus(focusRoot.activeElement);
   };
+  const prepareAfterActivation = () => prepare(false);
   const stop = () => {
     stopped = true;
     release();
-    pointerSource.removeEventListener("focus", prepare);
+    pointerSource.removeEventListener("focus", prepareAfterActivation);
   };
-  pointerSource.addEventListener("focus", prepare);
-  prepare();
+  pointerSource.addEventListener("focus", prepareAfterActivation);
+  prepare(true);
   return stop;
 }
 

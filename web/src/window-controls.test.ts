@@ -31,7 +31,7 @@ describe("window controls", () => {
     titleBar.remove();
   });
 
-  it("suppresses restored title focus again after the window is reactivated", () => {
+  it("keeps title controls available while clearing restored focus after reactivation", () => {
     const root = document.createElement("div");
     const pointerSource = new EventTarget();
     const titleBar = document.createElement("header");
@@ -48,7 +48,7 @@ describe("window controls", () => {
     button.focus();
 
     expect(document.activeElement).not.toBe(button);
-    expect(root.classList.contains("window-hover-suppressed")).toBe(true);
+    expect(root.classList.contains("window-hover-suppressed")).toBe(false);
     stopPreparing();
     titleBar.remove();
   });
