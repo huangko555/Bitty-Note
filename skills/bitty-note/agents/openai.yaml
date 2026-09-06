@@ -1,0 +1,7 @@
+interface:
+  display_name: "Bitty Note"
+  short_description: "使用 AI 管理本地 Bitty Note 记录与待办"
+  default_prompt: "使用 $bitty-note 按照我当前使用的语言管理 Bitty Note。"
+
+policy:
+  allow_implicit_invocation: false
