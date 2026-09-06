@@ -34,6 +34,8 @@ interface PythonApi {
     newline: "\n" | "\r\n",
   ): Promise<OpenedNote>;
   archive_note(name: string): Promise<{ archived_name: string }>;
+  trash_note(name: string): Promise<void>;
+  set_note_pinned(name: string, pinned: boolean): Promise<{ pinned_notes: string[] }>;
   restore_archived_note(name: string): Promise<{ restored_name: string }>;
   delete_archived_note(name: string): Promise<void>;
   choose_directory(): Promise<string | null>;
@@ -95,6 +97,8 @@ export interface DesktopApi {
   saveNote(note: OpenedNote, content: string, force?: boolean): Promise<SaveResult>;
   recreateNote(note: OpenedNote, content: string): Promise<OpenedNote>;
   archiveNote(name: string): Promise<void>;
+  moveNoteToTrash(name: string): Promise<void>;
+  setNotePinned(name: string, pinned: boolean): Promise<string[]>;
   restoreArchivedNote(name: string): Promise<void>;
   deleteArchivedNote(name: string): Promise<void>;
   chooseDirectory(): Promise<string | null>;
@@ -150,6 +154,8 @@ function desktopApi(raw: PythonApi): DesktopApi {
     archiveNote: async (name) => {
       await raw.archive_note(name);
     },
+    moveNoteToTrash: (name) => raw.trash_note(name),
+    setNotePinned: async (name, pinned) => (await raw.set_note_pinned(name, pinned)).pinned_notes,
     restoreArchivedNote: async (name) => {
       await raw.restore_archived_note(name);
     },
@@ -209,6 +215,7 @@ function browserMock(): DesktopApi {
   let alwaysOnTop = false;
   let language: AppLanguage = "en";
   let textHighlightColor: TextHighlightColor = "red";
+  let pinnedNotes: string[] = [];
   const revision = () => `${Date.now()}-${Math.random()}`;
   const summary = (items: OpenedNote[]) =>
     items.map((note, index) => ({
@@ -218,6 +225,7 @@ function browserMock(): DesktopApi {
         .replace(/[#*~\[\]-]/g, "")
         .slice(0, 80),
       modified_ms: Date.now() - index,
+      pinned: pinnedNotes.some((item) => item.toLocaleLowerCase() === note.name.toLocaleLowerCase()),
     }));
   const uniqueName = (requested: string) => {
     const base = (requested.trim() || new Date().toISOString().slice(0, 10)).replace(/\.md$/i, "");
@@ -241,6 +249,7 @@ function browserMock(): DesktopApi {
         window_width: 350,
         window_height: 530,
         note_window_sizes: {},
+        pinned_notes: [...pinnedNotes],
         last_note: null,
         editor_font: "DengXian",
         editor_font_size: 14,
@@ -254,13 +263,18 @@ function browserMock(): DesktopApi {
       },
       notes: summary(notes),
       system_fonts: ["Microsoft YaHei", "DengXian", "SimSun", "KaiTi"],
-      app_version: "1.5.4",
+      app_version: "1.6.0",
       update_state: { status: "unsupported", available_version: null },
       update_result: null,
       window_role: "main",
       initial_note: null,
     }),
-    listNotes: async () => summary(notes),
+    listNotes: async () => summary([...notes].sort((left, right) => {
+      const leftPinned = pinnedNotes.some((item) => item.toLocaleLowerCase() === left.name.toLocaleLowerCase());
+      const rightPinned = pinnedNotes.some((item) => item.toLocaleLowerCase() === right.name.toLocaleLowerCase());
+      if (leftPinned !== rightPinned) return leftPinned ? -1 : 1;
+      return notes.indexOf(left) - notes.indexOf(right);
+    })),
     listArchivedNotes: async () => summary(archivedNotes),
     createNote: async (requested) => {
       const note: OpenedNote = {
@@ -296,6 +310,9 @@ function browserMock(): DesktopApi {
         throw new Error(t("noteNameExists", { name: renamedName }));
       }
       note.name = renamedName;
+      pinnedNotes = pinnedNotes.map((item) => (
+        item.toLocaleLowerCase() === name.toLocaleLowerCase() ? renamedName : item
+      ));
       return { ...note };
     },
     acquireNote: async () => true,
@@ -322,6 +339,7 @@ function browserMock(): DesktopApi {
       const note = notes.find((item) => item.name === name);
       if (!note) throw new Error(t("missingTitle"));
       notes = notes.filter((item) => item.name !== name);
+      pinnedNotes = pinnedNotes.filter((item) => item.toLocaleLowerCase() !== name.toLocaleLowerCase());
       let archivedName = note.name;
       let index = 2;
       while (archivedNotes.some((item) => item.name.toLowerCase() === archivedName.toLowerCase())) {
@@ -329,6 +347,23 @@ function browserMock(): DesktopApi {
         index += 1;
       }
       archivedNotes.unshift({ ...note, name: archivedName });
+    },
+    moveNoteToTrash: async (name) => {
+      if (!notes.some((item) => item.name === name)) {
+        throw new Error(t("missingTitle"));
+      }
+      notes = notes.filter((item) => item.name !== name);
+      pinnedNotes = pinnedNotes.filter((item) => item.toLocaleLowerCase() !== name.toLocaleLowerCase());
+    },
+    setNotePinned: async (name, pinned) => {
+      if (!notes.some((item) => item.name === name)) {
+        throw new Error(t("missingTitle"));
+      }
+      pinnedNotes = pinnedNotes.filter(
+        (item) => item.toLocaleLowerCase() !== name.toLocaleLowerCase(),
+      );
+      if (pinned) pinnedNotes.unshift(name);
+      return [...pinnedNotes];
     },
     restoreArchivedNote: async (name) => {
       const note = archivedNotes.find((item) => item.name === name);

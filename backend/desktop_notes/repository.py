@@ -286,6 +286,21 @@ class NotesRepository:
                 )) from error
             return target.name
 
+    def trash_note(self, name: str, trash_file: Callable[[Path], None]) -> None:
+        source = self._note_path(name)
+        with self._lock:
+            if not source.is_file():
+                raise UserVisibleError(message(
+                    f'The note “{name}” no longer exists.', f"记录“{name}”已经不存在。"
+                ))
+            try:
+                trash_file(source)
+            except OSError as error:
+                raise UserVisibleError(message(
+                    f"Couldn't move the note to the Recycle Bin: {error}",
+                    f"移至回收站失败：{error}",
+                )) from error
+
     def restore_archived_note(self, name: str) -> str:
         source = self._archived_note_path(name)
         with self._lock:

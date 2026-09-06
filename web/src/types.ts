@@ -2,6 +2,7 @@ export interface NoteSummary {
   name: string;
   preview: string;
   modified_ms: number;
+  pinned?: boolean;
 }
 
 export interface OpenedNote {
@@ -43,6 +44,7 @@ export interface AppConfig {
   window_width: number;
   window_height: number;
   note_window_sizes: Record<string, { width: number; height: number }>;
+  pinned_notes?: string[];
   last_note: string | null;
   editor_font: string;
   editor_font_size: number;

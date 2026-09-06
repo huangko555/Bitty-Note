@@ -129,6 +129,7 @@ function escapeHtml(value: string): string {
 
 type IconName =
   | "archive"
+  | "arrowUpToLine"
   | "back"
   | "bold"
   | "check"
@@ -142,6 +143,8 @@ type IconName =
   | "list"
   | "listOrdered"
   | "minimize"
+  | "externalLink"
+  | "pencil"
   | "pin"
   | "plus"
   | "settings"
@@ -155,12 +158,14 @@ type IconName =
 function icon(name: IconName): string {
   const paths = {
     archive: '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
+    arrowUpToLine: '<path d="M5 3h14"/><path d="m18 13-6-6-6 6"/><path d="M12 7v14"/>',
     back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
     bold: '<path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8"/>',
     check: '<path d="m5 12 4 4L19 6"/>',
     chevronUp: '<path d="m18 15-6-6-6 6"/>',
     close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
     copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+    externalLink: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
     heading: '<path d="M6 12h12"/><path d="M6 20V4"/><path d="M18 20V4"/>',
     highlighter: '<path class="highlight-icon-fill" d="m14 4 8 8-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4Z"/><path class="highlight-icon-fill" d="m9 11-6 6v3h9l3-3Z"/><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/>',
     github: '<path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3.3-.4 6.8-1.6 6.8-7A5.4 5.4 0 0 0 19.4 4 5 5 0 0 0 19.3.5S18 0 15 2a13.4 13.4 0 0 0-7 0C5-.1 3.7.5 3.7.5A5 5 0 0 0 3.6 4a5.4 5.4 0 0 0-1.4 3.7c0 5.4 3.5 6.5 6.8 7A4.8 4.8 0 0 0 8 18v4"/><path d="M8 19c-3 .9-3-1.5-4-2"/>',
@@ -168,6 +173,7 @@ function icon(name: IconName): string {
     list: '<path d="M3 5h.01"/><path d="M3 12h.01"/><path d="M3 19h.01"/><path d="M8 5h13"/><path d="M8 12h13"/><path d="M8 19h13"/>',
     listOrdered: '<path d="M11 5h10"/><path d="M11 12h10"/><path d="M11 19h10"/><path d="M4 4h1v5"/><path d="M4 9h2"/><path d="M6.5 20H3.4c0-1 2.6-1.925 2.6-3.5a1.5 1.5 0 0 0-2.6-1.02"/>',
     minimize: '<path d="M5 12h14"/>',
+    pencil: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
     pin: '<path class="pin-stem" d="M12 17v5"/><path class="pin-body" d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>',
     plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
     settings: '<path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/>',
@@ -535,8 +541,8 @@ function errorMessage(error: unknown): string {
 }
 
 function modal(options: {
-  title: string;
-  message: string;
+  title?: string;
+  message: string | HTMLElement;
   actions: { label: string; kind?: "primary" | "danger"; run: () => void | Promise<void> }[];
 }): void {
   document.querySelector(".modal-backdrop")?.remove();
@@ -544,10 +550,12 @@ function modal(options: {
   backdrop.className = "modal-backdrop";
   const panel = document.createElement("section");
   panel.className = "modal-panel";
-  const heading = document.createElement("h2");
-  heading.textContent = options.title;
-  const message = document.createElement("p");
-  message.textContent = options.message;
+  const heading = options.title ? document.createElement("h2") : null;
+  if (heading) heading.textContent = options.title ?? "";
+  const message = typeof options.message === "string"
+    ? document.createElement("p")
+    : options.message;
+  if (typeof options.message === "string") message.textContent = options.message;
   const actions = document.createElement("div");
   actions.className = "modal-actions";
   for (const action of options.actions) {
@@ -566,7 +574,8 @@ function modal(options: {
     });
     actions.append(button);
   }
-  panel.append(heading, message, actions);
+  if (heading) panel.append(heading);
+  panel.append(message, actions);
   backdrop.append(panel);
   document.body.append(backdrop);
 }
@@ -580,7 +589,15 @@ async function refreshNotes(): Promise<void> {
 }
 
 function noteListSignature(items: NoteSummary[]): string {
-  return JSON.stringify(items.map((note) => [note.name, note.preview, note.modified_ms]));
+  return JSON.stringify(items.map((note) => [note.name, note.preview, note.modified_ms, note.pinned]));
+}
+
+function isNotePinned(name: string): boolean {
+  const listedNote = notes.find((note) => note.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+  if (listedNote?.pinned !== undefined) return listedNote.pinned;
+  return (config.pinned_notes ?? []).some(
+    (pinnedName) => pinnedName.toLocaleLowerCase() === name.toLocaleLowerCase(),
+  );
 }
 
 async function refreshHomeOnFocus(): Promise<void> {
@@ -634,7 +651,17 @@ async function renderHome(refresh = true): Promise<void> {
     createArrow.innerHTML = `<img src="${curvedArrowUrl}" alt="">`;
     main.append(createArrow);
   } else {
+    let currentSection: "pinned" | "recent" | null = null;
     for (const note of notes) {
+      const isPinned = isNotePinned(note.name);
+      const section = isPinned ? "pinned" : "recent";
+      if (section !== currentSection) {
+        const heading = document.createElement("h2");
+        heading.className = "note-section-title";
+        heading.textContent = t(section === "pinned" ? "pinnedSection" : "recentlyEdited");
+        list.append(heading);
+        currentSection = section;
+      }
       const item = document.createElement("article");
       item.className = "note-card";
       item.innerHTML = `
@@ -642,11 +669,13 @@ async function renderHome(refresh = true): Promise<void> {
           <strong>${escapeHtml(note.name.replace(/\.md$/i, ""))}</strong>
           <span>${escapeHtml(note.preview || t("emptyNote"))}</span>
         </div>
-        <div class="note-actions">
-          <button class="note-action copy-button" aria-label="${escapeHtml(t("copyNote", { name: note.name }))}">${icon("copy")}</button>
-          <button class="note-action archive-button ${archiveCandidate === note.name ? "confirm" : ""}" aria-label="${escapeHtml(t("archiveNote", { name: note.name }))}">
-            ${archiveCandidate === note.name ? icon("check") : icon("archive")}
-          </button>
+        <div class="note-card-end">
+          <div class="note-actions">
+            <button class="note-action copy-button" aria-label="${escapeHtml(t("copyNote", { name: note.name }))}">${icon("copy")}</button>
+            <button class="note-action archive-button ${archiveCandidate === note.name ? "confirm" : ""}" aria-label="${escapeHtml(t("archiveNote", { name: note.name }))}">
+              ${archiveCandidate === note.name ? icon("check") : icon("archive")}
+            </button>
+          </div>
         </div>`;
       const noteOpen = item.querySelector<HTMLElement>(".note-open");
       noteOpen?.addEventListener("click", () => openNote(note.name));
@@ -658,6 +687,15 @@ async function renderHome(refresh = true): Promise<void> {
       item.addEventListener("contextmenu", (event) => {
         event.preventDefault();
         showNoteContextMenu(note.name, event.clientX, event.clientY);
+      });
+      item.addEventListener("mousedown", (event) => {
+        if (event.button === 1) event.preventDefault();
+      });
+      item.addEventListener("auxclick", (event) => {
+        if (event.button !== 1) return;
+        if (event.target instanceof Element && event.target.closest("button")) return;
+        event.preventDefault();
+        void openNoteInNewWindow(note.name);
       });
       item.querySelector(".copy-button")?.addEventListener("click", () => showCopyDialog(note.name));
       item.querySelector(".archive-button")?.addEventListener("click", () => confirmArchive(note.name));
@@ -708,6 +746,10 @@ async function renderArchive(): Promise<void> {
         </div>`;
       item.querySelector(".restore-button")?.addEventListener("click", () => restoreArchivedNote(note.name));
       item.querySelector(".delete-button")?.addEventListener("click", () => confirmDeleteArchivedNote(note.name));
+      item.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        showArchivedNoteContextMenu(note.name, event.clientX, event.clientY);
+      });
       list.append(item);
     }
   }
@@ -848,12 +890,18 @@ function showCopyDialog(sourceName: string): void {
 function showNoteContextMenu(sourceName: string, x: number, y: number): void {
   noteContextMenuCleanup?.();
   const menu = document.createElement("div");
+  const isPinned = isNotePinned(sourceName);
   menu.className = "note-context-menu";
   menu.setAttribute("role", "menu");
-  menu.setAttribute("aria-label", t("renameNote", { name: sourceName }));
+  menu.setAttribute("aria-label", t("noteActions", { name: sourceName }));
   menu.innerHTML = `
-    <button type="button" role="menuitem" data-action="rename">${escapeHtml(t("rename"))}</button>
-    <button type="button" role="menuitem" data-action="open-window">${escapeHtml(t("openInNewWindow"))}</button>`;
+    <button type="button" role="menuitem" data-action="pin">${icon("arrowUpToLine")}<span>${escapeHtml(t(isPinned ? "unpinNote" : "pinNote"))}</span></button>
+    <button type="button" role="menuitem" data-action="open-window">${icon("externalLink")}<span>${escapeHtml(t("openInNewWindow"))}</span></button>
+    <button type="button" role="menuitem" data-action="copy">${icon("copy")}<span>${escapeHtml(t("contextCopy"))}</span></button>
+    <button type="button" role="menuitem" data-action="rename">${icon("pencil")}<span>${escapeHtml(t("rename"))}</span></button>
+    <div class="note-context-separator" role="separator"></div>
+    <button type="button" role="menuitem" data-action="archive">${icon("archive")}<span>${escapeHtml(t("archive"))}</span></button>
+    <button class="danger" type="button" role="menuitem" data-action="trash" aria-label="${escapeHtml(t("moveNoteToRecycleBin", { name: sourceName }))}">${icon("trash")}<span>${escapeHtml(t("moveToRecycleBin"))}</span></button>`;
   document.body.append(menu);
 
   const viewportPadding = 6;
@@ -899,13 +947,125 @@ function showNoteContextMenu(sourceName: string, x: number, y: number): void {
   });
   menu.querySelector<HTMLButtonElement>('[data-action="open-window"]')?.addEventListener("click", async () => {
     close();
+    await openNoteInNewWindow(sourceName);
+  });
+  menu.querySelector<HTMLButtonElement>('[data-action="copy"]')?.addEventListener("click", () => {
+    close();
+    showCopyDialog(sourceName);
+  });
+  menu.querySelector<HTMLButtonElement>('[data-action="pin"]')?.addEventListener("click", async () => {
+    close();
     try {
-      await api.openNoteWindow(sourceName);
+      config.pinned_notes = await api.setNotePinned(sourceName, !isPinned);
+      await renderHome();
     } catch (error) {
       showError(error);
     }
   });
-  renameButton.focus({ preventScroll: true });
+  menu.querySelector<HTMLButtonElement>('[data-action="archive"]')?.addEventListener("click", async () => {
+    close();
+    try {
+      await api.archiveNote(sourceName);
+      await renderHome();
+    } catch (error) {
+      showError(error);
+    }
+  });
+  const trashButton = menu.querySelector<HTMLButtonElement>('[data-action="trash"]')!;
+  let trashConfirmed = false;
+  trashButton.addEventListener("click", async () => {
+    if (!trashConfirmed) {
+      trashConfirmed = true;
+      trashButton.classList.add("confirm");
+      trashButton.innerHTML = `${icon("check")}<span>${escapeHtml(t("confirmMoveToRecycleBin"))}</span>`;
+      trashButton.setAttribute("aria-label", t("confirmMoveToRecycleBin"));
+      return;
+    }
+    close();
+    try {
+      await api.moveNoteToTrash(sourceName);
+      await renderHome();
+    } catch (error) {
+      showError(error);
+    }
+  });
+  menu.querySelector<HTMLButtonElement>('[data-action="pin"]')?.focus({ preventScroll: true });
+}
+
+function showArchivedNoteContextMenu(sourceName: string, x: number, y: number): void {
+  noteContextMenuCleanup?.();
+  const menu = document.createElement("div");
+  menu.className = "note-context-menu";
+  menu.setAttribute("role", "menu");
+  menu.setAttribute("aria-label", t("archivedNoteActions", { name: sourceName }));
+  menu.innerHTML = `
+    <button type="button" role="menuitem" data-action="restore">${icon("undo2")}<span>${escapeHtml(t("restore"))}</span></button>
+    <button class="danger" type="button" role="menuitem" data-action="trash" aria-label="${escapeHtml(t("moveNoteToRecycleBin", { name: sourceName }))}">${icon("trash")}<span>${escapeHtml(t("moveToRecycleBin"))}</span></button>`;
+  document.body.append(menu);
+
+  const viewportPadding = 6;
+  const bounds = menu.getBoundingClientRect();
+  menu.style.left = `${Math.max(viewportPadding, Math.min(x, window.innerWidth - bounds.width - viewportPadding))}px`;
+  menu.style.top = `${Math.max(viewportPadding, Math.min(y, window.innerHeight - bounds.height - viewportPadding))}px`;
+
+  const close = () => {
+    document.removeEventListener("pointerdown", onPointerDown, true);
+    document.removeEventListener("keydown", onKeyDown, true);
+    document.removeEventListener("scroll", onScroll, true);
+    window.removeEventListener("blur", close);
+    window.removeEventListener("resize", close);
+    menu.remove();
+    if (noteContextMenuCleanup === close) noteContextMenuCleanup = null;
+  };
+  const onPointerDown = (event: PointerEvent) => {
+    if (!(event.target instanceof Node) || !menu.contains(event.target)) close();
+  };
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    close();
+  };
+  const onScroll = () => close();
+
+  document.addEventListener("pointerdown", onPointerDown, true);
+  document.addEventListener("keydown", onKeyDown, true);
+  document.addEventListener("scroll", onScroll, true);
+  window.addEventListener("blur", close);
+  window.addEventListener("resize", close);
+  noteContextMenuCleanup = close;
+
+  const restoreButton = menu.querySelector<HTMLButtonElement>('[data-action="restore"]')!;
+  restoreButton.addEventListener("click", async () => {
+    close();
+    await restoreArchivedNote(sourceName);
+  });
+  const trashButton = menu.querySelector<HTMLButtonElement>('[data-action="trash"]')!;
+  let trashConfirmed = false;
+  trashButton.addEventListener("click", async () => {
+    if (!trashConfirmed) {
+      trashConfirmed = true;
+      trashButton.classList.add("confirm");
+      trashButton.innerHTML = `${icon("check")}<span>${escapeHtml(t("confirmMoveToRecycleBin"))}</span>`;
+      trashButton.setAttribute("aria-label", t("confirmMoveToRecycleBin"));
+      return;
+    }
+    close();
+    try {
+      await api.deleteArchivedNote(sourceName);
+      await renderArchive();
+    } catch (error) {
+      showError(error);
+    }
+  });
+  restoreButton.focus({ preventScroll: true });
+}
+
+async function openNoteInNewWindow(name: string): Promise<void> {
+  try {
+    await api.openNoteWindow(name);
+  } catch (error) {
+    showError(error);
+  }
 }
 
 function showRenameDialog(sourceName: string): void {
@@ -1585,9 +1745,17 @@ function skillInstallPrompt(): string {
 
 function showSkillInstallPrompt(): void {
   const prompt = skillInstallPrompt();
+  const content = document.createElement("div");
+  content.className = "skill-prompt-content";
+  const instructions = document.createElement("p");
+  instructions.className = "skill-prompt-instructions";
+  instructions.textContent = t("skillPromptInstructions");
+  const promptText = document.createElement("div");
+  promptText.className = "skill-prompt-text";
+  promptText.textContent = prompt;
+  content.append(instructions, promptText);
   modal({
-    title: t("skillInstallTitle"),
-    message: prompt,
+    message: content,
     actions: [
       { label: t("cancel"), run: () => {} },
       {
@@ -1649,10 +1817,7 @@ async function renderSettings(): Promise<void> {
       <div class="path-row"><input type="text" readonly value="${escapeHtml(config.save_dir)}" /><button class="button" data-action="browse">${t("change")}</button><button class="button" data-action="open-directory">${t("open")}</button></div>
     </section>
     <section class="setting-card skill-setting-card" aria-labelledby="skill-setting-title">
-      <div class="skill-setting-copy">
-        <h2 id="skill-setting-title">${t("skill")}</h2>
-        <p>${t("skillDescription")}</p>
-      </div>
+      <h2 id="skill-setting-title">${t("skill")}</h2>
       <button class="button" data-action="skill-prompt">${t("getSkillPrompt")}</button>
     </section>`;
   const pathInput = main.querySelector<HTMLInputElement>('.path-row input')!;
@@ -1828,6 +1993,7 @@ async function start(): Promise<void> {
   api = await connectApi();
   const bootstrap = await api.bootstrap();
   config = bootstrap.config;
+  config.pinned_notes ??= [];
   windowRole = bootstrap.window_role;
   setLanguage(config.language);
   notes = bootstrap.notes;

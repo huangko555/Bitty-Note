@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,44 @@ def test_existing_config_gets_editor_defaults(tmp_path: Path) -> None:
     assert config.language == "en"
     assert config.window_width == 350
     assert config.window_height == 530
+    assert config.pinned_notes == []
+
+
+def test_pinned_notes_are_persisted_ordered_and_cleaned_up(tmp_path: Path) -> None:
+    store = ConfigStore(tmp_path / "config.json", tmp_path / "notes")
+    bridge = DesktopBridge(store)
+    bridge.create_note("第一条")
+    bridge.create_note("第二条")
+
+    assert bridge.set_note_pinned("第一条.md", True) == {
+        "pinned_notes": ["第一条.md"]
+    }
+    listed_notes = bridge.list_notes()
+    assert [note["name"] for note in listed_notes][0] == "第一条.md"
+    assert listed_notes[0]["pinned"] is True
+    assert ConfigStore(store.path, tmp_path / "notes").config.pinned_notes == [
+        "第一条.md"
+    ]
+
+    bridge.set_note_pinned("第二条.md", True)
+    os.utime(tmp_path / "notes" / "第一条.md", ns=(2_000_000_000, 2_000_000_000))
+    os.utime(tmp_path / "notes" / "第二条.md", ns=(1_000_000_000, 1_000_000_000))
+    assert [note["name"] for note in bridge.list_notes()][:2] == [
+        "第一条.md",
+        "第二条.md",
+    ]
+
+    renamed = bridge.rename_note("第一条.md", "置顶记录")
+    assert renamed["name"] == "置顶记录.md"
+    assert store.config.pinned_notes == ["第二条.md", "置顶记录.md"]
+
+    bridge.archive_note("置顶记录.md")
+    assert store.config.pinned_notes == ["第二条.md"]
+    restored = bridge.restore_archived_note("置顶记录.md")
+    restored_note = next(
+        note for note in bridge.list_notes() if note["name"] == restored["restored_name"]
+    )
+    assert restored_note["pinned"] is False
 
 
 def test_invalid_editor_preferences_do_not_discard_other_config(tmp_path: Path) -> None:

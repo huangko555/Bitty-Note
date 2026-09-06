@@ -68,6 +68,7 @@ class AppConfig:
     window_height: int = 530
     window_position_space: str | None = None
     note_window_sizes: dict[str, dict[str, int]] = field(default_factory=dict)
+    pinned_notes: list[str] = field(default_factory=list)
     last_note: str | None = None
     editor_font: str = DEFAULT_EDITOR_FONT
     editor_font_size: int = DEFAULT_EDITOR_FONT_SIZE
@@ -161,6 +162,15 @@ class ConfigStore:
                 }
             else:
                 values["note_window_sizes"] = {}
+            raw_pinned_notes = values.get("pinned_notes", [])
+            if isinstance(raw_pinned_notes, list):
+                values["pinned_notes"] = [
+                    name
+                    for name in raw_pinned_notes
+                    if isinstance(name, str) and name.strip()
+                ]
+            else:
+                values["pinned_notes"] = []
             return AppConfig(**values)
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             return AppConfig(save_dir=str(self.default_save_dir))

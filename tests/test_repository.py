@@ -139,6 +139,21 @@ def test_archive_never_overwrites_existing_file(tmp_path: Path) -> None:
     assert (archive / archived_name).exists()
 
 
+def test_trash_note_moves_active_note_to_recycle_bin(tmp_path: Path) -> None:
+    repository = NotesRepository(tmp_path)
+    note = repository.create_note("记录")
+    recycled: list[Path] = []
+
+    def fake_trash(path: Path) -> None:
+        recycled.append(path)
+        path.unlink()
+
+    repository.trash_note(note.name, fake_trash)
+
+    assert recycled == [tmp_path / note.name]
+    assert repository.list_notes() == []
+
+
 def test_list_restore_and_delete_archived_notes(tmp_path: Path) -> None:
     repository = NotesRepository(tmp_path)
     note = repository.create_note("记录")

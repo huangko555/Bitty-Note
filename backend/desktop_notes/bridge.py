@@ -16,6 +16,7 @@ from .config import (
 from .errors import UserVisibleError
 from .fonts import list_system_fonts
 from .i18n import set_language as set_backend_language, text
+from .models import NoteSummary
 from .platform_windows import (
     is_window_topmost,
     open_directory,
@@ -68,14 +69,14 @@ class DesktopBridge:
             update_result = (
                 self._updates.consume_result() if self.window_role == "main" else None
             )
-            notes = self._repository.list_notes()
+            notes = self._ordered_notes()
             if self.coordinator is not None:
                 self.coordinator.reconcile_saved_sizes([note.name for note in notes])
             config = self.config_store.config.to_dict()
             config["always_on_top"] = self._always_on_top
             return {
                 "config": config,
-                "notes": [note.to_dict() for note in notes],
+                "notes": [self._note_summary_dict(note) for note in notes],
                 "system_fonts": list_system_fonts(),
                 "app_version": __version__,
                 "update_state": self._updates.state(),
@@ -111,10 +112,10 @@ class DesktopBridge:
             )
 
     def list_notes(self) -> list[dict[str, Any]]:
-        notes = self._repository.list_notes()
+        notes = self._ordered_notes()
         if self.coordinator is not None:
             self.coordinator.reconcile_saved_sizes([note.name for note in notes])
-        return [note.to_dict() for note in notes]
+        return [self._note_summary_dict(note) for note in notes]
 
     def list_archived_notes(self) -> list[dict[str, Any]]:
         return [note.to_dict() for note in self._repository.list_archived_notes()]
@@ -127,13 +128,15 @@ class DesktopBridge:
 
     def rename_note(self, name: str, requested_name: str) -> dict[str, Any]:
         if self.coordinator is None:
-            return self._repository.rename_note(name, requested_name).to_dict()
-        renamed = self.coordinator.rename_note(
-            self.session_id,
-            name,
-            requested_name,
-            lambda: self._repository.rename_note(name, requested_name),
-        )
+            renamed = self._repository.rename_note(name, requested_name)
+        else:
+            renamed = self.coordinator.rename_note(
+                self.session_id,
+                name,
+                requested_name,
+                lambda: self._repository.rename_note(name, requested_name),
+            )
+        self._replace_pinned_note(name, renamed.name)
         return renamed.to_dict()
 
     def acquire_note(self, name: str) -> dict[str, bool]:
@@ -195,13 +198,69 @@ class DesktopBridge:
     def archive_note(self, name: str) -> dict[str, str]:
         if self.coordinator is not None:
             self.coordinator.ensure_note_is_not_open_elsewhere(self.session_id, name)
-        return {"archived_name": self._repository.archive_note(name)}
+        archived_name = self._repository.archive_note(name)
+        self._remove_pinned_note(name)
+        return {"archived_name": archived_name}
+
+    def trash_note(self, name: str) -> None:
+        if self.coordinator is not None:
+            self.coordinator.ensure_note_is_not_open_elsewhere(self.session_id, name)
+        self._repository.trash_note(name, send_file_to_trash)
+        self._remove_pinned_note(name)
+
+    def set_note_pinned(self, name: str, pinned: bool) -> dict[str, list[str]]:
+        self._repository.open_note(name)
+        pinned_notes = [
+            item
+            for item in self.config_store.config.pinned_notes
+            if item.casefold() != name.casefold()
+        ]
+        if pinned:
+            pinned_notes.insert(0, name)
+        self.config_store.update(pinned_notes=pinned_notes)
+        return {"pinned_notes": pinned_notes}
 
     def restore_archived_note(self, name: str) -> dict[str, str]:
         return {"restored_name": self._repository.restore_archived_note(name)}
 
     def delete_archived_note(self, name: str) -> None:
         self._repository.delete_archived_note(name, send_file_to_trash)
+
+    def _ordered_notes(self) -> list[NoteSummary]:
+        notes = self._repository.list_notes()
+        pinned_names = {
+            name.casefold() for name in self.config_store.config.pinned_notes
+        }
+        return [
+            note for note in notes if note.name.casefold() in pinned_names
+        ] + [
+            note for note in notes if note.name.casefold() not in pinned_names
+        ]
+
+    def _note_summary_dict(self, note: NoteSummary) -> dict[str, Any]:
+        result = note.to_dict()
+        result["pinned"] = any(
+            name.casefold() == note.name.casefold()
+            for name in self.config_store.config.pinned_notes
+        )
+        return result
+
+    def _remove_pinned_note(self, name: str) -> None:
+        pinned_notes = [
+            item
+            for item in self.config_store.config.pinned_notes
+            if item.casefold() != name.casefold()
+        ]
+        if pinned_notes != self.config_store.config.pinned_notes:
+            self.config_store.update(pinned_notes=pinned_notes)
+
+    def _replace_pinned_note(self, old_name: str, new_name: str) -> None:
+        pinned_notes = [
+            new_name if item.casefold() == old_name.casefold() else item
+            for item in self.config_store.config.pinned_notes
+        ]
+        if pinned_notes != self.config_store.config.pinned_notes:
+            self.config_store.update(pinned_notes=pinned_notes)
 
     def choose_directory(self) -> str | None:
         window = self._require_window()

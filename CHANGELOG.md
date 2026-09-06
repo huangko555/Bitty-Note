@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.6.0 — 2026-09-06
+
+### English
+
+- Added a Settings entry that provides a selectable installation prompt for connecting Bitty Note to AI agents through the bundled Skill.
+- Expanded note context menus with Lucide icons, copy, pinning, archive, restore, and Recycle Bin actions; destructive moves now require an in-place second confirmation.
+- Added middle-click opening in a separate note window and increased note-card title text for readability.
+- Grouped the home list into Pinned and Recently edited sections, keeping both groups ordered by edit time and pin state synchronized across renames, archive operations, and restored notes.
+
+### 简体中文
+
+- 在设置中增加 Skill 获取入口，提供可选择、可复制的安装提示词，用于将 Bitty Note 接入 AI Agent。
+- 扩展便签右键菜单并补充 Lucide 图标，支持复制、置顶、归档、还原及移至回收站；危险操作需在原位置二次确认。
+- 支持鼠标中键在独立便签窗口中打开记录，并增大便签卡片标题字号以提升可读性。
+- 首页增加“置顶”和“最近编辑”分组，两组均按编辑时间排序，并确保重命名、归档及还原后的置顶状态保持同步。
+
 ## v1.5.4 — 2026-09-04
 
 ### English

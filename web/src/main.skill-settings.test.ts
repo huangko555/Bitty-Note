@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+// @ts-expect-error This test reads the source stylesheet without adding Node types to the browser app.
+import { readFileSync } from "node:fs";
 
 import type { DesktopApi } from "./api";
 import type { BootstrapData } from "./types";
@@ -33,7 +35,7 @@ const bootstrap: BootstrapData = {
   },
   notes: [],
   system_fonts: [],
-  app_version: "1.5.4",
+  app_version: "1.6.0",
   update_state: { status: "idle", available_version: null },
   update_result: null,
   window_role: "main",
@@ -82,19 +84,37 @@ describe("Skill settings", () => {
     document.querySelector<HTMLButtonElement>('[data-action="settings"]')!.click();
 
     const skillButton = document.querySelector<HTMLButtonElement>('[data-action="skill-prompt"]')!;
-    expect(skillButton.textContent).toBe("获取安装提示词");
+    expect(document.querySelector("#skill-setting-title")?.textContent).toBe("将 Bitty Note 接入你的 AI Agent");
+    expect(skillButton.textContent).toBe("获取 Skill");
     skillButton.click();
 
-    const prompt = document.querySelector(".modal-panel > p")?.textContent ?? "";
+    expect(document.querySelector(".modal-panel > h2")).toBeNull();
+    expect(document.querySelector(".skill-prompt-instructions")?.textContent).toBe(
+      "请将提示词发送给你的 AI Agent",
+    );
+    const prompt = document.querySelector(".skill-prompt-text")?.textContent ?? "";
     expect(prompt).toContain("https://github.com/huangko555/Bitty-Note/tree/main/skills/bitty-note");
     expect(prompt).toContain("保留目录中的全部文件");
 
     const copyButton = Array.from(document.querySelectorAll<HTMLButtonElement>(".modal-actions button"))
       .find((button) => button.textContent === "复制提示词")!;
     copyButton.click();
-    await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith(prompt));
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.not.stringContaining("请将下面的安装提示词")));
     await vi.waitFor(() => expect(document.querySelector(".modal-backdrop")).toBeNull());
 
     expect(document.querySelector(".toast")?.textContent).toBe("已复制安装提示词");
+  });
+
+  it("uses the same embedded UI font treatment as the existing settings", () => {
+    const styles = readFileSync("web/src/styles.css", "utf8");
+
+    expect(styles).toContain('url("./assets/fonts/SarasaUiSC-Regular.woff2")');
+    expect(styles).toContain('url("./assets/fonts/SarasaUiSC-SemiBold.woff2")');
+    expect(styles).toMatch(
+      /\.skill-setting-card h2\s*\{[^}]*font-family:\s*"Bitty UI", sans-serif;[^}]*font-size:\s*13px;[^}]*font-weight:\s*500;/s,
+    );
+    expect(styles).toMatch(
+      /\.skill-prompt-content\s*\{[^}]*font-family:\s*"Bitty UI", sans-serif;/s,
+    );
   });
 });
