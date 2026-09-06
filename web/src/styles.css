@@ -417,6 +417,11 @@ h1.has-fold-toggle, .has-fold-toggle > p:first-child, .has-fold-toggle > .task-c
 .setting-card { margin-bottom: 10px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: 0 1px 2px rgb(32 30 24 / 4%); }
 .setting-card label { display: block; margin-bottom: 9px; font-size: 13px; font-weight: 500; }
 .setting-card p { margin: 8px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.skill-setting-card { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.skill-setting-copy { min-width: 0; }
+.skill-setting-copy h2 { margin: 0; font-size: 13px; font-weight: 500; }
+.skill-setting-copy p { margin-top: 4px; }
+.skill-setting-card > .button { flex: 0 0 auto; }
 .path-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; }
 .path-row input { grid-column: 1 / -1; }
 .path-row button:first-of-type { grid-column: 2; }

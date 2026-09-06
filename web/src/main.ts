@@ -77,6 +77,7 @@ let notifiedUpdateVersion: string | null = null;
 const MIN_EDITOR_FONT_SIZE = 12;
 const MAX_EDITOR_FONT_SIZE = 22;
 const DEFAULT_EDITOR_FONT = "DengXian";
+const BITTY_NOTE_SKILL_URL = "https://github.com/huangko555/Bitty-Note/tree/main/skills/bitty-note";
 
 function applyEditorAppearance(): void {
   const family = config.editor_font.trim() || DEFAULT_EDITOR_FONT;
@@ -1578,6 +1579,29 @@ function updateButtonText(): string {
   return updateState.status === "available" ? t("update") : t("checkUpdate");
 }
 
+function skillInstallPrompt(): string {
+  return t("skillInstallPrompt", { url: BITTY_NOTE_SKILL_URL });
+}
+
+function showSkillInstallPrompt(): void {
+  const prompt = skillInstallPrompt();
+  modal({
+    title: t("skillInstallTitle"),
+    message: prompt,
+    actions: [
+      { label: t("cancel"), run: () => {} },
+      {
+        label: t("copyPrompt"),
+        kind: "primary",
+        run: async () => {
+          await navigator.clipboard.writeText(prompt);
+          showToast(t("promptCopied"));
+        },
+      },
+    ],
+  });
+}
+
 function showAvailableUpdateOnce(state: UpdateState): void {
   if (state.status !== "available" || !state.available_version) return;
   if (notifiedUpdateVersion === state.available_version) return;
@@ -1623,6 +1647,13 @@ async function renderSettings(): Promise<void> {
     <section class="setting-card">
       <label>${t("markdownPath")}</label>
       <div class="path-row"><input type="text" readonly value="${escapeHtml(config.save_dir)}" /><button class="button" data-action="browse">${t("change")}</button><button class="button" data-action="open-directory">${t("open")}</button></div>
+    </section>
+    <section class="setting-card skill-setting-card" aria-labelledby="skill-setting-title">
+      <div class="skill-setting-copy">
+        <h2 id="skill-setting-title">${t("skill")}</h2>
+        <p>${t("skillDescription")}</p>
+      </div>
+      <button class="button" data-action="skill-prompt">${t("getSkillPrompt")}</button>
     </section>`;
   const pathInput = main.querySelector<HTMLInputElement>('.path-row input')!;
   const browseButton = main.querySelector<HTMLButtonElement>('[data-action="browse"]')!;
@@ -1730,6 +1761,7 @@ async function renderSettings(): Promise<void> {
       showError(error);
     }
   });
+  main.querySelector('[data-action="skill-prompt"]')?.addEventListener("click", showSkillInstallPrompt);
   main.querySelector('[data-action="open-directory"]')?.addEventListener("click", async () => {
     try {
       await api.openDirectory(config.save_dir);
