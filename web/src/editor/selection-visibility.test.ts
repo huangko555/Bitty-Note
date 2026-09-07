@@ -34,6 +34,17 @@ describe("selection visibility", () => {
     stopTracking();
   });
 
+  it("notifies the editor to clear its dragged selection on window blur", () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    const clearSelection = vi.fn();
+    const stopTracking = trackWindowActivity(window, clearSelection);
+
+    window.dispatchEvent(new Event("blur"));
+
+    expect(clearSelection).toHaveBeenCalledOnce();
+    stopTracking();
+  });
+
   it("lets the editor finish its click before showing the toolbar", () => {
     const toolbar = document.createElement("div");
     document.body.append(toolbar);

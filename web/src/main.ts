@@ -45,7 +45,6 @@ import {
 } from "./rename-feedback";
 
 const app = document.querySelector<HTMLElement>("#app")!;
-trackWindowActivity(window);
 prepareForWindowStartup();
 
 let api: DesktopApi;
@@ -54,6 +53,7 @@ let notes: NoteSummary[] = [];
 let currentNote: OpenedNote | null = null;
 let windowRole: "main" | "note" = "main";
 let editor: EditorController | null = null;
+trackWindowActivity(window, () => editor?.clearSelection());
 let currentContent = "";
 let dirty = false;
 let saving = false;
@@ -129,6 +129,7 @@ function escapeHtml(value: string): string {
 
 type IconName =
   | "archive"
+  | "arrowBigUpDash"
   | "arrowUpToLine"
   | "back"
   | "bold"
@@ -144,6 +145,7 @@ type IconName =
   | "listOrdered"
   | "minimize"
   | "externalLink"
+  | "filePenLine"
   | "pencil"
   | "pin"
   | "plus"
@@ -158,6 +160,7 @@ type IconName =
 function icon(name: IconName): string {
   const paths = {
     archive: '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
+    arrowBigUpDash: '<path d="M14 16a1 1 0 0 0 1-1v-2a1 1 0 0 1 1-1h3.293a.707.707 0 0 0 .5-1.207l-6.939-6.939a1.207 1.207 0 0 0-1.708 0l-6.94 6.94a.707.707 0 0 0 .5 1.206H8a1 1 0 0 1 1 1v2a1 1 0 0 0 1 1z"/><path d="M9 20h6"/>',
     arrowUpToLine: '<path d="M5 3h14"/><path d="m18 13-6-6-6 6"/><path d="M12 7v14"/>',
     back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
     bold: '<path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8"/>',
@@ -166,6 +169,7 @@ function icon(name: IconName): string {
     close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
     copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
     externalLink: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+    filePenLine: '<path d="M12 22h6a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v10"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10.4 12.6a2.1 2.1 0 1 1 3 3L8 21l-4 1 1-4Z"/>',
     heading: '<path d="M6 12h12"/><path d="M6 20V4"/><path d="M18 20V4"/>',
     highlighter: '<path class="highlight-icon-fill" d="m14 4 8 8-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4Z"/><path class="highlight-icon-fill" d="m9 11-6 6v3h9l3-3Z"/><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/>',
     github: '<path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3.3-.4 6.8-1.6 6.8-7A5.4 5.4 0 0 0 19.4 4 5 5 0 0 0 19.3.5S18 0 15 2a13.4 13.4 0 0 0-7 0C5-.1 3.7.5 3.7.5A5 5 0 0 0 3.6 4a5.4 5.4 0 0 0-1.4 3.7c0 5.4 3.5 6.5 6.8 7A4.8 4.8 0 0 0 8 18v4"/><path d="M8 19c-3 .9-3-1.5-4-2"/>',
@@ -640,6 +644,7 @@ async function renderHome(refresh = true): Promise<void> {
       </div>
     </div>
     <div class="note-list" aria-live="polite"></div>
+    <button class="back-to-top-button" data-action="back-to-top" aria-label="${t("backToTop")}" hidden>${icon("arrowBigUpDash")}</button>
     <button class="create-button" data-action="create" aria-label="${t("createNote")}">${icon("plus")}</button>`;
   const list = main.querySelector<HTMLElement>(".note-list")!;
   if (notes.length === 0) {
@@ -705,6 +710,14 @@ async function renderHome(refresh = true): Promise<void> {
   main.querySelector('[data-action="show-archive"]')?.addEventListener("click", renderArchive);
   main.querySelector('[data-action="settings"]')?.addEventListener("click", renderSettings);
   main.querySelector('[data-action="create"]')?.addEventListener("click", showCreateDialog);
+  const title = main.querySelector<HTMLElement>(".home-title")!;
+  const backToTop = main.querySelector<HTMLButtonElement>('[data-action="back-to-top"]')!;
+  const syncBackToTop = () => {
+    backToTop.hidden = main.scrollTop <= title.offsetTop + title.offsetHeight;
+  };
+  main.addEventListener("scroll", syncBackToTop, { passive: true });
+  backToTop.addEventListener("click", () => main.scrollTo({ top: 0, behavior: "smooth" }));
+  syncBackToTop();
   shell.append(main);
   attachOverlayScrollbar(main);
 }
@@ -897,6 +910,7 @@ function showNoteContextMenu(sourceName: string, x: number, y: number): void {
   menu.innerHTML = `
     <button type="button" role="menuitem" data-action="pin">${icon("arrowUpToLine")}<span>${escapeHtml(t(isPinned ? "unpinNote" : "pinNote"))}</span></button>
     <button type="button" role="menuitem" data-action="open-window">${icon("externalLink")}<span>${escapeHtml(t("openInNewWindow"))}</span></button>
+    <button type="button" role="menuitem" data-action="open-editor">${icon("filePenLine")}<span>${escapeHtml(t("openInEditor"))}</span></button>
     <button type="button" role="menuitem" data-action="copy">${icon("copy")}<span>${escapeHtml(t("contextCopy"))}</span></button>
     <button type="button" role="menuitem" data-action="rename">${icon("pencil")}<span>${escapeHtml(t("rename"))}</span></button>
     <div class="note-context-separator" role="separator"></div>
@@ -948,6 +962,14 @@ function showNoteContextMenu(sourceName: string, x: number, y: number): void {
   menu.querySelector<HTMLButtonElement>('[data-action="open-window"]')?.addEventListener("click", async () => {
     close();
     await openNoteInNewWindow(sourceName);
+  });
+  menu.querySelector<HTMLButtonElement>('[data-action="open-editor"]')?.addEventListener("click", async () => {
+    close();
+    try {
+      await api.openNoteInEditor(sourceName);
+    } catch (error) {
+      showError(error);
+    }
   });
   menu.querySelector<HTMLButtonElement>('[data-action="copy"]')?.addEventListener("click", () => {
     close();
@@ -1725,6 +1747,7 @@ declare global {
     desktopNotesRequestClose?: () => void;
     desktopNotesRefreshHome?: () => void;
     desktopNotesBeginRename?: () => void;
+    desktopNotesShowAuxiliaryLoadFailure?: () => void;
   }
 }
 
@@ -1733,6 +1756,7 @@ window.desktopNotesRefreshHome = () => {
   if (document.querySelector(".home-page")) void renderHome();
 };
 window.desktopNotesBeginRename = () => beginTitleRename?.();
+window.desktopNotesShowAuxiliaryLoadFailure = () => showError(new Error(t("noteWindowLoadFailed")));
 
 function updateButtonText(): string {
   if (updateState.status === "store") return t("storeUpdates");
@@ -2020,6 +2044,10 @@ async function start(): Promise<void> {
     }
   }
   if (!restoredNote && windowRole === "main") await renderHome();
+  if (!restoredNote && windowRole === "note") {
+    app.innerHTML = `<div class="fatal-error"><h1>${t("startupFailed")}</h1><p>${t("noteWindowLoadFailed")}</p></div>`;
+    await api.closeWindow();
+  }
   if (windowRole === "main" && bootstrap.update_result) {
     showToast(
       bootstrap.update_result.status === "success"
@@ -2033,6 +2061,7 @@ async function start(): Promise<void> {
     void refreshUpdateState(false).catch(() => {});
     window.setInterval(() => void refreshUpdateState(false).catch(() => {}), 60 * 60 * 1000);
   }
+  await api.windowReady?.();
 }
 
 void start().catch((error) => {

@@ -29,7 +29,31 @@ def test_existing_config_gets_editor_defaults(tmp_path: Path) -> None:
     assert config.language == "en"
     assert config.window_width == 350
     assert config.window_height == 530
+    assert config.open_note_windows == {}
     assert config.pinned_notes == []
+
+
+def test_open_note_window_bounds_are_validated_when_loading_config(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps({
+            "save_dir": str(tmp_path / "notes"),
+            "open_note_windows": {
+                "Kept.md": {"x": -320, "y": 90, "width": 420, "height": 640},
+                "Missing height.md": {"x": 1, "y": 2, "width": 300},
+                "Boolean.md": {"x": True, "y": 2, "width": 300, "height": 500},
+            },
+        }),
+        encoding="utf-8",
+    )
+
+    config = ConfigStore(config_path, tmp_path / "fallback").config
+
+    assert config.open_note_windows == {
+        "Kept.md": {"x": -320, "y": 90, "width": 420, "height": 640}
+    }
 
 
 def test_pinned_notes_are_persisted_ordered_and_cleaned_up(tmp_path: Path) -> None:

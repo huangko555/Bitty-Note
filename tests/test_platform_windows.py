@@ -99,6 +99,20 @@ def test_open_directory_rejects_missing_path(tmp_path: Path, monkeypatch: pytest
         platform_windows.open_directory(tmp_path / "missing")
 
 
+def test_open_file_uses_the_windows_default_app(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    note = tmp_path / "Note.md"
+    note.write_text("body", encoding="utf-8")
+    opened: list[str] = []
+    monkeypatch.setattr(platform_windows.sys, "platform", "win32")
+    monkeypatch.setattr(os, "startfile", opened.append, raising=False)
+
+    platform_windows.open_file(note)
+
+    assert opened == [str(note.resolve())]
+
+
 def test_frozen_autostart_command_uses_windows_double_quotes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

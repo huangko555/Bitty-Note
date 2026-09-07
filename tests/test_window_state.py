@@ -2,15 +2,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from desktop_notes.bridge import WindowStateSaver
+from desktop_notes.bridge import NoteWindowStateSaver, WindowStateSaver
 from desktop_notes.config import ConfigStore
 from desktop_notes.main import (
     _MonitorWorkArea,
     _allow_system_shutdown,
     _normalize_window_after_show,
+    _restore_open_note_windows,
     _restore_window_from_hidden_start,
+    _show_window_when_ready,
     _visible_window_bounds,
 )
+from desktop_notes.window_coordinator import WindowCoordinator, WindowSession
 
 
 class FakeEvent:
@@ -85,6 +88,23 @@ def test_hidden_start_restores_window_before_revealing_it(monkeypatch) -> None:
     assert window.events.resized.handlers == [saver.schedule]
 
 
+def test_auxiliary_window_stays_hidden_until_its_note_ui_is_ready() -> None:
+    shown: list[bool] = []
+    failed: list[bool] = []
+    window = type("LoadingWindow", (), {"show": lambda _self: shown.append(True)})()
+    bridge = type("LoadingBridge", (), {})()
+    bridge._set_window_ready_callback = lambda callback: setattr(bridge, "ready", callback)
+
+    timer = _show_window_when_ready(window, bridge, lambda: failed.append(True), 30)
+    assert shown == []
+
+    bridge.ready()
+
+    assert shown == [True]
+    assert failed == []
+    timer.cancel()
+
+
 def test_system_shutdown_overrides_pywebview_close_cancellation() -> None:
     shutdown = type("CloseArgs", (), {"CloseReason": "WindowsShutDown", "Cancel": True})()
     user_close = type("CloseArgs", (), {"CloseReason": "UserClosing", "Cancel": True})()
@@ -123,6 +143,49 @@ def test_default_and_resized_window_dimensions_are_persisted(
         restored.window_height,
     ) == (120, 80, 428, 712)
     assert restored.window_position_space == "logical"
+
+
+def test_open_note_window_position_and_dimensions_are_persisted(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    store = ConfigStore(tmp_path / "config.json", tmp_path / "notes")
+    coordinator = WindowCoordinator(store)
+    window = type("Window", (), {})()
+    coordinator.register(WindowSession(
+        "note", "note", window, object(), "Travel.md"
+    ))
+    monkeypatch.setattr(
+        "desktop_notes.bridge.window_logical_bounds",
+        lambda _window: (-220, 135, 460, 680),
+    )
+
+    NoteWindowStateSaver(window, coordinator, "note").flush()
+
+    restored = ConfigStore(store.path, tmp_path / "notes").config
+    assert restored.open_note_windows == {
+        "Travel.md": {"x": -220, "y": 135, "width": 460, "height": 680}
+    }
+    assert restored.note_window_sizes == {
+        "Travel.md": {"width": 460, "height": 680}
+    }
+
+
+def test_main_window_ready_restores_windows_for_existing_notes() -> None:
+    bridge = type("Bridge", (), {
+        "list_notes": lambda _self: [
+            {"name": "First.md"},
+            {"name": "Second.md"},
+        ]
+    })()
+    restored: list[list[str]] = []
+    coordinator = type("Coordinator", (), {
+        "restore_auxiliaries": lambda _self, names: restored.append(names)
+    })()
+
+    _restore_open_note_windows(bridge, coordinator)
+
+    assert restored == [["First.md", "Second.md"]]
 
 
 def test_restored_position_uses_its_secondary_monitor_work_area(monkeypatch) -> None:

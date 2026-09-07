@@ -74,6 +74,7 @@ export interface EditorController {
   undo(): boolean;
   redo(): boolean;
   focus(): void;
+  clearSelection(): void;
   handleDocumentTailPress(event: MouseEvent): boolean;
   ensureSelectionVisible(bottomInset?: number): void;
   destroy(): void;
@@ -146,10 +147,6 @@ function highlightInputRule(): InputRule {
         );
     },
   );
-}
-
-function exitsHighlightInput(text: string): boolean {
-  return /^[\s\p{P}]+$/u.test(text);
 }
 
 function taskInputRule(): InputRule {
@@ -1035,20 +1032,6 @@ class RichEditor implements EditorController {
           return false;
         },
       },
-      handleTextInput: (view, from, to, text) => {
-        if (!view.state.selection.empty || !exitsHighlightInput(text)) return false;
-        const markType = noteSchema.marks.highlight;
-        const activeMark = markType.isInSet(
-          view.state.storedMarks ?? view.state.selection.$from.marks(),
-        );
-        if (!activeMark) return false;
-      const transaction = view.state.tr
-        .insertText(text, from, to)
-        .removeMark(from, from + text.length, markType)
-        .removeStoredMark(markType);
-        view.dispatch(transaction);
-        return true;
-      },
       handlePaste: (view, event) => {
         const text = event.clipboardData?.getData("text/plain");
         if (text === undefined) return false;
@@ -1185,6 +1168,16 @@ class RichEditor implements EditorController {
     this.view.focus();
   }
 
+  clearSelection(): void {
+    const selection = this.view.state.selection;
+    if (!selection.empty) {
+      this.view.dispatch(this.view.state.tr.setSelection(
+        TextSelection.create(this.view.state.doc, selection.head),
+      ));
+    }
+    this.view.dom.ownerDocument.getSelection()?.removeAllRanges();
+  }
+
   handleDocumentTailPress(event: MouseEvent): boolean {
     const tail = documentTailAt(
       this.view,
@@ -1290,6 +1283,14 @@ class RawEditor implements EditorController {
 
   focus(): void {
     this.textarea.focus();
+  }
+
+  clearSelection(): void {
+    if (this.textarea.selectionStart !== this.textarea.selectionEnd) {
+      const position = this.textarea.selectionEnd;
+      this.textarea.setSelectionRange(position, position);
+    }
+    this.textarea.ownerDocument.getSelection()?.removeAllRanges();
   }
 
   handleDocumentTailPress(_event: MouseEvent): boolean {

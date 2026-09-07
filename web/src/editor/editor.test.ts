@@ -404,7 +404,7 @@ describe("task checkbox rendering", () => {
   });
 
   it.each([" ", "。", ","])(
-    "ends highlight input before inserting the delimiter %j",
+    "continues highlight input when inserting the delimiter %j at its end",
     (delimiter) => {
       const host = document.createElement("div");
       document.body.append(host);
@@ -418,18 +418,183 @@ describe("task checkbox rendering", () => {
       view.dispatch(view.state.tr.insertText("高亮"));
       const position = view.state.selection.from;
 
-      const handled = view.someProp("handleTextInput", (handler) =>
-        handler(view, position, position, delimiter, () =>
-          view.state.tr.insertText(delimiter, position, position)));
-      expect(handled).toBe(true);
+      view.dispatch(view.state.tr.insertText(delimiter, position, position));
       view.dispatch(view.state.tr.insertText("普通"));
 
-      expect(controller.getMarkdown()).toBe(`=={red}高亮==${delimiter}普通\n`);
-      expect(controller.highlightState()).toBeNull();
+      expect(controller.getMarkdown()).toBe(`=={red}高亮${delimiter}普通==\n`);
+      expect(controller.highlightState()).toBe("red");
       controller.destroy();
       host.remove();
     },
   );
+
+  it("keeps punctuation typed at a clicked task-list highlight boundary highlighted", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const { controller } = createEditor(host, "- [ ] 鼠标点击窗口==外取== 消选中内容\n", {
+      onChange: () => {},
+      onFocusChange: () => {},
+      onSelectionChange: () => {},
+    });
+    const view = (controller as unknown as { view: EditorView }).view;
+    let boundary: number | null = null;
+    view.state.doc.descendants((node, position) => {
+      if (node.isText && node.text === "外取") boundary = position + node.nodeSize;
+    });
+    const clickedBoundary = boundary;
+    if (clickedBoundary === null) throw new Error("highlight boundary not found");
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, clickedBoundary)));
+
+    view.dispatch(view.state.tr.insertText("，", clickedBoundary, clickedBoundary));
+
+    expect(controller.getMarkdown()).toBe("- [ ] 鼠标点击窗口==外取，== 消选中内容\n");
+    expect(view.state.selection.from).toBe(clickedBoundary + 1);
+    expect(controller.highlightState()).toBe("green");
+    controller.destroy();
+    host.remove();
+  });
+
+  it("keeps one native punctuation input inside an existing highlight", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const { controller } = createEditor(
+      host,
+      "- [ ] 鼠标点击==窗口外取==消选中内容\n",
+      {
+        onChange: () => {},
+        onFocusChange: () => {},
+        onSelectionChange: () => {},
+      },
+    );
+    const view = (controller as unknown as { view: EditorView }).view;
+    let insertionPosition: number | null = null;
+    view.state.doc.descendants((node, position) => {
+      if (node.isText && node.text === "窗口外取") {
+        insertionPosition = position + "窗口".length;
+      }
+    });
+    const position = insertionPosition;
+    if (position === null) throw new Error("highlighted text not found");
+    vi.spyOn(view, "coordsAtPos").mockReturnValue({
+      left: 0,
+      right: 0,
+      top: 0,
+      bottom: 0,
+    });
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, position)));
+    view.focus();
+
+    const markText = host.querySelector("mark")!.firstChild as Text;
+    const nativeSelection = document.getSelection()!;
+    nativeSelection.collapse(markText, "窗口".length);
+    markText.insertData("窗口".length, "，");
+    nativeSelection.collapse(markText, "窗口，".length);
+    (view as unknown as { domObserver: { flush(): void } }).domObserver.flush();
+
+    expect(controller.getMarkdown()).toBe("- [ ] 鼠标点击==窗口，外取==消选中内容\n");
+    expect(view.state.selection.from).toBe(position + 1);
+    expect(host.textContent?.match(/，/gu)).toHaveLength(1);
+    controller.destroy();
+    host.remove();
+  });
+
+  it("keeps the native caret after punctuation typed at a highlight boundary", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const { controller } = createEditor(
+      host,
+      "- [ ] 鼠标点击==窗口外取==消选中内容\n",
+      {
+        onChange: () => {},
+        onFocusChange: () => {},
+        onSelectionChange: () => {},
+      },
+    );
+    const view = (controller as unknown as { view: EditorView }).view;
+    let boundary: number | null = null;
+    view.state.doc.descendants((node, position) => {
+      if (node.isText && node.text === "窗口外取") {
+        boundary = position + node.nodeSize;
+      }
+    });
+    const insertionPosition = boundary;
+    if (insertionPosition === null) throw new Error("highlight boundary not found");
+    vi.spyOn(view, "coordsAtPos").mockReturnValue({
+      left: 0,
+      right: 0,
+      top: 0,
+      bottom: 0,
+    });
+    view.dispatch(
+      view.state.tr.setSelection(TextSelection.create(view.state.doc, insertionPosition)),
+    );
+    view.focus();
+
+    const markText = host.querySelector("mark")!.firstChild as Text;
+    const nativeSelection = document.getSelection()!;
+    nativeSelection.collapse(markText, markText.length);
+    markText.insertData(markText.length, "，");
+    nativeSelection.collapse(markText, markText.length);
+    (view as unknown as { domObserver: { flush(): void } }).domObserver.flush();
+
+    expect(controller.getMarkdown()).toBe("- [ ] 鼠标点击==窗口外取，==消选中内容\n");
+    expect(view.state.selection.from).toBe(insertionPosition + 1);
+    expect(nativeSelection.anchorNode).toBe(markText);
+    expect(
+      view.posAtDOM(nativeSelection.anchorNode!, nativeSelection.anchorOffset),
+    ).toBe(insertionPosition + 1);
+    controller.destroy();
+    host.remove();
+  });
+
+  it("collapses a dragged text selection when asked to clear it", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const { controller } = createEditor(host, "拖选范围\n", {
+      onChange: () => {},
+      onFocusChange: () => {},
+      onSelectionChange: () => {},
+    });
+    const view = (controller as unknown as { view: EditorView }).view;
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, 5)));
+
+    controller.clearSelection();
+
+    expect(view.state.selection.empty).toBe(true);
+    expect(view.state.selection.from).toBe(5);
+    controller.destroy();
+    host.remove();
+  });
+
+  it("removes a native selection even when the editor selection is already collapsed", () => {
+    const host = document.createElement("div");
+    const outside = document.createElement("button");
+    document.body.append(host, outside);
+    const { controller } = createEditor(host, "拖选范围\n", {
+      onChange: () => {},
+      onFocusChange: () => {},
+      onSelectionChange: () => {},
+    });
+    const view = (controller as unknown as { view: EditorView }).view;
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 5)));
+    outside.focus();
+
+    const textNode = host.querySelector("p")!.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.setEnd(textNode, 4);
+    const nativeSelection = document.getSelection()!;
+    nativeSelection.removeAllRanges();
+    nativeSelection.addRange(range);
+    expect(nativeSelection.isCollapsed).toBe(false);
+
+    controller.clearSelection();
+
+    expect(nativeSelection.rangeCount).toBe(0);
+    controller.destroy();
+    outside.remove();
+    host.remove();
+  });
 
   it("preserves the viewport intent when folding is undone and redone", () => {
     const host = document.createElement("div");

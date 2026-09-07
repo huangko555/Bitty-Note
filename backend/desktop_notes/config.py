@@ -68,6 +68,7 @@ class AppConfig:
     window_height: int = 530
     window_position_space: str | None = None
     note_window_sizes: dict[str, dict[str, int]] = field(default_factory=dict)
+    open_note_windows: dict[str, dict[str, int]] = field(default_factory=dict)
     pinned_notes: list[str] = field(default_factory=list)
     last_note: str | None = None
     editor_font: str = DEFAULT_EDITOR_FONT
@@ -162,6 +163,29 @@ class ConfigStore:
                 }
             else:
                 values["note_window_sizes"] = {}
+            raw_open_windows = values.get("open_note_windows", {})
+            if isinstance(raw_open_windows, dict):
+                values["open_note_windows"] = {
+                    name: {
+                        "x": bounds["x"],
+                        "y": bounds["y"],
+                        "width": bounds["width"],
+                        "height": bounds["height"],
+                    }
+                    for name, bounds in raw_open_windows.items()
+                    if isinstance(name, str)
+                    and name.strip()
+                    and isinstance(bounds, dict)
+                    and all(
+                        isinstance(bounds.get(key), int)
+                        and not isinstance(bounds.get(key), bool)
+                        for key in ("x", "y", "width", "height")
+                    )
+                    and bounds["width"] > 0
+                    and bounds["height"] > 0
+                }
+            else:
+                values["open_note_windows"] = {}
             raw_pinned_notes = values.get("pinned_notes", [])
             if isinstance(raw_pinned_notes, list):
                 values["pinned_notes"] = [

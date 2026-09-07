@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.7.0 — 2026-09-08
+
+### English
+
+- Added an option to open a note in the default Markdown editor from the home context menu, along with compact scroll controls for returning to the top and creating a note.
+- Simplified highlight editing so punctuation can be entered at the middle or boundary of highlighted text without duplication or unexpected caret movement.
+- Reliably clear dragged text selections whenever the app loses focus, including after interacting with the title bar.
+- Delay separate note windows until their content is ready, with timeout feedback instead of leaving an unresponsive blank window.
+- Restore every separately opened note after restart while preserving its last normal position and size as closely as the current display permits.
+
+### 简体中文
+
+- 首页右键菜单支持使用默认 Markdown 编辑器打开便签，并增加紧凑的回到顶部和新建便签滚动操作。
+- 简化高亮文本编辑逻辑，在高亮内部或边界输入标点时不再重复输入或异常移动光标。
+- 窗口失去焦点时可靠取消拖选范围，包括先与标题栏交互后再切换到窗口外的情况。
+- 独立便签窗口会在内容就绪后再显示，超时时给出错误提示，避免留下无响应的纯色窗口。
+- 重启后恢复上次打开的全部独立便签，并在当前屏幕可用范围内尽量保留它们的位置和尺寸。
+
 ## v1.6.0 — 2026-09-06
 
 ### English

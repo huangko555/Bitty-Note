@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import webview
 
@@ -20,6 +20,7 @@ from .models import NoteSummary
 from .platform_windows import (
     is_window_topmost,
     open_directory,
+    open_file,
     send_file_to_trash,
     set_autostart,
     set_window_topmost,
@@ -56,6 +57,8 @@ class DesktopBridge:
         self._window: webview.Window | None = None
         self._window_interaction = None
         self._lock = threading.RLock()
+        self._window_ready = False
+        self._window_ready_callback: Callable[[], None] | None = None
         self._always_on_top = (
             config_store.config.always_on_top if window_role == "main" else False
         )
@@ -63,6 +66,21 @@ class DesktopBridge:
 
     def attach_window(self, window: webview.Window) -> None:
         self._window = window
+
+    def _set_window_ready_callback(self, callback: Callable[[], None]) -> None:
+        with self._lock:
+            if not self._window_ready:
+                self._window_ready_callback = callback
+                return
+        callback()
+
+    def window_ready(self) -> None:
+        with self._lock:
+            self._window_ready = True
+            callback = self._window_ready_callback
+            self._window_ready_callback = None
+        if callback is not None:
+            callback()
 
     def bootstrap(self) -> dict[str, Any]:
         with self._lock:
@@ -274,6 +292,10 @@ class DesktopBridge:
     def open_directory(self, path: str) -> None:
         open_directory(Path(path))
 
+    def open_note_in_editor(self, name: str) -> None:
+        note = self._repository.open_note(name)
+        open_file(self._repository.root / note.name)
+
     def migrate_directory(self, path: str) -> dict[str, Any]:
         if not path.strip():
             raise UserVisibleError(
@@ -431,8 +453,8 @@ class WindowStateSaver:
             pass
 
 
-class NoteWindowSizeSaver:
-    """Persists only a note window's dimensions; placement is intentionally transient."""
+class NoteWindowStateSaver:
+    """Persists an open note window's logical position and dimensions."""
 
     def __init__(
         self,
@@ -444,10 +466,13 @@ class NoteWindowSizeSaver:
         self.coordinator = coordinator
         self.session_id = session_id
         self._timer: threading.Timer | None = None
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
+        self._stopped = False
 
     def schedule(self) -> None:
         with self._lock:
+            if self._stopped:
+                return
             if self._timer is not None:
                 self._timer.cancel()
             self._timer = threading.Timer(0.4, self._save)
@@ -456,16 +481,33 @@ class NoteWindowSizeSaver:
 
     def flush(self) -> None:
         with self._lock:
+            if self._stopped:
+                return
             if self._timer is not None:
                 self._timer.cancel()
                 self._timer = None
-        self._save()
+            self._save_locked()
+
+    def stop(self) -> None:
+        with self._lock:
+            if self._timer is not None:
+                self._timer.cancel()
+                self._timer = None
+            self._stopped = True
 
     def _save(self) -> None:
+        with self._lock:
+            if self._stopped:
+                return
+            self._timer = None
+            self._save_locked()
+
+    def _save_locked(self) -> None:
         name = self.coordinator.note_name(self.session_id)
         if name is None:
             return
         try:
-            self.coordinator.save_size(name, self.window.width, self.window.height)
+            x, y, width, height = window_logical_bounds(self.window)
+            self.coordinator.save_window_state(name, x, y, width, height)
         except Exception:
             pass

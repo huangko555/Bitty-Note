@@ -7,11 +7,12 @@ import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 import webview
 import velopack
 
-from .bridge import DesktopBridge, NoteWindowSizeSaver, WindowStateSaver
+from .bridge import DesktopBridge, NoteWindowStateSaver, WindowStateSaver
 from .config import ConfigStore
 from .distribution import is_store_package
 from .i18n import set_language, text
@@ -27,6 +28,48 @@ from .window_coordinator import WindowCoordinator, WindowSession
 
 MIN_WINDOW_WIDTH = 300
 MIN_WINDOW_HEIGHT = 380
+AUXILIARY_LOAD_TIMEOUT_SECONDS = 12.0
+
+
+def _show_window_when_ready(
+    target_window: object,
+    target_bridge: DesktopBridge,
+    on_failure: Callable[[], None],
+    timeout_seconds: float = AUXILIARY_LOAD_TIMEOUT_SECONDS,
+) -> threading.Timer:
+    """Keep a child window hidden until its note UI reports that it is ready."""
+    completion_lock = threading.Lock()
+    completed = False
+
+    def finish() -> bool:
+        nonlocal completed
+        with completion_lock:
+            if completed:
+                return False
+            completed = True
+            return True
+
+    def reveal() -> None:
+        if not finish():
+            return
+        timer.cancel()
+        try:
+            target_window.show()
+        except Exception:
+            logging.exception("Failed to reveal a loaded auxiliary window.")
+            on_failure()
+
+    def fail() -> None:
+        if not finish():
+            return
+        logging.error("Auxiliary window did not finish loading before the timeout.")
+        on_failure()
+
+    timer = threading.Timer(timeout_seconds, fail)
+    timer.daemon = True
+    target_bridge._set_window_ready_callback(reveal)
+    timer.start()
+    return timer
 
 
 class _MONITORINFO(ctypes.Structure):
@@ -224,18 +267,31 @@ def _restore_window_from_hidden_start(
 
 def _normalize_note_window_after_show(
     window: webview.Window,
-    state_saver: NoteWindowSizeSaver,
+    state_saver: NoteWindowStateSaver,
     width: int,
     height: int,
 ) -> None:
     window.resize(width, height)
+    window.events.moved += state_saver.schedule
     window.events.resized += state_saver.schedule
+    state_saver.flush()
 
 
 def _allow_system_shutdown(_sender: object, args: object) -> None:
     """Undo pywebview's generic cancellation for a WinForms session shutdown."""
     if str(getattr(args, "CloseReason", "")) == "WindowsShutDown":
         setattr(args, "Cancel", False)
+
+
+def _restore_open_note_windows(
+    bridge: DesktopBridge,
+    coordinator: WindowCoordinator,
+) -> None:
+    try:
+        names = [note["name"] for note in bridge.list_notes()]
+        coordinator.restore_auxiliaries(names)
+    except Exception:
+        logging.exception("Failed to restore auxiliary note windows.")
 
 
 def main() -> None:
@@ -295,7 +351,7 @@ def main() -> None:
     def wire_window(
         target_window: webview.Window,
         target_bridge: DesktopBridge,
-        target_state_saver: WindowStateSaver | NoteWindowSizeSaver,
+        target_state_saver: WindowStateSaver | NoteWindowStateSaver,
         target_width: int,
         target_height: int,
         *,
@@ -371,12 +427,14 @@ def main() -> None:
         requested_height: int,
         requested_x: int,
         requested_y: int,
+        requested_position_space: str | None,
     ) -> None:
         note_x, note_y, note_width, note_height = _visible_window_bounds(
             requested_x,
             requested_y,
             requested_width,
             requested_height,
+            requested_position_space,
         )
         note_bridge = DesktopBridge(
             config_store,
@@ -402,7 +460,7 @@ def main() -> None:
             background_color="#fffdf5",
         )
         note_bridge.attach_window(note_window)
-        note_state_saver = NoteWindowSizeSaver(
+        note_state_saver = NoteWindowStateSaver(
             note_window, coordinator, session_id
         )
         coordinator.register(WindowSession(
@@ -424,7 +482,19 @@ def main() -> None:
                 already_shown=True,
                 unregister_session=session_id,
             )
-            note_window.show()
+            def load_failed() -> None:
+                coordinator.unregister(session_id)
+                note_bridge.allow_close = True
+                try:
+                    note_window.destroy()
+                except Exception:
+                    pass
+                try:
+                    window.run_js("window.desktopNotesShowAuxiliaryLoadFailure?.()")
+                except Exception:
+                    pass
+
+            _show_window_when_ready(note_window, note_bridge, load_failed)
         except Exception:
             coordinator.unregister(session_id)
             note_bridge.allow_close = True
@@ -435,6 +505,9 @@ def main() -> None:
             raise
 
     coordinator.set_auxiliary_factory(create_auxiliary)
+    bridge._set_window_ready_callback(
+        lambda: _restore_open_note_windows(bridge, coordinator)
+    )
     webview.start(gui="edgechromium", debug=False, private_mode=True)
 
     if sys.platform == "win32" and isinstance(instance, int):

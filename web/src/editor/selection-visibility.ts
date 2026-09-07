@@ -2,10 +2,16 @@ interface SelectionVisibilityTarget {
   ensureSelectionVisible(bottomInset: number): void;
 }
 
-export function trackWindowActivity(targetWindow: Window = window): () => void {
+export function trackWindowActivity(
+  targetWindow: Window = window,
+  clearSelection: () => void = () => {},
+): () => void {
   const root = targetWindow.document.documentElement;
   const markActive = () => root.classList.remove("window-inactive");
-  const markInactive = () => root.classList.add("window-inactive");
+  const markInactive = () => {
+    root.classList.add("window-inactive");
+    clearSelection();
+  };
   root.classList.toggle("window-inactive", !targetWindow.document.hasFocus());
   targetWindow.addEventListener("focus", markActive);
   targetWindow.addEventListener("blur", markInactive);

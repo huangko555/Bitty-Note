@@ -49,6 +49,7 @@ class ResizeObserverStub {
 
 describe("home note card actions", () => {
   const openNoteWindow = vi.fn().mockResolvedValue("opened");
+  const openNoteInEditor = vi.fn().mockResolvedValue(undefined);
   const archiveNote = vi.fn().mockResolvedValue(undefined);
   const moveNoteToTrash = vi.fn().mockResolvedValue(undefined);
   const setNotePinned = vi.fn().mockResolvedValue([note.name]);
@@ -73,6 +74,7 @@ describe("home note card actions", () => {
       listArchivedNotes,
       requestNoteRename: vi.fn().mockResolvedValue("available"),
       openNoteWindow,
+      openNoteInEditor,
       archiveNote,
       moveNoteToTrash,
       setNotePinned,
@@ -90,6 +92,7 @@ describe("home note card actions", () => {
     vi.unstubAllGlobals();
     connectApi.mockReset();
     openNoteWindow.mockClear();
+    openNoteInEditor.mockClear();
     archiveNote.mockClear();
     moveNoteToTrash.mockClear();
     setNotePinned.mockClear();
@@ -100,7 +103,7 @@ describe("home note card actions", () => {
     document.body.replaceChildren();
   });
 
-  it("shows six icon menu items, separates destructive actions, and confirms before moving a note to the Recycle Bin", async () => {
+  it("shows note actions, opens the file in its default editor, and confirms before moving it to the Recycle Bin", async () => {
     document.querySelector(".note-card")!.dispatchEvent(new MouseEvent("contextmenu", {
       bubbles: true,
       cancelable: true,
@@ -114,6 +117,7 @@ describe("home note card actions", () => {
     expect(buttons.map((button) => button.textContent?.trim())).toEqual([
       "置顶",
       "在新窗口打开",
+      "用编辑器打开",
       "复制",
       "重命名",
       "归档",
@@ -121,11 +125,21 @@ describe("home note card actions", () => {
     ]);
     expect(buttons.every((button) => button.querySelector(".lucide-icon"))).toBe(true);
     expect(menu.querySelector('[data-action="pin"] .lucide-icon')?.innerHTML).toContain('d="M5 3h14"');
-    expect(menu.querySelector('[role="separator"]')?.nextElementSibling).toBe(
-      menu.querySelector('[data-action="archive"]'),
+    menu.querySelector<HTMLButtonElement>('[data-action="open-editor"]')!.click();
+    await vi.waitFor(() => expect(openNoteInEditor).toHaveBeenCalledWith(note.name));
+
+    document.querySelector(".note-card")!.dispatchEvent(new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 40,
+      clientY: 60,
+    }));
+    const reopenedMenu = document.querySelector<HTMLElement>(".note-context-menu")!;
+    expect(reopenedMenu.querySelector('[role="separator"]')?.nextElementSibling).toBe(
+      reopenedMenu.querySelector('[data-action="archive"]'),
     );
 
-    const trashButton = menu.querySelector<HTMLButtonElement>('[data-action="trash"]')!;
+    const trashButton = reopenedMenu.querySelector<HTMLButtonElement>('[data-action="trash"]')!;
     expect(trashButton.classList.contains("danger")).toBe(true);
     trashButton.click();
 
@@ -222,5 +236,26 @@ describe("home note card actions", () => {
     }));
 
     await vi.waitFor(() => expect(openNoteWindow).toHaveBeenCalledWith(note.name));
+  });
+
+  it("reveals a white back-to-top button once the home title has scrolled away", () => {
+    const home = document.querySelector<HTMLElement>(".home-page")!;
+    const title = home.querySelector<HTMLElement>(".home-title")!;
+    Object.defineProperty(title, "offsetTop", { configurable: true, value: 24 });
+    Object.defineProperty(title, "offsetHeight", { configurable: true, value: 32 });
+    const scrollTo = vi.fn();
+    Object.defineProperty(home, "scrollTo", { configurable: true, value: scrollTo });
+    const backToTop = home.querySelector<HTMLButtonElement>('[data-action="back-to-top"]')!;
+
+    expect(backToTop).not.toBeNull();
+    expect(backToTop.hidden).toBe(true);
+    expect(backToTop.classList.contains("back-to-top-button")).toBe(true);
+
+    home.scrollTop = 57;
+    home.dispatchEvent(new Event("scroll"));
+    expect(backToTop.hidden).toBe(false);
+
+    backToTop.click();
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
   });
 });

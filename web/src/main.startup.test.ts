@@ -78,11 +78,13 @@ describe("startup chrome visibility", () => {
       rememberLastNote: vi.fn().mockResolvedValue(undefined),
       setTextHighlightColor: vi.fn(async (color) => color),
       checkUpdate: vi.fn().mockResolvedValue(bootstrap.update_state),
+      windowReady: vi.fn().mockResolvedValue(undefined),
     } as unknown as DesktopApi;
     connectApi.mockResolvedValue(api);
 
     await import("./main");
     await vi.waitFor(() => expect(document.querySelector(".ProseMirror")).not.toBeNull());
+    await vi.waitFor(() => expect(api.windowReady).toHaveBeenCalledOnce());
     await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
     expect(document.activeElement?.classList.contains("ProseMirror")).toBe(false);
 
@@ -118,5 +120,24 @@ describe("startup chrome visibility", () => {
     window.dispatchEvent(new Event("focus"));
 
     expect.soft(document.activeElement).not.toBe(back);
+  });
+
+  it("closes an auxiliary window that starts without a note instead of leaving a blank surface", async () => {
+    const closeWindow = vi.fn().mockResolvedValue(undefined);
+    const api = {
+      bootstrap: vi.fn().mockResolvedValue({
+        ...bootstrap,
+        window_role: "note",
+        initial_note: null,
+      }),
+      getAlwaysOnTop: vi.fn().mockResolvedValue(false),
+      closeWindow,
+    } as unknown as DesktopApi;
+    connectApi.mockResolvedValue(api);
+
+    await import("./main");
+
+    await vi.waitFor(() => expect(closeWindow).toHaveBeenCalledOnce());
+    expect(document.querySelector(".fatal-error")?.textContent).toContain("启动");
   });
 });

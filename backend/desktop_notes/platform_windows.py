@@ -85,6 +85,26 @@ def open_directory(path: Path) -> None:
         )) from error
 
 
+def open_file(path: Path) -> None:
+    if sys.platform != "win32":
+        raise UserVisibleError(message(
+            "Opening files isn't supported on this system.",
+            "当前系统不支持打开文件。",
+        ))
+    file_path = path.resolve()
+    if not file_path.is_file():
+        raise UserVisibleError(message("The note doesn't exist.", "记录不存在。"))
+    import os
+
+    try:
+        os.startfile(str(file_path))
+    except OSError as error:
+        raise UserVisibleError(message(
+            f"Couldn't open the note in its default editor: {error}",
+            f"无法使用默认编辑器打开记录：{error}",
+        )) from error
+
+
 def focus_window(window: object) -> None:
     """Restore and activate a window without calling WinForms across threads."""
     restore = getattr(window, "restore", None)

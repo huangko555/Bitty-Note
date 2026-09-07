@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 import threading
 import uuid
@@ -10,6 +11,12 @@ from .config import ConfigStore
 from .errors import UserVisibleError
 from .i18n import text
 from .platform_windows import focus_window
+
+
+AuxiliaryFactory = Callable[
+    [str, str, int, int, int, int, str | None],
+    None,
+]
 
 
 @dataclass
@@ -30,14 +37,14 @@ class WindowCoordinator:
         self._sessions: dict[str, WindowSession] = {}
         self._note_owners: dict[str, str] = {}
         self._reservations: dict[str, str] = {}
-        self._create_auxiliary: Callable[[str, str, int, int, int, int], None] | None = None
+        self._create_auxiliary: AuxiliaryFactory | None = None
         self._lock = threading.RLock()
         self._main_close_pending = False
         self._cascade_index = 0
 
     def set_auxiliary_factory(
         self,
-        factory: Callable[[str, str, int, int, int, int], None],
+        factory: AuxiliaryFactory,
     ) -> None:
         self._create_auxiliary = factory
 
@@ -57,6 +64,8 @@ class WindowCoordinator:
             session = self._sessions.pop(session_id, None)
             if session and session.note_name:
                 self._note_owners.pop(self._key(session.note_name), None)
+                if session.role != "main" and not self._main_close_pending:
+                    self._remove_open_window_locked(session.note_name)
             if self._main_close_pending and not self._auxiliary_sessions_locked():
                 close_main = self._main_session_locked()
                 self._main_close_pending = False
@@ -98,6 +107,40 @@ class WindowCoordinator:
         self.refresh_titles()
 
     def open_auxiliary(self, name: str) -> dict[str, str]:
+        return self._open_auxiliary(name)
+
+    def restore_auxiliaries(self, existing_names: list[str]) -> list[str]:
+        existing_by_key = {self._key(name): name for name in existing_names}
+        with self._lock:
+            saved_windows = dict(self.config_store.config.open_note_windows)
+        restored: list[str] = []
+        for stored_name, bounds in saved_windows.items():
+            name = existing_by_key.get(self._key(stored_name))
+            if name is None:
+                continue
+            try:
+                result = self._open_auxiliary(
+                    name,
+                    (
+                        bounds["width"],
+                        bounds["height"],
+                        bounds["x"],
+                        bounds["y"],
+                        "logical",
+                    ),
+                )
+            except Exception:
+                logging.exception("Failed to restore note window %s.", name)
+                continue
+            if result["status"] == "opened":
+                restored.append(name)
+        return restored
+
+    def _open_auxiliary(
+        self,
+        name: str,
+        restored_bounds: tuple[int, int, int, int, str | None] | None = None,
+    ) -> dict[str, str]:
         factory = self._create_auxiliary
         if factory is None:
             raise RuntimeError("Auxiliary window factory is not ready")
@@ -111,15 +154,19 @@ class WindowCoordinator:
                 focus = self._sessions.get(owner_id)
             else:
                 self._reservations[key] = session_id
-                size = self._saved_size_locked(name)
-                x, y = self._next_position_locked()
+                if restored_bounds is None:
+                    width, height = self._saved_size_locked(name)
+                    x, y = self._next_position_locked()
+                    position_space = None
+                else:
+                    width, height, x, y, position_space = restored_bounds
         if owner_id is not None:
             if focus is not None:
                 self._focus(focus)
             return {"status": "focused"}
 
         try:
-            factory(session_id, name, size[0], size[1], x, y)
+            factory(session_id, name, width, height, x, y, position_space)
         except Exception:
             with self._lock:
                 self._reservations.pop(self._key(name), None)
@@ -200,6 +247,11 @@ class WindowCoordinator:
             if session.role != "main":
                 destroy = session
                 auxiliaries: list[WindowSession] = []
+                if not self._main_close_pending and session.note_name:
+                    if session.state_saver is not None:
+                        session.state_saver.flush()
+                        session.state_saver.stop()
+                    self._remove_open_window_locked(session.note_name)
             else:
                 auxiliaries = self._auxiliary_sessions_locked()
                 if not auxiliaries:
@@ -216,6 +268,7 @@ class WindowCoordinator:
     def cancel_app_close(self) -> None:
         with self._lock:
             self._main_close_pending = False
+            self._discard_closed_window_states_locked()
 
     def refresh_titles(self) -> None:
         with self._lock:
@@ -252,6 +305,35 @@ class WindowCoordinator:
             sizes[name] = {"width": width, "height": height}
             self.config_store.update(note_window_sizes=sizes)
 
+    def save_window_state(
+        self,
+        name: str,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+    ) -> None:
+        with self._lock:
+            sizes = dict(self.config_store.config.note_window_sizes)
+            windows = dict(self.config_store.config.open_note_windows)
+            existing_size_key = self._stored_key_locked(sizes, name)
+            if existing_size_key is not None and existing_size_key != name:
+                sizes.pop(existing_size_key, None)
+            existing_window_key = self._stored_key_locked(windows, name)
+            if existing_window_key is not None and existing_window_key != name:
+                windows.pop(existing_window_key, None)
+            sizes[name] = {"width": width, "height": height}
+            windows[name] = {
+                "x": x,
+                "y": y,
+                "width": width,
+                "height": height,
+            }
+            self.config_store.update(
+                note_window_sizes=sizes,
+                open_note_windows=windows,
+            )
+
     def reconcile_saved_sizes(self, existing_names: list[str]) -> None:
         existing = {self._key(name) for name in existing_names}
         with self._lock:
@@ -262,8 +344,19 @@ class WindowCoordinator:
                 for name, size in sizes.items()
                 if self._key(name) in existing or self._key(name) in open_names
             }
+            windows = self.config_store.config.open_note_windows
+            cleaned_windows = {
+                name: bounds
+                for name, bounds in windows.items()
+                if self._key(name) in existing or self._key(name) in open_names
+            }
+            changes: dict[str, Any] = {}
             if cleaned != sizes:
-                self.config_store.update(note_window_sizes=cleaned)
+                changes["note_window_sizes"] = cleaned
+            if cleaned_windows != windows:
+                changes["open_note_windows"] = cleaned_windows
+            if changes:
+                self.config_store.update(**changes)
 
     def note_name(self, session_id: str) -> str | None:
         with self._lock:
@@ -281,11 +374,42 @@ class WindowCoordinator:
     def _move_saved_size_locked(self, old_name: str, new_name: str) -> None:
         sizes = dict(self.config_store.config.note_window_sizes)
         stored_key = self._stored_key_locked(sizes, old_name)
+        windows = dict(self.config_store.config.open_note_windows)
+        stored_window_key = self._stored_key_locked(windows, old_name)
+        changes: dict[str, Any] = {}
+        if stored_key is not None:
+            size = sizes.pop(stored_key)
+            sizes[new_name] = size
+            changes["note_window_sizes"] = sizes
+        if stored_window_key is not None:
+            bounds = windows.pop(stored_window_key)
+            windows[new_name] = bounds
+            changes["open_note_windows"] = windows
+        if changes:
+            self.config_store.update(**changes)
+
+    def _remove_open_window_locked(self, name: str) -> None:
+        windows = dict(self.config_store.config.open_note_windows)
+        stored_key = self._stored_key_locked(windows, name)
         if stored_key is None:
             return
-        size = sizes.pop(stored_key)
-        sizes[new_name] = size
-        self.config_store.update(note_window_sizes=sizes)
+        windows.pop(stored_key)
+        self.config_store.update(open_note_windows=windows)
+
+    def _discard_closed_window_states_locked(self) -> None:
+        open_names = {
+            self._key(session.note_name)
+            for session in self._auxiliary_sessions_locked()
+            if session.note_name
+        }
+        windows = self.config_store.config.open_note_windows
+        cleaned = {
+            name: bounds
+            for name, bounds in windows.items()
+            if self._key(name) in open_names
+        }
+        if cleaned != windows:
+            self.config_store.update(open_note_windows=cleaned)
 
     def _next_position_locked(self) -> tuple[int, int]:
         main = self._main_session_locked()

@@ -279,6 +279,12 @@ h1 { margin: 0; font-size: 23px; font-weight: 500; letter-spacing: -.025em; }
 .create-button:active:not(:disabled) { border-color: color-mix(in srgb, var(--ink) 84%, black); background: color-mix(in srgb, var(--ink) 84%, black); box-shadow: 0 2px 6px rgb(20 20 18 / 18%); transform: translateY(1px) scale(.95652); }
 .create-button:active:not(:disabled) .lucide-icon { transform: scale(1.04545); }
 .create-button:disabled { border-color: var(--line-strong); color: var(--muted); background: var(--paper-deep); box-shadow: none; }
+.back-to-top-button { position: fixed; z-index: 2; right: 76px; bottom: 22px; display: grid; place-items: center; width: 46px; height: 46px; padding: 0; border: 1px solid var(--line-strong); border-radius: 15px; color: var(--ink); background: #fff; box-shadow: 0 4px 12px rgb(20 20 18 / 12%); line-height: 0; cursor: pointer; transition: background-color .12s ease, border-color .12s ease, box-shadow .12s ease, opacity .12s ease, transform .08s ease; }
+.back-to-top-button[hidden] { display: none; }
+.back-to-top-button .lucide-icon { width: 25px; height: 25px; stroke-width: 1.4; }
+.back-to-top-button:hover { border-color: var(--ink); background: var(--surface); box-shadow: 0 6px 16px rgb(20 20 18 / 16%); transform: translateY(-1px); }
+.back-to-top-button:focus-visible { outline-color: var(--accent); box-shadow: 0 4px 12px rgb(20 20 18 / 12%), 0 0 0 3px var(--focus-ring); }
+.back-to-top-button:active { background: var(--surface-pressed); box-shadow: 0 2px 6px rgb(20 20 18 / 12%); transform: translateY(1px) scale(.95652); }
 .home-page.is-empty .note-list { position: absolute; inset: 0; pointer-events: none; }
 .archive-page.is-empty .note-list { position: absolute; inset: 0; pointer-events: none; }
 .empty-state { display: grid; justify-items: center; color: var(--muted); text-align: center; }

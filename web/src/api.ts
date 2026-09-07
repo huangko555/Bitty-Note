@@ -10,6 +10,7 @@ import { t } from "./i18n";
 
 interface PythonApi {
   bootstrap(): Promise<BootstrapData>;
+  window_ready(): Promise<void>;
   list_notes(): Promise<BootstrapData["notes"]>;
   list_archived_notes(): Promise<BootstrapData["notes"]>;
   create_note(name: string): Promise<OpenedNote>;
@@ -17,6 +18,7 @@ interface PythonApi {
   rename_note(name: string, requestedName: string): Promise<OpenedNote>;
   acquire_note(name: string): Promise<{ available: boolean }>;
   open_note_window(name: string): Promise<{ status: "opened" | "focused" }>;
+  open_note_in_editor(name: string): Promise<void>;
   request_note_rename(name: string): Promise<{ status: "available" | "focused" }>;
   open_note(name: string): Promise<OpenedNote>;
   save_note(
@@ -85,6 +87,7 @@ declare global {
 
 export interface DesktopApi {
   bootstrap(): Promise<BootstrapData>;
+  windowReady(): Promise<void>;
   listNotes(): Promise<BootstrapData["notes"]>;
   listArchivedNotes(): Promise<BootstrapData["notes"]>;
   createNote(name: string): Promise<OpenedNote>;
@@ -92,6 +95,7 @@ export interface DesktopApi {
   renameNote(name: string, requestedName: string): Promise<OpenedNote>;
   acquireNote(name: string): Promise<boolean>;
   openNoteWindow(name: string): Promise<"opened" | "focused">;
+  openNoteInEditor(name: string): Promise<void>;
   requestNoteRename(name: string): Promise<"available" | "focused">;
   openNote(name: string): Promise<OpenedNote>;
   saveNote(note: OpenedNote, content: string, force?: boolean): Promise<SaveResult>;
@@ -131,6 +135,7 @@ export interface DesktopApi {
 function desktopApi(raw: PythonApi): DesktopApi {
   return {
     bootstrap: () => raw.bootstrap(),
+    windowReady: () => raw.window_ready(),
     listNotes: () => raw.list_notes(),
     listArchivedNotes: () => raw.list_archived_notes(),
     createNote: (name) => raw.create_note(name),
@@ -138,6 +143,7 @@ function desktopApi(raw: PythonApi): DesktopApi {
     renameNote: (name, requestedName) => raw.rename_note(name, requestedName),
     acquireNote: async (name) => (await raw.acquire_note(name)).available,
     openNoteWindow: async (name) => (await raw.open_note_window(name)).status,
+    openNoteInEditor: (name) => raw.open_note_in_editor(name),
     requestNoteRename: async (name) => (await raw.request_note_rename(name)).status,
     openNote: (name) => raw.open_note(name),
     saveNote: (note, content, force = false) =>
@@ -263,12 +269,13 @@ function browserMock(): DesktopApi {
       },
       notes: summary(notes),
       system_fonts: ["Microsoft YaHei", "DengXian", "SimSun", "KaiTi"],
-      app_version: "1.6.0",
+      app_version: "1.7.0",
       update_state: { status: "unsupported", available_version: null },
       update_result: null,
       window_role: "main",
       initial_note: null,
     }),
+    windowReady: async () => {},
     listNotes: async () => summary([...notes].sort((left, right) => {
       const leftPinned = pinnedNotes.some((item) => item.toLocaleLowerCase() === left.name.toLocaleLowerCase());
       const rightPinned = pinnedNotes.some((item) => item.toLocaleLowerCase() === right.name.toLocaleLowerCase());
@@ -317,6 +324,7 @@ function browserMock(): DesktopApi {
     },
     acquireNote: async () => true,
     openNoteWindow: async () => "opened",
+    openNoteInEditor: async () => {},
     requestNoteRename: async () => "available",
     openNote: async (name) => {
       const note = notes.find((item) => item.name === name);
