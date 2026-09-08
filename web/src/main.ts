@@ -28,6 +28,7 @@ import {
 } from "./pointer-boundary";
 import type {
   AppConfig,
+  NoteBackground,
   NoteSummary,
   OpenedNote,
   SaveResult,
@@ -69,6 +70,7 @@ let systemFonts: string[] = [];
 let overlayScrollbarCleanup: (() => void) | null = null;
 let toolbarInteractionCleanup: (() => void) | null = null;
 let noteContextMenuCleanup: (() => void) | null = null;
+let noteBackgroundPickerCleanup: (() => void) | null = null;
 let beginTitleRename: (() => void) | null = null;
 let appVersion = "";
 let updateState: UpdateState = { status: "idle", available_version: null };
@@ -78,6 +80,23 @@ const MIN_EDITOR_FONT_SIZE = 12;
 const MAX_EDITOR_FONT_SIZE = 22;
 const DEFAULT_EDITOR_FONT = "DengXian";
 const BITTY_NOTE_SKILL_URL = "https://github.com/huangko555/Bitty-Note/tree/main/skills/bitty-note";
+const NOTE_BACKGROUND_OPTIONS: {
+  value: NoteBackground;
+  label: Parameters<typeof t>[0];
+}[] = [
+  { value: "default", label: "defaultBackground" },
+  { value: "sand", label: "sandBackground" },
+  { value: "rose", label: "roseBackground" },
+  { value: "sky", label: "skyBackground" },
+  { value: "mint", label: "mintBackground" },
+  { value: "gray", label: "grayBackground" },
+];
+
+function noteBackground(value: unknown): NoteBackground {
+  return NOTE_BACKGROUND_OPTIONS.some((option) => option.value === value)
+    ? value as NoteBackground
+    : "default";
+}
 
 function applyEditorAppearance(): void {
   const family = config.editor_font.trim() || DEFAULT_EDITOR_FONT;
@@ -144,6 +163,7 @@ type IconName =
   | "list"
   | "listOrdered"
   | "minimize"
+  | "palette"
   | "externalLink"
   | "filePenLine"
   | "pencil"
@@ -177,6 +197,7 @@ function icon(name: IconName): string {
     list: '<path d="M3 5h.01"/><path d="M3 12h.01"/><path d="M3 19h.01"/><path d="M8 5h13"/><path d="M8 12h13"/><path d="M8 19h13"/>',
     listOrdered: '<path d="M11 5h10"/><path d="M11 12h10"/><path d="M11 19h10"/><path d="M4 4h1v5"/><path d="M4 9h2"/><path d="M6.5 20H3.4c0-1 2.6-1.925 2.6-3.5a1.5 1.5 0 0 0-2.6-1.02"/>',
     minimize: '<path d="M5 12h14"/>',
+    palette: '<circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 22a10 10 0 1 1 10-10c0 2.2-1.8 4-4 4h-1.7a2 2 0 0 0-1.7 3l.3.5A1.7 1.7 0 0 1 13.5 22Z"/>',
     pencil: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
     pin: '<path class="pin-stem" d="M12 17v5"/><path class="pin-body" d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>',
     plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
@@ -199,6 +220,7 @@ function titleBar(
 ): HTMLElement {
   const bar = document.createElement("header");
   bar.className = "title-bar";
+  bar.classList.toggle("has-note-background-action", Boolean(onRename));
   beginTitleRename = null;
   const closesAuxiliaryWindow = Boolean(back && windowRole === "note");
   if (closesAuxiliaryWindow) bar.classList.add("auxiliary-title-bar");
@@ -218,6 +240,10 @@ function titleBar(
       <span class="window-title-text">${escapeHtml(title)}</span>
     </div>
     <div class="window-actions">
+      ${onRename ? `<div class="note-background-control">
+        <button class="window-button no-drag" data-action="note-background" aria-label="${t("noteBackground")}" aria-expanded="false">${icon("palette")}</button>
+        <div class="note-background-picker no-drag" role="group" aria-label="${t("noteBackground")}" hidden></div>
+      </div>` : ""}
       <button id="window-pin-button" class="window-button no-drag ${config.always_on_top ? "is-active" : ""}" data-action="pin" aria-label="${t("pin")}" aria-pressed="${config.always_on_top}">${icon("pin")}</button>
       <button class="window-button no-drag" data-action="minimize" aria-label="${t("minimize")}">${icon("minimize")}</button>
     </div>`;
@@ -509,6 +535,8 @@ function pageShell(
 ): HTMLElement {
   noteContextMenuCleanup?.();
   noteContextMenuCleanup = null;
+  noteBackgroundPickerCleanup?.();
+  noteBackgroundPickerCleanup = null;
   overlayScrollbarCleanup?.();
   overlayScrollbarCleanup = null;
   toolbarInteractionCleanup?.();
@@ -523,6 +551,71 @@ function pageShell(
   appendResizeHandles(shell);
   app.append(shell);
   return shell;
+}
+
+function setupNoteBackgroundPicker(shell: HTMLElement): void {
+  const control = shell.querySelector<HTMLElement>(".note-background-control");
+  const trigger = control?.querySelector<HTMLButtonElement>('[data-action="note-background"]');
+  const picker = control?.querySelector<HTMLElement>(".note-background-picker");
+  if (!control || !trigger || !picker) return;
+
+  const close = () => {
+    picker.hidden = true;
+    trigger.setAttribute("aria-expanded", "false");
+  };
+  const sync = () => {
+    const selected = noteBackground(currentNote?.background);
+    for (const button of picker.querySelectorAll<HTMLButtonElement>("button")) {
+      const active = button.dataset.background === selected;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", String(active));
+    }
+  };
+
+  for (const option of NOTE_BACKGROUND_OPTIONS) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "note-background-option";
+    button.dataset.background = option.value;
+    button.setAttribute("aria-label", t(option.label));
+    button.innerHTML = `<span class="note-background-swatch" aria-hidden="true"></span>`;
+    button.addEventListener("click", () => {
+      if (!currentNote) return;
+      if (currentNote.background !== option.value) {
+        currentNote.background = option.value;
+        shell.dataset.noteBackground = option.value;
+        dirty = true;
+        scheduleSave();
+      }
+      sync();
+      close();
+      trigger.focus();
+    });
+    picker.append(button);
+  }
+  sync();
+
+  const toggle = () => {
+    picker.hidden = !picker.hidden;
+    trigger.setAttribute("aria-expanded", String(!picker.hidden));
+    if (!picker.hidden) sync();
+  };
+  const onDocumentPointerDown = (event: PointerEvent) => {
+    if (event.target instanceof Node && control.contains(event.target)) return;
+    close();
+  };
+  const onDocumentKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "Escape" || picker.hidden) return;
+    close();
+    trigger.focus();
+  };
+  trigger.addEventListener("click", toggle);
+  document.addEventListener("pointerdown", onDocumentPointerDown, true);
+  document.addEventListener("keydown", onDocumentKeyDown);
+  noteBackgroundPickerCleanup = () => {
+    document.removeEventListener("pointerdown", onDocumentPointerDown, true);
+    document.removeEventListener("keydown", onDocumentKeyDown);
+  };
 }
 
 function showToast(
@@ -593,7 +686,13 @@ async function refreshNotes(): Promise<void> {
 }
 
 function noteListSignature(items: NoteSummary[]): string {
-  return JSON.stringify(items.map((note) => [note.name, note.preview, note.modified_ms, note.pinned]));
+  return JSON.stringify(items.map((note) => [
+    note.name,
+    note.preview,
+    note.modified_ms,
+    note.pinned,
+    noteBackground(note.background),
+  ]));
 }
 
 function isNotePinned(name: string): boolean {
@@ -669,6 +768,7 @@ async function renderHome(refresh = true): Promise<void> {
       }
       const item = document.createElement("article");
       item.className = "note-card";
+      item.dataset.noteBackground = noteBackground(note.background);
       item.innerHTML = `
         <div class="note-summary note-open" role="button" tabindex="0" aria-label="${escapeHtml(t("openNote", { name: note.name }))}">
           <strong>${escapeHtml(note.name.replace(/\.md$/i, ""))}</strong>
@@ -746,6 +846,7 @@ async function renderArchive(): Promise<void> {
     for (const note of archivedNotes) {
       const item = document.createElement("article");
       item.className = "note-card archived-note-card";
+      item.dataset.noteBackground = noteBackground(note.background);
       item.innerHTML = `
         <div class="note-open archived-note-summary">
           <strong>${escapeHtml(note.name.replace(/\.md$/i, ""))}</strong>
@@ -1140,12 +1241,14 @@ async function openNote(name: string, showToolbarOnOpen = true): Promise<boolean
 }
 
 async function showNote(note: OpenedNote, showToolbarOnOpen = true): Promise<void> {
-  currentNote = note;
-  currentContent = note.content;
+  currentNote = { ...note, background: noteBackground(note.background) };
+  currentContent = currentNote.content;
   dirty = false;
   locked = false;
   await api.rememberLastNote(note.name);
   const shell = pageShell(note.name, backToHome, true, true, renameCurrentNote);
+  shell.dataset.noteBackground = currentNote.background;
+  setupNoteBackgroundPicker(shell);
   const main = document.createElement("main");
   main.className = "note-page";
   main.innerHTML = `<div class="editor-host"></div><div class="format-toolbar" aria-label="${t("formatToolbar")}"></div>`;
@@ -1159,7 +1262,7 @@ async function showNote(note: OpenedNote, showToolbarOnOpen = true): Promise<voi
   );
   host.addEventListener("pointerdown", selectionVisibility.editorPressStarted, true);
   host.addEventListener("mousedown", selectionVisibility.editorPressStarted, true);
-  const created = createEditor(host, note.content, {
+  const created = createEditor(host, currentNote.content, {
     onChange: (markdown) => {
       if (locked) return;
       currentContent = markdown;
@@ -1642,6 +1745,7 @@ function showConflict(result: SaveResult): void {
             revision: result.revision,
             has_bom: result.has_bom,
             newline: result.newline,
+            background: noteBackground(result.external_background),
           };
           await showNote(currentNote);
         },
@@ -1993,6 +2097,7 @@ async function checkExternalChange(): Promise<void> {
         external_content: disk.content,
         has_bom: disk.has_bom,
         newline: disk.newline,
+        external_background: noteBackground(disk.background),
       });
       locked = true;
     }

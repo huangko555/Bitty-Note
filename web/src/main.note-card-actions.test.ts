@@ -9,7 +9,7 @@ const { connectApi } = vi.hoisted(() => ({
 
 vi.mock("./api", () => ({ connectApi }));
 
-const note = { name: "示例.md", preview: "正文", modified_ms: 1 };
+const note = { name: "示例.md", preview: "正文", modified_ms: 1, background: "rose" as const };
 const otherNote = { name: "其他.md", preview: "正文", modified_ms: 0 };
 const bootstrap: BootstrapData = {
   config: {
@@ -104,6 +104,7 @@ describe("home note card actions", () => {
   });
 
   it("shows note actions, opens the file in its default editor, and confirms before moving it to the Recycle Bin", async () => {
+    expect(document.querySelector<HTMLElement>(".note-card")?.dataset.noteBackground).toBe("rose");
     document.querySelector(".note-card")!.dispatchEvent(new MouseEvent("contextmenu", {
       bubbles: true,
       cancelable: true,
@@ -184,6 +185,8 @@ describe("home note card actions", () => {
   it("shows restore and confirmed Recycle Bin actions on archived cards", async () => {
     document.querySelector<HTMLButtonElement>('[data-action="show-archive"]')!.click();
     await vi.waitFor(() => expect(document.querySelector(".archived-note-card")).not.toBeNull());
+    expect(document.querySelector<HTMLElement>(".archived-note-card")?.dataset.noteBackground)
+      .toBe("rose");
 
     document.querySelector(".archived-note-card")!.dispatchEvent(new MouseEvent("contextmenu", {
       bubbles: true,

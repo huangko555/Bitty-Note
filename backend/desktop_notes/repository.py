@@ -12,6 +12,7 @@ from pathlib import Path
 from .errors import UserVisibleError
 from .i18n import text as message
 from .models import NoteSummary, OpenedNote, SaveResult
+from .note_document import parse_note_document, render_note_document
 
 _INVALID_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _EMPTY_LINE_MARKER = "<!-- bitty-empty-line -->"
@@ -92,14 +93,18 @@ class NotesRepository:
                 try:
                     data = Path(entry.path).read_bytes()
                     text, _, _ = _decode_utf8(data, entry.name)
-                    preview = _plain_preview(text)
+                    document = parse_note_document(text)
+                    preview = _plain_preview(document.content)
+                    background = document.background
                 except (OSError, UserVisibleError):
                     preview = message("Couldn't read this file", "无法读取此文件")
+                    background = "default"
                 notes.append(
                     NoteSummary(
                         name=entry.name,
                         preview=preview,
                         modified_ms=entry.stat(follow_symlinks=False).st_mtime_ns // 1_000_000,
+                        background=background,
                     )
                 )
         return sorted(notes, key=lambda note: (-note.modified_ms, note.name.casefold()))
@@ -118,14 +123,18 @@ class NotesRepository:
                 try:
                     data = Path(entry.path).read_bytes()
                     text, _, _ = _decode_utf8(data, entry.name)
-                    preview = _plain_preview(text)
+                    document = parse_note_document(text)
+                    preview = _plain_preview(document.content)
+                    background = document.background
                 except (OSError, UserVisibleError):
                     preview = message("Couldn't read this file", "无法读取此文件")
+                    background = "default"
                 notes.append(
                     NoteSummary(
                         name=entry.name,
                         preview=preview,
                         modified_ms=entry.stat(follow_symlinks=False).st_mtime_ns // 1_000_000,
+                        background=background,
                     )
                 )
         return sorted(notes, key=lambda note: (-note.modified_ms, note.name.casefold()))
@@ -209,6 +218,7 @@ class NotesRepository:
         *,
         has_bom: bool,
         newline: str,
+        background: str = "default",
         force: bool = False,
     ) -> SaveResult:
         path = self._note_path(name)
@@ -225,15 +235,21 @@ class NotesRepository:
             current_revision = content_revision(current_data)
             if not force and current_revision != expected_revision:
                 external, external_bom, external_newline = _decode_utf8(current_data, name)
+                external_document = parse_note_document(external)
                 return SaveResult(
                     status="conflict",
                     revision=current_revision,
-                    external_content=external,
+                    external_content=external_document.content,
                     has_bom=external_bom,
                     newline=external_newline,
+                    external_background=external_document.background,
                 )
 
-            encoded = _encode_utf8(content, has_bom, newline)
+            current, _, _ = _decode_utf8(current_data, name)
+            rendered = render_note_document(
+                parse_note_document(current), content, background
+            )
+            encoded = _encode_utf8(rendered, has_bom, newline)
             if encoded == current_data:
                 return SaveResult(status="unchanged", revision=current_revision)
 
@@ -247,6 +263,7 @@ class NotesRepository:
         *,
         has_bom: bool,
         newline: str,
+        background: str = "default",
     ) -> OpenedNote:
         path = self._note_path(name)
         with self._lock:
@@ -255,7 +272,10 @@ class NotesRepository:
                     f'“{name}” has reappeared. Return home and open it again.',
                     f"“{name}”已经重新出现，请返回主页后再打开。",
                 ))
-            encoded = _encode_utf8(content, has_bom, newline)
+            rendered = render_note_document(
+                parse_note_document(""), content, background
+            )
+            encoded = _encode_utf8(rendered, has_bom, newline)
             try:
                 with path.open("xb") as stream:
                     stream.write(encoded)
@@ -347,7 +367,15 @@ class NotesRepository:
                 f"无法打开“{path.name}”：{error}",
             )) from error
         text, has_bom, newline = _decode_utf8(data, path.name)
-        return OpenedNote(path.name, text, content_revision(data), has_bom, newline)
+        document = parse_note_document(text)
+        return OpenedNote(
+            path.name,
+            document.content,
+            content_revision(data),
+            has_bom,
+            newline,
+            document.background,
+        )
 
     def _note_path(self, name: str) -> Path:
         if not name or name != Path(name).name or Path(name).suffix.lower() != ".md":

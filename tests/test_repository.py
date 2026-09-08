@@ -88,6 +88,66 @@ def test_note_previews_hide_folded_markers(tmp_path: Path) -> None:
 
     assert repository.list_notes()[0].preview == "标题 父项 子项"
 
+
+def test_front_matter_is_hidden_from_open_and_previews(tmp_path: Path) -> None:
+    repository = NotesRepository(tmp_path)
+    path = tmp_path / "彩色.md"
+    path.write_text(
+        "---\ncustom: keep\nbitty-background: rose\n---\n\n\n# 正文标题\n内容",
+        encoding="utf-8",
+    )
+
+    opened = repository.open_note(path.name)
+    summary = repository.list_notes()[0]
+
+    assert opened.content == "# 正文标题\n内容"
+    assert opened.background == "rose"
+    assert summary.preview == "正文标题 内容"
+    assert summary.background == "rose"
+
+
+def test_save_writes_background_and_preserves_other_front_matter(tmp_path: Path) -> None:
+    repository = NotesRepository(tmp_path)
+    path = tmp_path / "彩色.md"
+    path.write_text("---\ncustom: keep\n---\n\n正文", encoding="utf-8")
+    opened = repository.open_note(path.name)
+
+    result = repository.save_note(
+        path.name,
+        "更新",
+        opened.revision,
+        has_bom=False,
+        newline="\n",
+        background="mint",
+    )
+
+    assert result.status == "saved"
+    assert path.read_text(encoding="utf-8") == (
+        "---\ncustom: keep\nbitty-background: mint\n---\n\n更新"
+    )
+
+
+def test_conflict_returns_external_body_and_background(tmp_path: Path) -> None:
+    repository = NotesRepository(tmp_path)
+    opened = repository.create_note("记录")
+    path = tmp_path / opened.name
+    path.write_text(
+        "---\nbitty-background: sky\n---\n\n外部内容", encoding="utf-8"
+    )
+
+    conflict = repository.save_note(
+        opened.name,
+        "本地内容",
+        opened.revision,
+        has_bom=False,
+        newline="\n",
+        background="rose",
+    )
+
+    assert conflict.status == "conflict"
+    assert conflict.external_content == "外部内容"
+    assert conflict.external_background == "sky"
+
 def test_save_detects_external_change_before_overwrite(tmp_path: Path) -> None:
     repository = NotesRepository(tmp_path)
     opened = repository.create_note("记录")

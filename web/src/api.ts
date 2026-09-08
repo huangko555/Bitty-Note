@@ -27,6 +27,7 @@ interface PythonApi {
     revision: string,
     hasBom: boolean,
     newline: "\n" | "\r\n",
+    background: string,
     force: boolean,
   ): Promise<SaveResult>;
   recreate_note(
@@ -34,6 +35,7 @@ interface PythonApi {
     content: string,
     hasBom: boolean,
     newline: "\n" | "\r\n",
+    background: string,
   ): Promise<OpenedNote>;
   archive_note(name: string): Promise<{ archived_name: string }>;
   trash_note(name: string): Promise<void>;
@@ -153,10 +155,17 @@ function desktopApi(raw: PythonApi): DesktopApi {
         note.revision,
         note.has_bom,
         note.newline,
+        note.background ?? "default",
         force,
       ),
     recreateNote: (note, content) =>
-      raw.recreate_note(note.name, content, note.has_bom, note.newline),
+      raw.recreate_note(
+        note.name,
+        content,
+        note.has_bom,
+        note.newline,
+        note.background ?? "default",
+      ),
     archiveNote: async (name) => {
       await raw.archive_note(name);
     },
@@ -232,6 +241,7 @@ function browserMock(): DesktopApi {
         .slice(0, 80),
       modified_ms: Date.now() - index,
       pinned: pinnedNotes.some((item) => item.toLocaleLowerCase() === note.name.toLocaleLowerCase()),
+      background: note.background ?? "default",
     }));
   const uniqueName = (requested: string) => {
     const base = (requested.trim() || new Date().toISOString().slice(0, 10)).replace(/\.md$/i, "");
@@ -290,6 +300,7 @@ function browserMock(): DesktopApi {
         revision: revision(),
         has_bom: false,
         newline: "\n",
+        background: "default",
       };
       notes.unshift(note);
       return { ...note };
@@ -335,6 +346,7 @@ function browserMock(): DesktopApi {
       const stored = notes.find((item) => item.name === note.name);
       if (!stored) return { status: "missing", revision: null, external_content: null, has_bom: false, newline: "\n" };
       stored.content = content;
+      stored.background = note.background ?? "default";
       stored.revision = revision();
       return { status: "saved", revision: stored.revision, external_content: null, has_bom: false, newline: "\n" };
     },

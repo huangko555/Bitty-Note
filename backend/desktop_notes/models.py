@@ -3,12 +3,15 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
+NoteBackground = Literal["default", "sand", "rose", "sky", "mint", "gray"]
+
 
 @dataclass(frozen=True)
 class NoteSummary:
     name: str
     preview: str
     modified_ms: int
+    background: NoteBackground = "default"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -21,6 +24,7 @@ class OpenedNote:
     revision: str
     has_bom: bool
     newline: Literal["\n", "\r\n"]
+    background: NoteBackground = "default"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -33,6 +37,7 @@ class SaveResult:
     external_content: str | None = None
     has_bom: bool = False
     newline: Literal["\n", "\r\n"] = "\n"
+    external_background: NoteBackground = "default"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

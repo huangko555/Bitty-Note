@@ -15,6 +15,7 @@ const note: OpenedNote = {
   revision: "revision-1",
   has_bom: false,
   newline: "\n",
+  background: "sky",
 };
 
 const bootstrap: BootstrapData = {
@@ -70,12 +71,20 @@ describe("startup chrome visibility", () => {
   });
 
   it("keeps startup chrome hidden without focusing the restored editor", async () => {
+    const saveNote = vi.fn().mockResolvedValue({
+      status: "saved",
+      revision: "revision-2",
+      external_content: null,
+      has_bom: false,
+      newline: "\n",
+    });
     const api = {
       bootstrap: vi.fn().mockResolvedValue(bootstrap),
       getAlwaysOnTop: vi.fn().mockResolvedValue(false),
       acquireNote: vi.fn().mockResolvedValue(true),
       openNote: vi.fn().mockResolvedValue(note),
       rememberLastNote: vi.fn().mockResolvedValue(undefined),
+      saveNote,
       setTextHighlightColor: vi.fn(async (color) => color),
       checkUpdate: vi.fn().mockResolvedValue(bootstrap.update_state),
       windowReady: vi.fn().mockResolvedValue(undefined),
@@ -103,6 +112,23 @@ describe("startup chrome visibility", () => {
     expect(toolbar.querySelector(".highlight-menu-button path")?.getAttribute("d"))
       .toBe("m18 15-6-6-6 6");
     expect.soft(toolbar.classList.contains("visible")).toBe(false);
+
+    const shell = document.querySelector<HTMLElement>(".app-shell")!;
+    const backgroundTrigger = document.querySelector<HTMLButtonElement>(
+      '[data-action="note-background"]',
+    )!;
+    expect(shell.dataset.noteBackground).toBe("sky");
+    backgroundTrigger.click();
+    const backgroundOptions = document.querySelectorAll<HTMLButtonElement>(
+      ".note-background-option",
+    );
+    expect(backgroundOptions).toHaveLength(6);
+    expect(document.querySelector('[data-background="sky"]')?.classList.contains("is-active"))
+      .toBe(true);
+    document.querySelector<HTMLButtonElement>('[data-background="rose"]')!.click();
+    expect(shell.dataset.noteBackground).toBe("rose");
+    await vi.waitFor(() => expect(saveNote).toHaveBeenCalled());
+    expect(saveNote.mock.calls.at(-1)?.[0].background).toBe("rose");
 
     const colorMenu = toolbar.querySelector<HTMLButtonElement>(".highlight-menu-button")!;
     const colorPalette = toolbar.querySelector<HTMLElement>(".highlight-color-palette")!;

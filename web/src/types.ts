@@ -3,7 +3,10 @@ export interface NoteSummary {
   preview: string;
   modified_ms: number;
   pinned?: boolean;
+  background?: NoteBackground;
 }
+
+export type NoteBackground = "default" | "sand" | "rose" | "sky" | "mint" | "gray";
 
 export interface OpenedNote {
   name: string;
@@ -11,6 +14,7 @@ export interface OpenedNote {
   revision: string;
   has_bom: boolean;
   newline: "\n" | "\r\n";
+  background?: NoteBackground;
 }
 
 export interface SaveResult {
@@ -19,6 +23,7 @@ export interface SaveResult {
   external_content: string | null;
   has_bom: boolean;
   newline: "\n" | "\r\n";
+  external_background?: NoteBackground;
 }
 
 export type AppLanguage = "en" | "zh-CN";

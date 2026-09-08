@@ -188,6 +188,7 @@ class DesktopBridge:
         revision: str,
         has_bom: bool,
         newline: str,
+        background: str,
         force: bool,
     ) -> dict[str, Any]:
         return self._repository.save_note(
@@ -196,6 +197,7 @@ class DesktopBridge:
             revision,
             has_bom=has_bom,
             newline=newline,
+            background=background,
             force=force,
         ).to_dict()
 
@@ -205,12 +207,14 @@ class DesktopBridge:
         content: str,
         has_bom: bool,
         newline: str,
+        background: str,
     ) -> dict[str, Any]:
         return self._repository.recreate_note(
             name,
             content,
             has_bom=has_bom,
             newline=newline,
+            background=background,
         ).to_dict()
 
     def archive_note(self, name: str) -> dict[str, str]:
