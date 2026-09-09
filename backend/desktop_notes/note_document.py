@@ -9,7 +9,9 @@ DEFAULT_NOTE_BACKGROUND: NoteBackground = "default"
 NOTE_BACKGROUNDS: tuple[NoteBackground, ...] = (
     "default",
     "sand",
+    "peach",
     "rose",
+    "lavender",
     "sky",
     "mint",
     "gray",

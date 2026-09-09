@@ -110,7 +110,7 @@ describe("window controls", () => {
   it("synchronizes every current pin button after an asynchronous page change", () => {
     const root = document.createElement("div");
     root.innerHTML = `
-      <button data-action="pin"></button>
+      <header class="title-bar"><button data-action="pin"></button></header>
       <section><button data-action="pin"></button></section>
     `;
     document.body.append(root);
@@ -124,18 +124,7 @@ describe("window controls", () => {
       expect(button.classList.contains("is-active")).toBe(true);
       expect(button.getAttribute("aria-pressed")).toBe("true");
     });
+    expect(root.querySelector(".title-bar")?.classList.contains("is-pinned")).toBe(true);
     root.remove();
-  });
-
-  it("synchronizes the title pin indicator", () => {
-    const root = document.createElement("div");
-    root.innerHTML = '<span class="title-pin-indicator" hidden></span>';
-    const indicator = root.querySelector<HTMLElement>(".title-pin-indicator")!;
-
-    syncPinButtons(root, true);
-    expect(indicator.hidden).toBe(false);
-
-    syncPinButtons(root, false);
-    expect(indicator.hidden).toBe(true);
   });
 });

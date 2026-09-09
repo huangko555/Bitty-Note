@@ -26,6 +26,8 @@ class FakeWindow:
         self.titles: list[str] = []
         self.restored = 0
         self.destroyed = 0
+        self.shown = 0
+        self.hidden = 0
         self.scripts: list[str] = []
         self.native = FakeNativeWindow()
 
@@ -37,6 +39,12 @@ class FakeWindow:
 
     def destroy(self) -> None:
         self.destroyed += 1
+
+    def show(self) -> None:
+        self.shown += 1
+
+    def hide(self) -> None:
+        self.hidden += 1
 
     def run_js(self, script: str) -> None:
         self.scripts.append(script)
@@ -52,10 +60,11 @@ def coordinator(tmp_path: Path) -> tuple[WindowCoordinator, FakeWindow]:
     result = WindowCoordinator(store)
     main_window = FakeWindow()
     result.register(WindowSession("main", "main", main_window, FakeBridge()))
+    result.show_main()
     return result, main_window
 
 
-def test_taskbar_titles_only_name_main_note_when_multiple_notes_are_open(
+def test_taskbar_titles_keep_manager_name_while_note_windows_use_note_names(
     tmp_path: Path,
 ) -> None:
     windows, main_window = coordinator(tmp_path)
@@ -81,7 +90,7 @@ def test_taskbar_titles_only_name_main_note_when_multiple_notes_are_open(
 
     windows.set_auxiliary_factory(create_auxiliary)
     assert windows.open_auxiliary("Travel.md") == {"status": "opened"}
-    assert main_window.titles[-1] == "Shopping"
+    assert main_window.titles[-1] == "Bitty"
     assert auxiliary_window.titles[-1] == "Travel"
 
     windows.unregister(auxiliary_ids[0])
@@ -206,7 +215,7 @@ def test_external_deletion_cleans_only_closed_note_sizes(tmp_path: Path) -> None
     assert windows.config_store.config.open_note_windows == {}
 
 
-def test_main_close_waits_for_auxiliary_window(tmp_path: Path) -> None:
+def test_main_close_hides_manager_without_closing_note_windows(tmp_path: Path) -> None:
     windows, main_window = coordinator(tmp_path)
     auxiliary_window = FakeWindow()
     auxiliary_bridge = FakeBridge()
@@ -217,7 +226,8 @@ def test_main_close_waits_for_auxiliary_window(tmp_path: Path) -> None:
 
     windows.close_session("main")
     assert main_window.destroyed == 0
-    assert auxiliary_window.scripts == ["window.desktopNotesRequestClose?.()"]
+    assert main_window.hidden == 1
+    assert auxiliary_window.scripts == []
 
     windows.unregister("aux")
     assert main_window.destroyed == 1
@@ -255,17 +265,44 @@ def test_closing_only_one_note_window_removes_it_from_next_startup(
     assert windows.config_store.config.open_note_windows == {}
 
 
-def test_failed_auxiliary_save_cancels_main_close(tmp_path: Path) -> None:
+def test_show_main_restores_hidden_manager(tmp_path: Path) -> None:
     windows, main_window = coordinator(tmp_path)
     auxiliary_window = FakeWindow()
     windows.register(WindowSession(
         "aux", "note", auxiliary_window, FakeBridge(), "Travel.md"
     ))
-    windows.save_window_state("Travel.md", 240, 160, 430, 650)
-
     windows.close_session("main")
-    windows.cancel_app_close()
-    windows.unregister("aux")
+    windows.show_main()
 
     assert main_window.destroyed == 0
-    assert windows.config_store.config.open_note_windows == {}
+    assert main_window.hidden == 1
+    assert main_window.shown == 2
+    assert main_window.restored == 2
+
+
+def test_new_note_window_cascades_from_the_window_that_created_it(tmp_path: Path) -> None:
+    windows, _main_window = coordinator(tmp_path)
+    source = FakeWindow(420, 260)
+    windows.register(WindowSession(
+        "source", "note", source, FakeBridge(), "Source.md"
+    ))
+    created: list[tuple[int, int]] = []
+
+    def create_auxiliary(
+        session_id: str,
+        name: str,
+        _width: int,
+        _height: int,
+        x: int,
+        y: int,
+        _position_space: str | None,
+    ) -> None:
+        created.append((x, y))
+        windows.register(WindowSession(
+            session_id, "note", FakeWindow(x, y), FakeBridge(), name
+        ))
+
+    windows.set_auxiliary_factory(create_auxiliary)
+    windows.open_auxiliary("New.md", "source")
+
+    assert created == [(444, 284)]

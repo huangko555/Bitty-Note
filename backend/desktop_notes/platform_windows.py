@@ -18,6 +18,8 @@ _LEGACY_APP_RUN_NAME = "DesktopNotes"
 _GWL_STYLE = -16
 _WS_MINIMIZEBOX = 0x00020000
 _WS_SYSMENU = 0x00080000
+MIN_WINDOW_WIDTH = 300
+MIN_WINDOW_HEIGHT = 380
 _WINDOW_REGIONS = {
     "caption",
     "left",
@@ -314,8 +316,8 @@ def start_window_interaction(window: object, region: str) -> WindowInteraction:
         top=rect.top,
         right=rect.right,
         bottom=rect.bottom,
-        min_width=round(300 * dpi / 96),
-        min_height=round(380 * dpi / 96),
+        min_width=round(MIN_WINDOW_WIDTH * dpi / 96),
+        min_height=round(MIN_WINDOW_HEIGHT * dpi / 96),
     )
 
 

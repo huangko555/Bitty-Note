@@ -8,7 +8,9 @@ const styles = readFileSync("web/src/styles.css", "utf8");
 
 describe("highlight toolbar visual contract", () => {
   it("keeps the arrow area unseparated and the palette compact", () => {
-    expect(styles).not.toContain("border-left: 1px solid var(--line)");
+    expect(styles).not.toMatch(
+      /\.format-toolbar \.highlight-menu-button\s*{[^}]*border-left:/,
+    );
     expect(styles).toMatch(/\.highlight-menu-button[^}]+margin-left:\s*-3px/);
     expect(styles).toMatch(/\.highlight-menu-button:hover \.lucide-icon[^}]+stroke-width:\s*2\.3/);
     expect(styles).toMatch(/\.highlight-color-palette[^}]+gap:\s*9px/);

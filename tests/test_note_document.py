@@ -39,6 +39,15 @@ def test_default_removes_only_bitty_front_matter_when_empty() -> None:
     assert render_note_document(document, "正文", "default") == "正文"
 
 
+def test_added_note_backgrounds_round_trip() -> None:
+    for background in ("peach", "lavender"):
+        source = f"---\nbitty-background: {background}\n---\n\n正文"
+        document = parse_note_document(source)
+
+        assert document.background == background
+        assert render_note_document(document, document.content, background) == source
+
+
 def test_unknown_background_is_hidden_but_preserved_until_changed() -> None:
     source = "---\nbitty-background: future-color\ncustom: value\n---\n\n正文"
     document = parse_note_document(source)

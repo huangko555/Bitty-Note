@@ -32,6 +32,14 @@ Archive and restore by moving between these locations. Never overwrite; deduplic
 
 Content is UTF-8. Refuse to overwrite invalid UTF-8; preserve an existing BOM and CRLF/LF style. End new non-empty content with one newline.
 
+## Front matter
+
+A complete `---` block at the start of a record is metadata, not note content. Treat an opening `---` without a closing delimiter as ordinary Markdown.
+
+- `bitty-background` stores the note background. Supported values are `default`, `sand`, `peach`, `rose`, `lavender`, `sky`, `mint`, and `gray`; absence means `default`.
+- For ordinary creation or body edits—including organizing, rewriting, task matching, and search—operate only on the body after the closing delimiter. Preserve an existing front matter block byte-for-byte, including unknown fields, order, comments, quoting, spacing, delimiters, and adjacent blank lines. New records have no front matter unless the user requests metadata or a background.
+- Change front matter only when the user explicitly requests that metadata change. Modify only the requested field; preserve all other front matter and its formatting. For a background change, update or add only `bitty-background`; selecting `default` removes that field, and removes the delimiters only when no metadata remains.
+
 ## General rules
 
 Use the language of the user's current request for new filenames, headings, and content, independent of the app language. Preserve existing wording unless asked to change it.

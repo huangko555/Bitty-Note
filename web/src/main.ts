@@ -70,7 +70,7 @@ let systemFonts: string[] = [];
 let overlayScrollbarCleanup: (() => void) | null = null;
 let toolbarInteractionCleanup: (() => void) | null = null;
 let noteContextMenuCleanup: (() => void) | null = null;
-let noteBackgroundPickerCleanup: (() => void) | null = null;
+let noteWindowMenuCleanup: (() => void) | null = null;
 let beginTitleRename: (() => void) | null = null;
 let appVersion = "";
 let updateState: UpdateState = { status: "idle", available_version: null };
@@ -86,7 +86,9 @@ const NOTE_BACKGROUND_OPTIONS: {
 }[] = [
   { value: "default", label: "defaultBackground" },
   { value: "sand", label: "sandBackground" },
+  { value: "peach", label: "peachBackground" },
   { value: "rose", label: "roseBackground" },
+  { value: "lavender", label: "lavenderBackground" },
   { value: "sky", label: "skyBackground" },
   { value: "mint", label: "mintBackground" },
   { value: "gray", label: "grayBackground" },
@@ -153,6 +155,7 @@ type IconName =
   | "back"
   | "bold"
   | "check"
+  | "chevronDown"
   | "chevronUp"
   | "close"
   | "copy"
@@ -164,7 +167,6 @@ type IconName =
   | "listOrdered"
   | "minimize"
   | "palette"
-  | "externalLink"
   | "filePenLine"
   | "pencil"
   | "pin"
@@ -185,10 +187,10 @@ function icon(name: IconName): string {
     back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
     bold: '<path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8"/>',
     check: '<path d="m5 12 4 4L19 6"/>',
+    chevronDown: '<path d="m6 9 6 6 6-6"/>',
     chevronUp: '<path d="m18 15-6-6-6 6"/>',
     close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
     copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
-    externalLink: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
     filePenLine: '<path d="M12 22h6a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v10"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10.4 12.6a2.1 2.1 0 1 1 3 3L8 21l-4 1 1-4Z"/>',
     heading: '<path d="M6 12h12"/><path d="M6 20V4"/><path d="M18 20V4"/>',
     highlighter: '<path class="highlight-icon-fill" d="m14 4 8 8-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4Z"/><path class="highlight-icon-fill" d="m9 11-6 6v3h9l3-3Z"/><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/>',
@@ -220,10 +222,12 @@ function titleBar(
 ): HTMLElement {
   const bar = document.createElement("header");
   bar.className = "title-bar";
-  bar.classList.toggle("has-note-background-action", Boolean(onRename));
   beginTitleRename = null;
-  const closesAuxiliaryWindow = Boolean(back && windowRole === "note");
-  if (closesAuxiliaryWindow) bar.classList.add("auxiliary-title-bar");
+  const isNoteWindow = windowRole === "note";
+  if (isNoteWindow) {
+    bar.classList.add("note-title-bar");
+    bar.classList.toggle("is-pinned", config.always_on_top);
+  }
   const backUpdateClass = showUpdateOnBack
     ? ` update-indicator ${updateState.status === "available" ? "has-update" : ""}`
     : "";
@@ -232,24 +236,35 @@ function titleBar(
     : "";
   bar.innerHTML = `
     <div class="title-left">
-      ${back ? `<button class="window-button no-drag${closesAuxiliaryWindow ? " auxiliary-close-button" : backUpdateClass}" data-action="back" aria-label="${t(closesAuxiliaryWindow ? "close" : "back")}">${icon(closesAuxiliaryWindow ? "close" : "back")}${closesAuxiliaryWindow ? "" : backUpdateDot}</button>` : '<span class="app-mark">Bitty</span>'}
-      ${back ? `<span class="title-left-hover-actions"><button class="window-button no-drag quick-create-button" data-action="quick-create" aria-label="${t("createNote")}">${icon("plus")}</button></span>` : ""}
+      ${isNoteWindow
+        ? `<button id="window-pin-button" class="window-button no-drag ${config.always_on_top ? "is-active" : ""}" data-action="pin" aria-label="${t("pin")}" aria-pressed="${config.always_on_top}">${icon("pin")}</button>
+           <button class="window-button no-drag quick-create-button" data-action="quick-create" aria-label="${t("createNote")}">${icon("plus")}</button>`
+        : back
+          ? `<button class="window-button no-drag${backUpdateClass}" data-action="back" aria-label="${t("back")}">${icon("back")}${backUpdateDot}</button>`
+          : '<span class="app-mark">Bitty</span>'}
     </div>
     <div class="window-title"${onRename ? "" : ` title="${escapeHtml(title)}"`}>
-      ${title ? `<span class="title-pin-indicator" aria-hidden="true"${config.always_on_top ? "" : " hidden"}>${icon("pin")}</span>` : ""}
       <span class="window-title-text">${escapeHtml(title)}</span>
     </div>
     <div class="window-actions">
-      ${onRename ? `<div class="note-background-control">
-        <button class="window-button no-drag" data-action="note-background" aria-label="${t("noteBackground")}" aria-expanded="false">${icon("palette")}</button>
-        <div class="note-background-picker no-drag" role="group" aria-label="${t("noteBackground")}" hidden></div>
-      </div>` : ""}
-      <button id="window-pin-button" class="window-button no-drag ${config.always_on_top ? "is-active" : ""}" data-action="pin" aria-label="${t("pin")}" aria-pressed="${config.always_on_top}">${icon("pin")}</button>
-      <button class="window-button no-drag" data-action="minimize" aria-label="${t("minimize")}">${icon("minimize")}</button>
+      ${isNoteWindow
+        ? `<button class="window-button no-drag note-menu-button" data-action="note-menu" aria-label="${t("moreActions")}" aria-haspopup="menu" aria-expanded="false">${icon("chevronDown")}</button>
+           <button class="window-button no-drag" data-action="minimize" aria-label="${t("minimize")}">${icon("minimize")}</button>`
+        : `<button class="window-button no-drag main-close-button" data-action="close" aria-label="${t("close")}">${icon("close")}</button>`}
     </div>`;
-  if (back) bar.querySelector('[data-action="back"]')?.addEventListener("click", back);
+  if (!isNoteWindow && back) {
+    bar.querySelector('[data-action="back"]')?.addEventListener("click", back);
+  }
   bar.querySelector('[data-action="quick-create"]')?.addEventListener("click", () => {
     void quickCreateNote();
+  });
+  bar.querySelector<HTMLButtonElement>('[data-action="note-menu"]')
+    ?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      showNoteWindowMenu(bar, event.currentTarget as HTMLButtonElement);
+    });
+  bar.querySelector('[data-action="close"]')?.addEventListener("click", () => {
+    void closeApplication();
   });
   const titleContainer = bar.querySelector<HTMLElement>(".window-title");
   const titleText = bar.querySelector<HTMLElement>(".window-title-text");
@@ -377,6 +392,116 @@ function titleBar(
     bar.addEventListener("pointercancel", stopWaiting);
   });
   return bar;
+}
+
+function showNoteWindowMenu(bar: HTMLElement, button: HTMLButtonElement): void {
+  const wasOpen = button.getAttribute("aria-expanded") === "true";
+  noteWindowMenuCleanup?.();
+  if (wasOpen) return;
+  if (!currentNote) return;
+
+  const shell = bar.parentElement;
+  if (!shell) return;
+  const menu = document.createElement("section");
+  menu.className = "note-window-menu no-drag";
+  menu.setAttribute("role", "menu");
+  menu.setAttribute("aria-label", t("moreActions"));
+
+  const colors = document.createElement("div");
+  colors.className = "note-window-menu-colors";
+  colors.setAttribute("role", "group");
+  colors.setAttribute("aria-label", t("noteBackground"));
+  for (const option of NOTE_BACKGROUND_OPTIONS) {
+    const swatch = document.createElement("button");
+    swatch.type = "button";
+    swatch.className = "note-background-option";
+    swatch.dataset.background = option.value;
+    swatch.setAttribute("aria-label", t(option.label));
+    swatch.setAttribute("role", "menuitemradio");
+    swatch.setAttribute("aria-checked", String(currentNote.background === option.value));
+    swatch.classList.toggle("is-active", currentNote.background === option.value);
+    swatch.innerHTML = icon("check");
+    swatch.addEventListener("click", () => {
+      setCurrentNoteBackground(shell, option.value);
+      for (const other of colors.querySelectorAll<HTMLButtonElement>("button")) {
+        const active = other.dataset.background === option.value;
+        other.classList.toggle("is-active", active);
+        other.setAttribute("aria-checked", String(active));
+      }
+    });
+    colors.append(swatch);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "note-window-menu-actions";
+  actions.innerHTML = `
+    <button type="button" role="menuitem" data-action="rename">${icon("pencil")}<span>${t("rename")}</span></button>
+    <button type="button" role="menuitem" data-action="show-note-list">${icon("list")}<span>${t("openNoteList")}</span></button>
+    <div class="note-window-menu-separator" role="separator"></div>
+    <button class="danger" type="button" role="menuitem" data-action="close-note">${icon("close")}<span>${t("closeNoteWindow")}</span></button>`;
+  const colorLabel = document.createElement("div");
+  colorLabel.className = "note-window-menu-color-label";
+  colorLabel.textContent = t("noteBackground");
+  const colorIcon = document.createElement("span");
+  colorIcon.className = "note-window-menu-color-icon";
+  colorIcon.innerHTML = icon("palette");
+  const colorSection = document.createElement("div");
+  colorSection.className = "note-window-menu-color-section";
+  colorSection.append(colorIcon, colorLabel, colors);
+  menu.append(colorSection, actions);
+  shell.append(menu);
+  button.classList.add("is-active");
+  button.setAttribute("aria-expanded", "true");
+
+  let cleanup: (() => void) | null = null;
+  const close = (restoreFocus = false) => {
+    menu.remove();
+    button.classList.remove("is-active");
+    button.setAttribute("aria-expanded", "false");
+    document.removeEventListener("pointerdown", onOutsidePress, true);
+    document.removeEventListener("keydown", onKeydown);
+    window.removeEventListener("blur", onBlur);
+    window.removeEventListener("resize", onBlur);
+    if (restoreFocus && button.isConnected) button.focus({ preventScroll: true });
+    if (noteWindowMenuCleanup === cleanup) noteWindowMenuCleanup = null;
+  };
+  const onOutsidePress = (event: PointerEvent) => {
+    if (event.target instanceof Node && (menu.contains(event.target) || button.contains(event.target))) {
+      return;
+    }
+    close();
+  };
+  const onKeydown = (event: KeyboardEvent) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    close(true);
+  };
+  const onBlur = () => close();
+  cleanup = () => close();
+  noteWindowMenuCleanup = cleanup;
+  document.addEventListener("pointerdown", onOutsidePress, true);
+  document.addEventListener("keydown", onKeydown);
+  window.addEventListener("blur", onBlur);
+  window.addEventListener("resize", onBlur);
+
+  actions.querySelector('[data-action="rename"]')?.addEventListener("click", () => {
+    close();
+    beginTitleRename?.();
+  });
+  actions.querySelector('[data-action="show-note-list"]')?.addEventListener("click", async () => {
+    close();
+    try {
+      if (!(await saveNow())) return;
+      await api.showMainWindow();
+    } catch (error) {
+      showError(error);
+    }
+  });
+  actions.querySelector('[data-action="close-note"]')?.addEventListener("click", () => {
+    close();
+    void closeApplication();
+  });
+  colors.querySelector<HTMLButtonElement>("button.is-active")?.focus({ preventScroll: true });
 }
 
 function beginWindowInteraction(
@@ -533,10 +658,10 @@ function pageShell(
   showUpdateOnBack = true,
   onRename: ((requestedName: string) => Promise<string | null>) | null = null,
 ): HTMLElement {
+  noteWindowMenuCleanup?.();
+  noteWindowMenuCleanup = null;
   noteContextMenuCleanup?.();
   noteContextMenuCleanup = null;
-  noteBackgroundPickerCleanup?.();
-  noteBackgroundPickerCleanup = null;
   overlayScrollbarCleanup?.();
   overlayScrollbarCleanup = null;
   toolbarInteractionCleanup?.();
@@ -553,69 +678,12 @@ function pageShell(
   return shell;
 }
 
-function setupNoteBackgroundPicker(shell: HTMLElement): void {
-  const control = shell.querySelector<HTMLElement>(".note-background-control");
-  const trigger = control?.querySelector<HTMLButtonElement>('[data-action="note-background"]');
-  const picker = control?.querySelector<HTMLElement>(".note-background-picker");
-  if (!control || !trigger || !picker) return;
-
-  const close = () => {
-    picker.hidden = true;
-    trigger.setAttribute("aria-expanded", "false");
-  };
-  const sync = () => {
-    const selected = noteBackground(currentNote?.background);
-    for (const button of picker.querySelectorAll<HTMLButtonElement>("button")) {
-      const active = button.dataset.background === selected;
-      button.classList.toggle("is-active", active);
-      button.setAttribute("aria-pressed", String(active));
-    }
-  };
-
-  for (const option of NOTE_BACKGROUND_OPTIONS) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "note-background-option";
-    button.dataset.background = option.value;
-    button.setAttribute("aria-label", t(option.label));
-    button.innerHTML = `<span class="note-background-swatch" aria-hidden="true"></span>`;
-    button.addEventListener("click", () => {
-      if (!currentNote) return;
-      if (currentNote.background !== option.value) {
-        currentNote.background = option.value;
-        shell.dataset.noteBackground = option.value;
-        dirty = true;
-        scheduleSave();
-      }
-      sync();
-      close();
-      trigger.focus();
-    });
-    picker.append(button);
-  }
-  sync();
-
-  const toggle = () => {
-    picker.hidden = !picker.hidden;
-    trigger.setAttribute("aria-expanded", String(!picker.hidden));
-    if (!picker.hidden) sync();
-  };
-  const onDocumentPointerDown = (event: PointerEvent) => {
-    if (event.target instanceof Node && control.contains(event.target)) return;
-    close();
-  };
-  const onDocumentKeyDown = (event: KeyboardEvent) => {
-    if (event.key !== "Escape" || picker.hidden) return;
-    close();
-    trigger.focus();
-  };
-  trigger.addEventListener("click", toggle);
-  document.addEventListener("pointerdown", onDocumentPointerDown, true);
-  document.addEventListener("keydown", onDocumentKeyDown);
-  noteBackgroundPickerCleanup = () => {
-    document.removeEventListener("pointerdown", onDocumentPointerDown, true);
-    document.removeEventListener("keydown", onDocumentKeyDown);
-  };
+function setCurrentNoteBackground(shell: HTMLElement, background: NoteBackground): void {
+  if (!currentNote || currentNote.background === background) return;
+  currentNote.background = background;
+  shell.dataset.noteBackground = background;
+  dirty = true;
+  scheduleSave();
 }
 
 function showToast(
@@ -783,24 +851,15 @@ async function renderHome(refresh = true): Promise<void> {
           </div>
         </div>`;
       const noteOpen = item.querySelector<HTMLElement>(".note-open");
-      noteOpen?.addEventListener("click", () => openNote(note.name));
+      noteOpen?.addEventListener("click", () => openNoteInNewWindow(note.name));
       noteOpen?.addEventListener("keydown", (event) => {
         if (event.target !== noteOpen || (event.key !== "Enter" && event.key !== " ")) return;
         event.preventDefault();
-        void openNote(note.name);
+        void openNoteInNewWindow(note.name);
       });
       item.addEventListener("contextmenu", (event) => {
         event.preventDefault();
         showNoteContextMenu(note.name, event.clientX, event.clientY);
-      });
-      item.addEventListener("mousedown", (event) => {
-        if (event.button === 1) event.preventDefault();
-      });
-      item.addEventListener("auxclick", (event) => {
-        if (event.button !== 1) return;
-        if (event.target instanceof Element && event.target.closest("button")) return;
-        event.preventDefault();
-        void openNoteInNewWindow(note.name);
       });
       item.querySelector(".copy-button")?.addEventListener("click", () => showCopyDialog(note.name));
       item.querySelector(".archive-button")?.addEventListener("click", () => confirmArchive(note.name));
@@ -964,7 +1023,11 @@ function showCreateDialog(): void {
     title: t("createNote"),
     defaultName: availableNoteName(defaultNewNoteStem()),
     confirmLabel: t("create"),
-    run: async (name) => showNote(await api.createNote(name)),
+    run: async (name) => {
+      const created = await api.createNote(name);
+      await api.openNoteWindow(created.name);
+      await renderHome();
+    },
   });
 }
 
@@ -1010,7 +1073,6 @@ function showNoteContextMenu(sourceName: string, x: number, y: number): void {
   menu.setAttribute("aria-label", t("noteActions", { name: sourceName }));
   menu.innerHTML = `
     <button type="button" role="menuitem" data-action="pin">${icon("arrowUpToLine")}<span>${escapeHtml(t(isPinned ? "unpinNote" : "pinNote"))}</span></button>
-    <button type="button" role="menuitem" data-action="open-window">${icon("externalLink")}<span>${escapeHtml(t("openInNewWindow"))}</span></button>
     <button type="button" role="menuitem" data-action="open-editor">${icon("filePenLine")}<span>${escapeHtml(t("openInEditor"))}</span></button>
     <button type="button" role="menuitem" data-action="copy">${icon("copy")}<span>${escapeHtml(t("contextCopy"))}</span></button>
     <button type="button" role="menuitem" data-action="rename">${icon("pencil")}<span>${escapeHtml(t("rename"))}</span></button>
@@ -1059,10 +1121,6 @@ function showNoteContextMenu(sourceName: string, x: number, y: number): void {
     } catch (error) {
       showError(error);
     }
-  });
-  menu.querySelector<HTMLButtonElement>('[data-action="open-window"]')?.addEventListener("click", async () => {
-    close();
-    await openNoteInNewWindow(sourceName);
   });
   menu.querySelector<HTMLButtonElement>('[data-action="open-editor"]')?.addEventListener("click", async () => {
     close();
@@ -1246,9 +1304,8 @@ async function showNote(note: OpenedNote, showToolbarOnOpen = true): Promise<voi
   dirty = false;
   locked = false;
   await api.rememberLastNote(note.name);
-  const shell = pageShell(note.name, backToHome, true, true, renameCurrentNote);
+  const shell = pageShell(note.name, null, true, true, renameCurrentNote);
   shell.dataset.noteBackground = currentNote.background;
-  setupNoteBackgroundPicker(shell);
   const main = document.createElement("main");
   main.className = "note-page";
   main.innerHTML = `<div class="editor-host"></div><div class="format-toolbar" aria-label="${t("formatToolbar")}"></div>`;
@@ -1776,7 +1833,8 @@ function showMissing(): void {
         run: async () => {
           dirty = false;
           locked = false;
-          await renderHome();
+          await api.showMainWindow();
+          await api.closeWindow();
         },
       },
       { label: t("copyCurrent"), run: copyCurrentContent },
@@ -1817,16 +1875,6 @@ async function copyCurrentContent(): Promise<void> {
   showToast(t("copied"));
 }
 
-async function backToHome(): Promise<void> {
-  if (!(await saveNow())) return;
-  if (windowRole === "note") {
-    await editorPreferenceSave;
-    await api.closeWindow();
-  } else {
-    await renderHome();
-  }
-}
-
 async function renameCurrentNote(requestedName: string): Promise<string | null> {
   if (!currentNote || !(await saveNow())) return null;
   const renamed = await api.renameNote(currentNote.name, requestedName);
@@ -1850,6 +1898,7 @@ declare global {
   interface Window {
     desktopNotesRequestClose?: () => void;
     desktopNotesRefreshHome?: () => void;
+    desktopNotesShowHome?: () => void;
     desktopNotesBeginRename?: () => void;
     desktopNotesShowAuxiliaryLoadFailure?: () => void;
   }
@@ -1859,6 +1908,7 @@ window.desktopNotesRequestClose = () => void closeApplication();
 window.desktopNotesRefreshHome = () => {
   if (document.querySelector(".home-page")) void renderHome();
 };
+window.desktopNotesShowHome = () => void renderHome();
 window.desktopNotesBeginRename = () => beginTitleRename?.();
 window.desktopNotesShowAuxiliaryLoadFailure = () => showError(new Error(t("noteWindowLoadFailed")));
 
@@ -2103,7 +2153,12 @@ async function checkExternalChange(): Promise<void> {
     }
   } catch {
     if (dirty) showMissing();
-    else await renderHome();
+    else if (windowRole === "note") {
+      await api.showMainWindow();
+      await api.closeWindow();
+    } else {
+      await renderHome();
+    }
   }
 }
 
@@ -2133,23 +2188,22 @@ async function start(): Promise<void> {
   window.addEventListener("keydown", (event) => {
     handleWindowEditorHistoryShortcut(event, editor);
   });
-  await syncAlwaysOnTop();
+  if (windowRole === "note") await syncAlwaysOnTop();
   window.addEventListener("focus", () => {
     void checkExternalChange();
-    void syncAlwaysOnTop();
+    if (windowRole === "note") void syncAlwaysOnTop();
     if (document.querySelector(".home-page")) void refreshHomeOnFocus();
   });
-  let restoredNote = false;
-  const startupNote = windowRole === "note" ? bootstrap.initial_note : config.last_note;
-  if (startupNote) {
+  let openedInitialNote = false;
+  if (windowRole === "note" && bootstrap.initial_note) {
     try {
-      restoredNote = await openNote(startupNote, false);
+      openedInitialNote = await openNote(bootstrap.initial_note, false);
     } catch {
-      if (windowRole === "main") config.last_note = null;
+      openedInitialNote = false;
     }
   }
-  if (!restoredNote && windowRole === "main") await renderHome();
-  if (!restoredNote && windowRole === "note") {
+  if (windowRole === "main") await renderHome();
+  if (!openedInitialNote && windowRole === "note") {
     app.innerHTML = `<div class="fatal-error"><h1>${t("startupFailed")}</h1><p>${t("noteWindowLoadFailed")}</p></div>`;
     await api.closeWindow();
   }

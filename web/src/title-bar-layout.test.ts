@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 declare const process: { cwd: () => string };
 
-describe("auxiliary title bar layout", () => {
+describe("note title bar layout", () => {
   const styleElement = document.createElement("style");
 
   beforeAll(() => {
@@ -26,11 +26,11 @@ describe("auxiliary title bar layout", () => {
     document.body.innerHTML = "";
   });
 
-  it("keeps a centered safe area around a long title", () => {
+  it("shows the pinned state without taking space away from the title", () => {
     document.body.innerHTML = `
       <div class="app-shell quiet-title-bar">
-        <header class="title-bar auxiliary-title-bar">
-          <div class="title-left"><button class="window-button auxiliary-close-button"></button></div>
+        <header class="title-bar note-title-bar is-pinned">
+          <div class="title-left"><button id="window-pin-button" class="window-button is-active"></button></div>
           <div class="window-title"><span class="window-title-text">A very long note title</span></div>
           <div class="window-actions"><button class="window-button"></button></div>
         </header>
@@ -38,8 +38,11 @@ describe("auxiliary title bar layout", () => {
 
     const title = document.querySelector<HTMLElement>(".window-title")!;
     const style = getComputedStyle(title);
-    expect(style.left).toBe("43px");
-    expect(style.right).toBe("43px");
+    expect(style.left).toBe("7px");
+    expect(style.right).toBe("7px");
+    expect(getComputedStyle(document.querySelector("#window-pin-button")!).opacity).toBe("1");
+    expect(getComputedStyle(document.querySelector("#window-pin-button")!).backgroundColor)
+      .toBe("rgba(0, 0, 0, 0)");
   });
 
   it("allows the rename input to shrink inside the title safe area", () => {

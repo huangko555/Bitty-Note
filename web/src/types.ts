@@ -6,7 +6,15 @@ export interface NoteSummary {
   background?: NoteBackground;
 }
 
-export type NoteBackground = "default" | "sand" | "rose" | "sky" | "mint" | "gray";
+export type NoteBackground =
+  | "default"
+  | "sand"
+  | "peach"
+  | "rose"
+  | "lavender"
+  | "sky"
+  | "mint"
+  | "gray";
 
 export interface OpenedNote {
   name: string;

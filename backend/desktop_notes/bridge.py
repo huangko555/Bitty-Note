@@ -59,9 +59,7 @@ class DesktopBridge:
         self._lock = threading.RLock()
         self._window_ready = False
         self._window_ready_callback: Callable[[], None] | None = None
-        self._always_on_top = (
-            config_store.config.always_on_top if window_role == "main" else False
-        )
+        self._always_on_top = False
         self.allow_close = False
 
     def attach_window(self, window: webview.Window) -> None:
@@ -170,7 +168,12 @@ class DesktopBridge:
         self._repository.open_note(name)
         if self.coordinator is None:
             raise RuntimeError("Multiple windows are not configured")
-        return self.coordinator.open_auxiliary(name)
+        return self.coordinator.open_auxiliary(name, self.session_id)
+
+    def show_main_window(self) -> None:
+        if self.coordinator is None:
+            raise RuntimeError("Multiple windows are not configured")
+        self.coordinator.show_main()
 
     def request_note_rename(self, name: str) -> dict[str, str]:
         self._repository.open_note(name)

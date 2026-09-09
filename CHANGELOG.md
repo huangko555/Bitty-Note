@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.8.0 — 2026-09-10
+
+### English
+
+- Reworked the app around a note-list manager and independent note windows: cards now open directly in their own windows, open notes are restored at startup without forcing the manager open, and each note can reopen the manager from its menu.
+- Redesigned the note title bar and single-level action menu with clearer pin state, create, minimize, rename, background color, open-list, and close-window controls.
+- Added per-note background colors stored in Markdown front matter, with color-aware interaction states and subtle colored card edges on the home and archive pages while keeping the reading surface consistent.
+- Made row-drag previews translucent so target content stays visible, reduced their shadow, and restored full opacity only while drag-to-delete is active.
+- Updated the bundled Skill to preserve front matter during normal content edits and change `bitty-background` only when explicitly requested.
+
+### 简体中文
+
+- 将应用调整为“便签列表主面板 + 独立便签窗口”的结构：便签卡片改为直接在独立窗口打开；启动时只恢复上次开启的便签，不强制显示主面板；便签菜单可随时重新打开列表。
+- 重新设计便签标题栏和单层操作菜单，明确整合置顶状态、新建、最小化、重命名、背景颜色、打开便签列表和关闭窗口等操作。
+- 新增通过 Markdown front matter 保存的单便签背景颜色，并让交互状态随颜色协调变化；首页和归档页以轻微立体的彩色下边缘表达颜色，同时保持阅读区域一致。
+- 拖动行时的预览卡改为半透明并减弱阴影，便于观察目标位置；仅在触发拖动删除时恢复完全不透明。
+- 更新内置 Skill：普通正文编辑会完整保留 front matter，只有用户明确要求时才修改 `bitty-background`。
+
 ## v1.7.0 — 2026-09-08
 
 ### English

@@ -5,6 +5,8 @@ from pathlib import Path
 from desktop_notes.bridge import NoteWindowStateSaver, WindowStateSaver
 from desktop_notes.config import ConfigStore
 from desktop_notes.main import (
+    MIN_WINDOW_HEIGHT,
+    MIN_WINDOW_WIDTH,
     _MonitorWorkArea,
     _allow_system_shutdown,
     _normalize_window_after_show,
@@ -47,6 +49,15 @@ class FakeStateSaver:
         pass
 
 
+def test_window_bounds_enforce_the_shared_logical_minimum() -> None:
+    assert _visible_window_bounds(None, None, 100, 120) == (
+        None,
+        None,
+        MIN_WINDOW_WIDTH,
+        MIN_WINDOW_HEIGHT,
+    )
+
+
 def test_initial_bounds_are_normalized_before_state_tracking_starts(monkeypatch) -> None:
     window = FakeWindow()
     saver = FakeStateSaver()
@@ -86,6 +97,35 @@ def test_hidden_start_restores_window_before_revealing_it(monkeypatch) -> None:
     ]
     assert window.events.moved.handlers == [saver.schedule]
     assert window.events.resized.handlers == [saver.schedule]
+
+
+def test_hidden_manager_is_normalized_without_being_revealed(monkeypatch) -> None:
+    window = FakeWindow()
+    saver = FakeStateSaver()
+    calls: list[object] = []
+    window.hide = lambda: calls.append("hide")
+    window.show = lambda: calls.append("show")
+    window.resize = lambda width, height: calls.append(("resize", width, height))
+    monkeypatch.setattr(
+        "desktop_notes.main.move_window_to_physical",
+        lambda _target, x, y: calls.append(("move", x, y)),
+    )
+
+    _restore_window_from_hidden_start(
+        window,
+        saver,
+        350,
+        630,
+        3644,
+        386,
+        reveal=False,
+    )
+
+    assert calls == [
+        "hide",
+        ("move", 3644, 386),
+        ("resize", 350, 630),
+    ]
 
 
 def test_auxiliary_window_stays_hidden_until_its_note_ui_is_ready() -> None:
@@ -180,12 +220,13 @@ def test_main_window_ready_restores_windows_for_existing_notes() -> None:
     })()
     restored: list[list[str]] = []
     coordinator = type("Coordinator", (), {
-        "restore_auxiliaries": lambda _self, names: restored.append(names)
+        "restore_auxiliaries": lambda _self, names: restored.append(names) or names
     })()
 
-    _restore_open_note_windows(bridge, coordinator)
+    result = _restore_open_note_windows(bridge, coordinator)
 
     assert restored == [["First.md", "Second.md"]]
+    assert result == ["First.md", "Second.md"]
 
 
 def test_restored_position_uses_its_secondary_monitor_work_area(monkeypatch) -> None:

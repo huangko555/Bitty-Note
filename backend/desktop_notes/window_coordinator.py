@@ -39,7 +39,7 @@ class WindowCoordinator:
         self._reservations: dict[str, str] = {}
         self._create_auxiliary: AuxiliaryFactory | None = None
         self._lock = threading.RLock()
-        self._main_close_pending = False
+        self._main_visible = False
         self._cascade_index = 0
 
     def set_auxiliary_factory(
@@ -64,11 +64,14 @@ class WindowCoordinator:
             session = self._sessions.pop(session_id, None)
             if session and session.note_name:
                 self._note_owners.pop(self._key(session.note_name), None)
-                if session.role != "main" and not self._main_close_pending:
-                    self._remove_open_window_locked(session.note_name)
-            if self._main_close_pending and not self._auxiliary_sessions_locked():
+            if (
+                session is not None
+                and session.role != "main"
+                and not self._auxiliary_sessions_locked()
+                and not self._reservations
+                and not self._main_visible
+            ):
                 close_main = self._main_session_locked()
-                self._main_close_pending = False
         self.refresh_titles()
         if close_main is not None:
             close_main.bridge.allow_close = True
@@ -106,8 +109,12 @@ class WindowCoordinator:
             session.note_name = None
         self.refresh_titles()
 
-    def open_auxiliary(self, name: str) -> dict[str, str]:
-        return self._open_auxiliary(name)
+    def open_auxiliary(
+        self,
+        name: str,
+        source_session_id: str | None = None,
+    ) -> dict[str, str]:
+        return self._open_auxiliary(name, source_session_id=source_session_id)
 
     def restore_auxiliaries(self, existing_names: list[str]) -> list[str]:
         existing_by_key = {self._key(name): name for name in existing_names}
@@ -140,6 +147,8 @@ class WindowCoordinator:
         self,
         name: str,
         restored_bounds: tuple[int, int, int, int, str | None] | None = None,
+        *,
+        source_session_id: str | None = None,
     ) -> dict[str, str]:
         factory = self._create_auxiliary
         if factory is None:
@@ -156,7 +165,7 @@ class WindowCoordinator:
                 self._reservations[key] = session_id
                 if restored_bounds is None:
                     width, height = self._saved_size_locked(name)
-                    x, y = self._next_position_locked()
+                    x, y = self._next_position_locked(source_session_id)
                     position_space = None
                 else:
                     width, height, x, y, position_space = restored_bounds
@@ -242,47 +251,55 @@ class WindowCoordinator:
 
     def close_session(self, session_id: str) -> None:
         destroy: WindowSession | None = None
+        hide: WindowSession | None = None
         with self._lock:
             session = self._sessions[session_id]
             if session.role != "main":
                 destroy = session
-                auxiliaries: list[WindowSession] = []
-                if not self._main_close_pending and session.note_name:
+                if session.note_name:
                     if session.state_saver is not None:
                         session.state_saver.flush()
                         session.state_saver.stop()
                     self._remove_open_window_locked(session.note_name)
             else:
-                auxiliaries = self._auxiliary_sessions_locked()
-                if not auxiliaries:
-                    destroy = session
+                if session.state_saver is not None:
+                    session.state_saver.flush()
+                if self._auxiliary_sessions_locked() or self._reservations:
+                    self._main_visible = False
+                    hide = session
                 else:
-                    self._main_close_pending = True
+                    destroy = session
         if destroy is not None:
             destroy.bridge.allow_close = True
             destroy.window.destroy()
             return
-        for auxiliary in auxiliaries:
-            auxiliary.window.run_js("window.desktopNotesRequestClose?.()")
+        if hide is not None:
+            hide.window.hide()
+
+    def show_main(self) -> None:
+        with self._lock:
+            main = self._main_session_locked()
+            self._main_visible = True
+        try:
+            main.window.show()
+            main.window.run_js("window.desktopNotesShowHome?.()")
+            self._focus(main)
+        except Exception:
+            with self._lock:
+                self._main_visible = False
+            raise
 
     def cancel_app_close(self) -> None:
-        with self._lock:
-            self._main_close_pending = False
-            self._discard_closed_window_states_locked()
+        return
 
     def refresh_titles(self) -> None:
         with self._lock:
             sessions = list(self._sessions.values())
-            open_note_count = sum(session.note_name is not None for session in sessions)
             app_title = text("Bitty", "小记")
             titles = []
             for session in sessions:
                 if session.role == "main":
-                    title = (
-                        self._display_name(session.note_name)
-                        if session.note_name and open_note_count > 1
-                        else app_title
-                    )
+                    title = app_title
                 else:
                     title = self._display_name(session.note_name) if session.note_name else app_title
                 titles.append((session.window, title))
@@ -396,26 +413,19 @@ class WindowCoordinator:
         windows.pop(stored_key)
         self.config_store.update(open_note_windows=windows)
 
-    def _discard_closed_window_states_locked(self) -> None:
-        open_names = {
-            self._key(session.note_name)
-            for session in self._auxiliary_sessions_locked()
-            if session.note_name
-        }
-        windows = self.config_store.config.open_note_windows
-        cleaned = {
-            name: bounds
-            for name, bounds in windows.items()
-            if self._key(name) in open_names
-        }
-        if cleaned != windows:
-            self.config_store.update(open_note_windows=cleaned)
-
-    def _next_position_locked(self) -> tuple[int, int]:
-        main = self._main_session_locked()
+    def _next_position_locked(
+        self,
+        source_session_id: str | None = None,
+    ) -> tuple[int, int]:
+        source = self._sessions.get(source_session_id or "")
+        if source is None:
+            source = self._main_session_locked()
         offset = 24 * ((self._cascade_index % 8) + 1)
         self._cascade_index += 1
-        return int(getattr(main.window, "x", 40)) + offset, int(getattr(main.window, "y", 40)) + offset
+        return (
+            int(getattr(source.window, "x", 40)) + offset,
+            int(getattr(source.window, "y", 40)) + offset,
+        )
 
     def _main_session_locked(self) -> WindowSession:
         return next(session for session in self._sessions.values() if session.role == "main")

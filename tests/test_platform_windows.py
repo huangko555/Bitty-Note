@@ -9,6 +9,61 @@ from desktop_notes import platform_windows
 from desktop_notes.errors import UserVisibleError
 
 
+def test_window_interaction_scales_the_shared_minimum_for_dpi(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeFunction:
+        argtypes: object = None
+        restype: object = None
+
+        def __init__(self, callback: object) -> None:
+            self.callback = callback
+
+        def __call__(self, *args: object) -> object:
+            return self.callback(*args)  # type: ignore[operator]
+
+    class FakeHandle:
+        @staticmethod
+        def ToInt64() -> int:
+            return 123
+
+    class FakeUser32:
+        @staticmethod
+        def _get_cursor(pointer: object) -> bool:
+            pointer._obj.x = 100  # type: ignore[attr-defined]
+            pointer._obj.y = 120  # type: ignore[attr-defined]
+            return True
+
+        @staticmethod
+        def _get_rect(_handle: int, pointer: object) -> bool:
+            pointer._obj.left = 20  # type: ignore[attr-defined]
+            pointer._obj.top = 30  # type: ignore[attr-defined]
+            pointer._obj.right = 620  # type: ignore[attr-defined]
+            pointer._obj.bottom = 730  # type: ignore[attr-defined]
+            return True
+
+        GetCursorPos = FakeFunction(_get_cursor)
+        GetWindowRect = FakeFunction(_get_rect)
+        GetDpiForWindow = FakeFunction(lambda _handle: 144)
+
+    window = type(
+        "Window",
+        (),
+        {"native": type("Native", (), {"Handle": FakeHandle()})()},
+    )()
+    monkeypatch.setattr(platform_windows.sys, "platform", "win32")
+    monkeypatch.setattr(
+        platform_windows.ctypes,
+        "windll",
+        type("FakeWindll", (), {"user32": FakeUser32()})(),
+    )
+
+    interaction = platform_windows.start_window_interaction(window, "bottom_right")
+
+    assert interaction.min_width == 450
+    assert interaction.min_height == 570
+
+
 def test_window_interaction_does_not_move_after_left_button_is_released(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -29,7 +29,7 @@ const bootstrap: BootstrapData = {
     window_width: 350,
     window_height: 530,
     note_window_sizes: {},
-    last_note: note.name,
+    last_note: null,
     editor_font: "DengXian",
     editor_font_size: 14,
     heading_divider: true,
@@ -45,8 +45,8 @@ const bootstrap: BootstrapData = {
   app_version: "1.4.0",
   update_state: { status: "idle", available_version: null },
   update_result: null,
-  window_role: "main",
-  initial_note: null,
+  window_role: "note",
+  initial_note: note.name,
 };
 
 class ResizeObserverStub {
@@ -71,6 +71,7 @@ describe("startup chrome visibility", () => {
   });
 
   it("keeps startup chrome hidden without focusing the restored editor", async () => {
+    const showMainWindow = vi.fn().mockResolvedValue(undefined);
     const saveNote = vi.fn().mockResolvedValue({
       status: "saved",
       revision: "revision-2",
@@ -83,6 +84,7 @@ describe("startup chrome visibility", () => {
       getAlwaysOnTop: vi.fn().mockResolvedValue(false),
       acquireNote: vi.fn().mockResolvedValue(true),
       openNote: vi.fn().mockResolvedValue(note),
+      showMainWindow,
       rememberLastNote: vi.fn().mockResolvedValue(undefined),
       saveNote,
       setTextHighlightColor: vi.fn(async (color) => color),
@@ -97,7 +99,7 @@ describe("startup chrome visibility", () => {
     await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
     expect(document.activeElement?.classList.contains("ProseMirror")).toBe(false);
 
-    const back = document.querySelector<HTMLButtonElement>('[data-action="back"]')!;
+    const pin = document.querySelector<HTMLButtonElement>('[data-action="pin"]')!;
     const toolbar = document.querySelector<HTMLElement>(".format-toolbar")!;
     const highlight = toolbar.querySelector<HTMLButtonElement>('[data-action="highlight"]');
     expect(highlight).not.toBeNull();
@@ -114,21 +116,54 @@ describe("startup chrome visibility", () => {
     expect.soft(toolbar.classList.contains("visible")).toBe(false);
 
     const shell = document.querySelector<HTMLElement>(".app-shell")!;
-    const backgroundTrigger = document.querySelector<HTMLButtonElement>(
-      '[data-action="note-background"]',
-    )!;
     expect(shell.dataset.noteBackground).toBe("sky");
-    backgroundTrigger.click();
-    const backgroundOptions = document.querySelectorAll<HTMLButtonElement>(
-      ".note-background-option",
-    );
-    expect(backgroundOptions).toHaveLength(6);
-    expect(document.querySelector('[data-background="sky"]')?.classList.contains("is-active"))
-      .toBe(true);
-    document.querySelector<HTMLButtonElement>('[data-background="rose"]')!.click();
-    expect(shell.dataset.noteBackground).toBe("rose");
+    expect(document.querySelector('[data-action="note-background"]')).toBeNull();
+    expect(document.querySelector(".note-background-picker")).toBeNull();
+
+    const title = document.querySelector<HTMLElement>(".window-title")!;
+    title.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
+    title.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
+    const renameInput = document.querySelector<HTMLInputElement>(".title-rename-input")!;
+    expect(renameInput).not.toBeNull();
+    expect(document.querySelector(".note-background-picker")).toBeNull();
+
+    renameInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(document.querySelector(".title-rename-input")).toBeNull();
+
+    const appearanceButton = toolbar.querySelector<HTMLButtonElement>(
+      ".editor-settings-button",
+    )!;
+    appearanceButton.click();
+    const appearancePopover = document.querySelector<HTMLElement>(
+      ".editor-settings-popover",
+    )!;
+    expect(appearancePopover.classList.contains("visible")).toBe(true);
+    expect(appearancePopover.querySelector('[data-editor-setting="note-background"]')).toBeNull();
+    appearanceButton.click();
+
+    expect(document.querySelector(".title-pin-indicator")).toBeNull();
+    const noteMenuButton = document.querySelector<HTMLButtonElement>('[data-action="note-menu"]')!;
+    noteMenuButton.click();
+    const noteMenu = document.querySelector<HTMLElement>(".note-window-menu")!;
+    expect(noteMenu).not.toBeNull();
+    expect(noteMenu.querySelector(".note-window-menu-color-label")?.textContent)
+      .toBe("背景颜色");
+    expect(noteMenu.querySelectorAll(".note-window-menu-colors .note-background-option"))
+      .toHaveLength(8);
+    expect(noteMenu.querySelector('[data-action="rename"]')).not.toBeNull();
+    expect(noteMenu.querySelector('[data-action="show-note-list"]')).not.toBeNull();
+    expect(noteMenu.querySelector('[data-action="close-note"]')).not.toBeNull();
+    noteMenu.querySelector<HTMLButtonElement>('[data-background="mint"]')!.click();
+    expect(shell.dataset.noteBackground).toBe("mint");
     await vi.waitFor(() => expect(saveNote).toHaveBeenCalled());
-    expect(saveNote.mock.calls.at(-1)?.[0].background).toBe("rose");
+    expect(saveNote.mock.calls.at(-1)?.[0].background).toBe("mint");
+    expect(document.querySelector(".note-window-menu")).not.toBeNull();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(document.querySelector(".note-window-menu")).toBeNull();
+
+    noteMenuButton.click();
+    document.querySelector<HTMLButtonElement>('[data-action="show-note-list"]')!.click();
+    await vi.waitFor(() => expect(showMainWindow).toHaveBeenCalledOnce());
 
     const colorMenu = toolbar.querySelector<HTMLButtonElement>(".highlight-menu-button")!;
     const colorPalette = toolbar.querySelector<HTMLElement>(".highlight-color-palette")!;
@@ -142,10 +177,39 @@ describe("startup chrome visibility", () => {
     expect(colorPalette.classList.contains("visible")).toBe(false);
     expect(highlight?.dataset.highlightColor).toBe("red");
 
-    back.focus();
+    pin.focus();
     window.dispatchEvent(new Event("focus"));
 
-    expect.soft(document.activeElement).not.toBe(back);
+    expect.soft(document.activeElement).not.toBe(pin);
+  });
+
+  it("keeps the main window on the note list instead of reopening the last note", async () => {
+    const openNote = vi.fn();
+    const api = {
+      bootstrap: vi.fn().mockResolvedValue({
+        ...bootstrap,
+        config: { ...bootstrap.config, last_note: note.name },
+        notes: [{ name: note.name, preview: "", modified_ms: 1 }],
+        window_role: "main",
+        initial_note: null,
+      }),
+      listNotes: vi.fn().mockResolvedValue([
+        { name: note.name, preview: "", modified_ms: 1 },
+      ]),
+      rememberLastNote: vi.fn().mockResolvedValue(undefined),
+      openNote,
+      checkUpdate: vi.fn().mockResolvedValue(bootstrap.update_state),
+      windowReady: vi.fn().mockResolvedValue(undefined),
+    } as unknown as DesktopApi;
+    connectApi.mockResolvedValue(api);
+
+    await import("./main");
+    await vi.waitFor(() => expect(document.querySelector(".home-page")).not.toBeNull());
+
+    expect(openNote).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-action="close"]')).not.toBeNull();
+    expect(document.querySelector('[data-action="minimize"]')).toBeNull();
+    expect(document.querySelector('[data-action="pin"]')).toBeNull();
   });
 
   it("closes an auxiliary window that starts without a note instead of leaving a blank surface", async () => {

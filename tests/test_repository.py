@@ -89,6 +89,21 @@ def test_note_previews_hide_folded_markers(tmp_path: Path) -> None:
     assert repository.list_notes()[0].preview == "标题 父项 子项"
 
 
+def test_note_previews_hide_text_highlight_markers(tmp_path: Path) -> None:
+    repository = NotesRepository(tmp_path)
+    note = repository.create_note("记录")
+    (tmp_path / note.name).write_text(
+        "# 标题\n1. =={red}2313==\n- ==默认高亮==",
+        encoding="utf-8",
+    )
+
+    assert repository.list_notes()[0].preview == "标题 2313 默认高亮"
+
+    repository.archive_note(note.name)
+
+    assert repository.list_archived_notes()[0].preview == "标题 2313 默认高亮"
+
+
 def test_front_matter_is_hidden_from_open_and_previews(tmp_path: Path) -> None:
     repository = NotesRepository(tmp_path)
     path = tmp_path / "彩色.md"

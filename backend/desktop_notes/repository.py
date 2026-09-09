@@ -17,6 +17,9 @@ from .note_document import parse_note_document, render_note_document
 _INVALID_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _EMPTY_LINE_MARKER = "<!-- bitty-empty-line -->"
 _FOLDED_MARKER = "<!-- bitty-folded -->"
+_TEXT_HIGHLIGHT_MARKUP = re.compile(
+    r"==(?:\{(?:red|yellow|blue|green)\}|(?!\{))(.*?)=="
+)
 _MARKDOWN_MARKERS = re.compile(
     r"^(?:#{1,6}\s+|[-+*]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)|"
     r"(\*\*|__|~~|(?<!\*)\*(?!\*)|(?<!_)_(?!_))"
@@ -61,7 +64,8 @@ def _encode_utf8(content: str, has_bom: bool, newline: str) -> bytes:
 def _plain_preview(text: str) -> str:
     preview_lines: list[str] = []
     for raw_line in text.splitlines():
-        line = _MARKDOWN_MARKERS.sub("", raw_line.strip()).strip()
+        line = _TEXT_HIGHLIGHT_MARKUP.sub(r"\1", raw_line.strip())
+        line = _MARKDOWN_MARKERS.sub("", line).strip()
         line = line.replace(_FOLDED_MARKER, "").strip()
         if line == _EMPTY_LINE_MARKER:
             continue

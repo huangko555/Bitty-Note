@@ -18,6 +18,7 @@ interface PythonApi {
   rename_note(name: string, requestedName: string): Promise<OpenedNote>;
   acquire_note(name: string): Promise<{ available: boolean }>;
   open_note_window(name: string): Promise<{ status: "opened" | "focused" }>;
+  show_main_window(): Promise<void>;
   open_note_in_editor(name: string): Promise<void>;
   request_note_rename(name: string): Promise<{ status: "available" | "focused" }>;
   open_note(name: string): Promise<OpenedNote>;
@@ -97,6 +98,7 @@ export interface DesktopApi {
   renameNote(name: string, requestedName: string): Promise<OpenedNote>;
   acquireNote(name: string): Promise<boolean>;
   openNoteWindow(name: string): Promise<"opened" | "focused">;
+  showMainWindow(): Promise<void>;
   openNoteInEditor(name: string): Promise<void>;
   requestNoteRename(name: string): Promise<"available" | "focused">;
   openNote(name: string): Promise<OpenedNote>;
@@ -145,6 +147,7 @@ function desktopApi(raw: PythonApi): DesktopApi {
     renameNote: (name, requestedName) => raw.rename_note(name, requestedName),
     acquireNote: async (name) => (await raw.acquire_note(name)).available,
     openNoteWindow: async (name) => (await raw.open_note_window(name)).status,
+    showMainWindow: () => raw.show_main_window(),
     openNoteInEditor: (name) => raw.open_note_in_editor(name),
     requestNoteRename: async (name) => (await raw.request_note_rename(name)).status,
     openNote: (name) => raw.open_note(name),
@@ -214,13 +217,113 @@ function desktopApi(raw: PythonApi): DesktopApi {
   };
 }
 
+const EMPTY_LINE_MARKER = "<!-- bitty-empty-line -->";
+const FOLDED_MARKER = "<!-- bitty-folded -->";
+const TEXT_HIGHLIGHT_MARKUP = /==(?:\{(?:red|yellow|blue|green)\}|(?!\{))(.*?)==/g;
+const MARKDOWN_MARKERS = /^(?:#{1,6}\s+|[-+*]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)|(\*\*|__|~~|(?<!\*)\*(?!\*)|(?<!_)_(?!_))/g;
+
+function plainPreview(text: string): string {
+  const previewLines: string[] = [];
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim()
+      .replace(TEXT_HIGHLIGHT_MARKUP, "$1")
+      .replace(MARKDOWN_MARKERS, "")
+      .replaceAll(FOLDED_MARKER, "")
+      .trim();
+    if (line === EMPTY_LINE_MARKER) continue;
+    if (line) previewLines.push(line);
+    if (previewLines.length === 3) break;
+  }
+  const preview = previewLines.join(" ");
+  return preview.length <= 120 ? preview : `${preview.slice(0, 119)}…`;
+}
+
 function browserMock(): DesktopApi {
-  let notes: OpenedNote[] = [];
+  const searchParams = new URLSearchParams(window.location.search);
+  const notePreviewEnabled = import.meta.env.DEV && searchParams.get("preview") === "note";
+  const homePreviewEnabled = import.meta.env.DEV && searchParams.get("preview") === "home";
+  let notes: OpenedNote[] = homePreviewEnabled
+    ? [
+      {
+        name: "今天要做.md",
+        content: "整理一下今天最重要的三件事。",
+        revision: "preview-home-1",
+        has_bom: false,
+        newline: "\n",
+        background: "sand",
+      },
+      {
+        name: "设计想法.md",
+        content: "便签正文保持清爽，只用底边表达颜色。",
+        revision: "preview-home-2",
+        has_bom: false,
+        newline: "\n",
+        background: "sky",
+      },
+      {
+        name: "稍后阅读.md",
+        content: "把零散的资料集中到这里。",
+        revision: "preview-home-3",
+        has_bom: false,
+        newline: "\n",
+        background: "rose",
+      },
+      {
+        name: "默认便签.md",
+        content: "这是没有设置背景颜色时的卡片效果。",
+        revision: "preview-home-4",
+        has_bom: false,
+        newline: "\n",
+        background: "default",
+      },
+      {
+        name: "会议记录.md",
+        content: "整理讨论结论和后续事项。",
+        revision: "preview-home-5",
+        has_bom: false,
+        newline: "\n",
+        background: "default",
+      },
+      {
+        name: "购物清单.md",
+        content: "记下周末需要采购的物品。",
+        revision: "preview-home-6",
+        has_bom: false,
+        newline: "\n",
+        background: "default",
+      },
+      {
+        name: "灵感碎片.md",
+        content: "随手收集还没有整理的想法。",
+        revision: "preview-home-7",
+        has_bom: false,
+        newline: "\n",
+        background: "default",
+      },
+      {
+        name: "本周计划.md",
+        content: "集中处理本周准备推进的事情。",
+        revision: "preview-home-8",
+        has_bom: false,
+        newline: "\n",
+        background: "default",
+      },
+    ]
+    : notePreviewEnabled
+      ? [{
+        name: "便签详情预览.md",
+        content: "# 便签详情\n\n这是用于调整界面的本地预览便签。\n\n- 可以修改背景颜色\n- 可以展开右上角菜单\n- 可以测试标题重命名状态",
+        revision: "preview-note",
+        has_bom: false,
+        newline: "\n",
+        background: "sand",
+      }]
+      : [];
   let archivedNotes: OpenedNote[] = [];
   let demoUpdateAvailable = false;
   const updateDemoEnabled = import.meta.env.DEV && (
     import.meta.env.VITE_UPDATE_DEMO === "1"
-    || new URLSearchParams(window.location.search).get("update-demo") === "1"
+    || searchParams.get("update-demo") === "1"
   );
   const demoDelay = (milliseconds: number) => new Promise<void>((resolve) => {
     window.setTimeout(resolve, milliseconds);
@@ -228,17 +331,14 @@ function browserMock(): DesktopApi {
   let saveDir = "Browser preview (no files are written)";
   let autostart = true;
   let alwaysOnTop = false;
-  let language: AppLanguage = "en";
+  let language: AppLanguage = notePreviewEnabled || homePreviewEnabled ? "zh-CN" : "en";
   let textHighlightColor: TextHighlightColor = "red";
   let pinnedNotes: string[] = [];
   const revision = () => `${Date.now()}-${Math.random()}`;
   const summary = (items: OpenedNote[]) =>
     items.map((note, index) => ({
       name: note.name,
-      preview: note.content
-        .replaceAll("<!-- bitty-empty-line -->", "")
-        .replace(/[#*~\[\]-]/g, "")
-        .slice(0, 80),
+      preview: plainPreview(note.content),
       modified_ms: Date.now() - index,
       pinned: pinnedNotes.some((item) => item.toLocaleLowerCase() === note.name.toLocaleLowerCase()),
       background: note.background ?? "default",
@@ -279,11 +379,11 @@ function browserMock(): DesktopApi {
       },
       notes: summary(notes),
       system_fonts: ["Microsoft YaHei", "DengXian", "SimSun", "KaiTi"],
-      app_version: "1.7.0",
+      app_version: "1.8.0",
       update_state: { status: "unsupported", available_version: null },
       update_result: null,
-      window_role: "main",
-      initial_note: null,
+      window_role: notePreviewEnabled ? "note" : "main",
+      initial_note: notePreviewEnabled ? notes[0]?.name ?? null : null,
     }),
     windowReady: async () => {},
     listNotes: async () => summary([...notes].sort((left, right) => {
@@ -335,6 +435,7 @@ function browserMock(): DesktopApi {
     },
     acquireNote: async () => true,
     openNoteWindow: async () => "opened",
+    showMainWindow: async () => {},
     openNoteInEditor: async () => {},
     requestNoteRename: async () => "available",
     openNote: async (name) => {

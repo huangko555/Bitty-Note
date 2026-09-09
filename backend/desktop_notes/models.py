@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
-NoteBackground = Literal["default", "sand", "rose", "sky", "mint", "gray"]
+NoteBackground = Literal[
+    "default", "sand", "peach", "rose", "lavender", "sky", "mint", "gray"
+]
 
 
 @dataclass(frozen=True)

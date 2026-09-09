@@ -104,6 +104,9 @@ describe("home note card actions", () => {
   });
 
   it("shows note actions, opens the file in its default editor, and confirms before moving it to the Recycle Bin", async () => {
+    expect(document.querySelector('[data-action="close"]')).not.toBeNull();
+    expect(document.querySelector('[data-action="minimize"]')).toBeNull();
+    expect(document.querySelector('[data-action="pin"]')).toBeNull();
     expect(document.querySelector<HTMLElement>(".note-card")?.dataset.noteBackground).toBe("rose");
     document.querySelector(".note-card")!.dispatchEvent(new MouseEvent("contextmenu", {
       bubbles: true,
@@ -117,7 +120,6 @@ describe("home note card actions", () => {
     const buttons = Array.from(menu.querySelectorAll<HTMLButtonElement>("button"));
     expect(buttons.map((button) => button.textContent?.trim())).toEqual([
       "置顶",
-      "在新窗口打开",
       "用编辑器打开",
       "复制",
       "重命名",
@@ -231,14 +233,20 @@ describe("home note card actions", () => {
     expect(document.querySelector(".note-card strong")?.textContent).toBe("新名称");
   });
 
-  it("opens the note in a new window on middle click", async () => {
+  it("opens or focuses the note window on left click", async () => {
+    document.querySelector<HTMLButtonElement>(".note-open")!.click();
+
+    await vi.waitFor(() => expect(openNoteWindow).toHaveBeenCalledWith(note.name));
+  });
+
+  it("does not assign a separate action to middle click", () => {
     document.querySelector(".note-card")!.dispatchEvent(new MouseEvent("auxclick", {
       bubbles: true,
       cancelable: true,
       button: 1,
     }));
 
-    await vi.waitFor(() => expect(openNoteWindow).toHaveBeenCalledWith(note.name));
+    expect(openNoteWindow).not.toHaveBeenCalled();
   });
 
   it("reveals a white back-to-top button once the home title has scrolled away", () => {

@@ -17,6 +17,8 @@ from .config import ConfigStore
 from .distribution import is_store_package
 from .i18n import set_language, text
 from .platform_windows import (
+    MIN_WINDOW_HEIGHT,
+    MIN_WINDOW_WIDTH,
     documents_directory,
     enable_taskbar_minimize,
     local_config_path,
@@ -26,9 +28,9 @@ from .platform_windows import (
 from .window_coordinator import WindowCoordinator, WindowSession
 
 
-MIN_WINDOW_WIDTH = 300
-MIN_WINDOW_HEIGHT = 380
 AUXILIARY_LOAD_TIMEOUT_SECONDS = 12.0
+SINGLE_INSTANCE_MUTEX_NAME = "Local\\Bitty.Singleton"
+SHOW_MAIN_EVENT_NAME = "Local\\Bitty.ShowMain"
 
 
 def _show_window_when_ready(
@@ -218,17 +220,43 @@ def _visible_window_bounds(
     return physical_x, physical_y, width, height
 
 
-def _single_instance() -> object | None:
+def _single_instance() -> tuple[object, object | None] | None:
     if sys.platform != "win32":
-        return object()
+        return object(), None
+    create_event = ctypes.windll.kernel32.CreateEventW
+    create_event.restype = ctypes.wintypes.HANDLE
+    activation_event = create_event(None, False, False, SHOW_MAIN_EVENT_NAME)
     create_mutex = ctypes.windll.kernel32.CreateMutexW
     create_mutex.restype = ctypes.wintypes.HANDLE
-    handle = create_mutex(None, False, "Local\\Bitty.Singleton")
+    handle = create_mutex(None, False, SINGLE_INSTANCE_MUTEX_NAME)
     if not handle or ctypes.windll.kernel32.GetLastError() == 183:
+        if activation_event:
+            ctypes.windll.kernel32.SetEvent(activation_event)
         if handle:
             ctypes.windll.kernel32.CloseHandle(handle)
+        if activation_event:
+            ctypes.windll.kernel32.CloseHandle(activation_event)
         return None
-    return handle
+    return handle, activation_event
+
+
+def _watch_for_main_window_requests(
+    activation_event: object | None,
+    coordinator: WindowCoordinator,
+) -> None:
+    if sys.platform != "win32" or not activation_event:
+        return
+
+    def wait_for_activation() -> None:
+        wait_for_single_object = ctypes.windll.kernel32.WaitForSingleObject
+        while wait_for_single_object(activation_event, 0xFFFFFFFF) == 0:
+            try:
+                coordinator.show_main()
+            except Exception:
+                logging.exception("Failed to show the main window after reactivation.")
+
+    watcher = threading.Thread(target=wait_for_activation, daemon=True)
+    watcher.start()
 
 
 def _normalize_window_after_show(
@@ -256,13 +284,16 @@ def _restore_window_from_hidden_start(
     height: int,
     x: int | None = None,
     y: int | None = None,
+    *,
+    reveal: bool = True,
 ) -> None:
     # pywebview briefly shows an opacity-zero window to initialize WinForms when
     # hidden=True. Hiding once more synchronizes with that native cycle before
     # the restored bounds are applied and the real first frame is revealed.
     window.hide()
     _normalize_window_after_show(window, state_saver, width, height, x, y)
-    window.show()
+    if reveal:
+        window.show()
 
 
 def _normalize_note_window_after_show(
@@ -286,20 +317,22 @@ def _allow_system_shutdown(_sender: object, args: object) -> None:
 def _restore_open_note_windows(
     bridge: DesktopBridge,
     coordinator: WindowCoordinator,
-) -> None:
+) -> list[str]:
     try:
         names = [note["name"] for note in bridge.list_notes()]
-        coordinator.restore_auxiliaries(names)
+        return coordinator.restore_auxiliaries(names)
     except Exception:
         logging.exception("Failed to restore auxiliary note windows.")
+        return []
 
 
 def main() -> None:
     if not is_store_package():
         velopack.App().run()
-    instance = _single_instance()
-    if instance is None:
+    instance_handles = _single_instance()
+    if instance_handles is None:
         return
+    instance, activation_event = instance_handles
 
     logging.basicConfig(level=logging.ERROR)
     default_notes = documents_directory() / "Bitty-Note"
@@ -337,7 +370,7 @@ def main() -> None:
         min_size=(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT),
         frameless=True,
         easy_drag=False,
-        on_top=config.always_on_top,
+        on_top=False,
         hidden=True,
         confirm_close=False,
         background_color="#fffdf5",
@@ -345,7 +378,14 @@ def main() -> None:
     bridge.attach_window(window)
     state_saver = WindowStateSaver(window, config_store)
     coordinator.register(
-        WindowSession("main", "main", window, bridge), refresh_titles=False
+        WindowSession(
+            "main",
+            "main",
+            window,
+            bridge,
+            state_saver=state_saver,
+        ),
+        refresh_titles=False,
     )
 
     def wire_window(
@@ -356,10 +396,17 @@ def main() -> None:
         target_height: int,
         *,
         track_position: bool,
+        reveal_on_shown: bool = True,
         already_shown: bool = False,
         unregister_session: str | None = None,
     ) -> None:
+        shown_initialized = False
+
         def on_shown() -> None:
+            nonlocal shown_initialized
+            if shown_initialized:
+                return
+            shown_initialized = True
             enable_taskbar_minimize(target_window)
             if track_position:
                 _restore_window_from_hidden_start(
@@ -369,6 +416,7 @@ def main() -> None:
                     target_height,
                     x,
                     y,
+                    reveal=reveal_on_shown,
                 )
             else:
                 _normalize_note_window_after_show(
@@ -418,7 +466,15 @@ def main() -> None:
         if unregister_session is not None:
             target_window.events.closed += lambda: coordinator.unregister(unregister_session)
 
-    wire_window(window, bridge, state_saver, width, height, track_position=True)
+    wire_window(
+        window,
+        bridge,
+        state_saver,
+        width,
+        height,
+        track_position=True,
+        reveal_on_shown=False,
+    )
 
     def create_auxiliary(
         session_id: str,
@@ -482,36 +538,39 @@ def main() -> None:
                 already_shown=True,
                 unregister_session=session_id,
             )
+
             def load_failed() -> None:
-                coordinator.unregister(session_id)
-                note_bridge.allow_close = True
-                try:
-                    note_window.destroy()
-                except Exception:
-                    pass
+                coordinator.show_main()
                 try:
                     window.run_js("window.desktopNotesShowAuxiliaryLoadFailure?.()")
                 except Exception:
                     pass
+                coordinator.close_session(session_id)
+                coordinator.unregister(session_id)
 
             _show_window_when_ready(note_window, note_bridge, load_failed)
         except Exception:
-            coordinator.unregister(session_id)
-            note_bridge.allow_close = True
             try:
-                note_window.destroy()
+                coordinator.close_session(session_id)
             except Exception:
                 pass
+            coordinator.unregister(session_id)
             raise
 
     coordinator.set_auxiliary_factory(create_auxiliary)
-    bridge._set_window_ready_callback(
-        lambda: _restore_open_note_windows(bridge, coordinator)
-    )
+
+    def restore_notes_or_show_main() -> None:
+        if not _restore_open_note_windows(bridge, coordinator):
+            coordinator.show_main()
+        _watch_for_main_window_requests(activation_event, coordinator)
+
+    bridge._set_window_ready_callback(restore_notes_or_show_main)
     webview.start(gui="edgechromium", debug=False, private_mode=True)
 
     if sys.platform == "win32" and isinstance(instance, int):
         ctypes.windll.kernel32.CloseHandle(instance)
+    if sys.platform == "win32" and isinstance(activation_event, int):
+        ctypes.windll.kernel32.CloseHandle(activation_event)
 
 
 if __name__ == "__main__":
