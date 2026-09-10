@@ -23,6 +23,7 @@ from .platform_windows import (
     enable_taskbar_minimize,
     local_config_path,
     move_window_to_physical,
+    resize_window_without_showing,
     set_autostart,
 )
 from .window_coordinator import WindowCoordinator, WindowSession
@@ -251,12 +252,16 @@ def _watch_for_main_window_requests(
         wait_for_single_object = ctypes.windll.kernel32.WaitForSingleObject
         while wait_for_single_object(activation_event, 0xFFFFFFFF) == 0:
             try:
-                coordinator.show_main()
+                _handle_activation_request(coordinator)
             except Exception:
                 logging.exception("Failed to show the main window after reactivation.")
 
     watcher = threading.Thread(target=wait_for_activation, daemon=True)
     watcher.start()
+
+
+def _handle_activation_request(coordinator: WindowCoordinator) -> None:
+    coordinator.show_main_if_no_auxiliaries()
 
 
 def _normalize_window_after_show(
@@ -272,7 +277,7 @@ def _normalize_window_after_show(
     # from being subtracted again on every restart.
     if x is not None and y is not None:
         move_window_to_physical(window, x, y)
-    window.resize(width, height)
+    resize_window_without_showing(window, width, height)
     window.events.moved += state_saver.schedule  # type: ignore[attr-defined]
     window.events.resized += state_saver.schedule  # type: ignore[attr-defined]
 
@@ -287,9 +292,8 @@ def _restore_window_from_hidden_start(
     *,
     reveal: bool = True,
 ) -> None:
-    # pywebview briefly shows an opacity-zero window to initialize WinForms when
-    # hidden=True. Hiding once more synchronizes with that native cycle before
-    # the restored bounds are applied and the real first frame is revealed.
+    # pywebview's WinForms resize path includes SWP_SHOWWINDOW. Keep all hidden
+    # initialization on native no-show operations, then reveal only on purpose.
     window.hide()
     _normalize_window_after_show(window, state_saver, width, height, x, y)
     if reveal:
@@ -302,7 +306,7 @@ def _normalize_note_window_after_show(
     width: int,
     height: int,
 ) -> None:
-    window.resize(width, height)
+    resize_window_without_showing(window, width, height)
     window.events.moved += state_saver.schedule
     window.events.resized += state_saver.schedule
     state_saver.flush()
@@ -352,7 +356,6 @@ def main() -> None:
         config.window_height,
         config.window_position_space,
     )
-
     index = _resource_path("dist/web/index.html")
     if not index.is_file():
         raise RuntimeError("Web assets are missing. Run npm run build first.")
@@ -545,13 +548,13 @@ def main() -> None:
                     window.run_js("window.desktopNotesShowAuxiliaryLoadFailure?.()")
                 except Exception:
                     pass
-                coordinator.close_session(session_id)
+                coordinator.close_session(session_id, forget_note=True)
                 coordinator.unregister(session_id)
 
             _show_window_when_ready(note_window, note_bridge, load_failed)
         except Exception:
             try:
-                coordinator.close_session(session_id)
+                coordinator.close_session(session_id, forget_note=True)
             except Exception:
                 pass
             coordinator.unregister(session_id)

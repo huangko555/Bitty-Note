@@ -261,7 +261,11 @@ function titleBar(
   bar.querySelector<HTMLButtonElement>('[data-action="note-menu"]')
     ?.addEventListener("click", (event) => {
       event.stopPropagation();
-      showNoteWindowMenu(bar, event.currentTarget as HTMLButtonElement);
+      showNoteWindowMenu(
+        bar,
+        event.currentTarget as HTMLButtonElement,
+        event.detail > 0,
+      );
     });
   bar.querySelector('[data-action="close"]')?.addEventListener("click", () => {
     void closeApplication();
@@ -394,10 +398,17 @@ function titleBar(
   return bar;
 }
 
-function showNoteWindowMenu(bar: HTMLElement, button: HTMLButtonElement): void {
+function showNoteWindowMenu(
+  bar: HTMLElement,
+  button: HTMLButtonElement,
+  releasePointerFocusOnClose = false,
+): void {
   const wasOpen = button.getAttribute("aria-expanded") === "true";
   noteWindowMenuCleanup?.();
-  if (wasOpen) return;
+  if (wasOpen) {
+    if (releasePointerFocusOnClose) button.blur();
+    return;
+  }
   if (!currentNote) return;
 
   const shell = bar.parentElement;

@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.8.1 — 2026-09-10
+
+### English
+
+- Restored the last open note window on the next launch when the manager had already been closed, while keeping the manager hidden whenever notes are restored.
+- Eliminated the brief blank manager flash during startup by resizing hidden WinForms windows without implicitly showing them; note windows now appear only after their content is ready.
+- Cleared the note title-bar menu's lingering hover indicator after closing the menu with a second pointer click.
+
+### 简体中文
+
+- 主面板已关闭时退出应用，会在下次启动恢复最后一个仍打开的便签；恢复便签期间主面板保持隐藏。
+- 隐藏的 WinForms 窗口调整尺寸时不再被意外显示，消除了启动期间短暂闪现的空白主面板；便签内容就绪后才会显示窗口。
+- 修复用鼠标再次点击关闭便签标题栏菜单后，移开指针仍残留菜单指示状态的问题。
+
 ## v1.8.0 — 2026-09-10
 
 ### English

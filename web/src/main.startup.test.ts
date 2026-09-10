@@ -162,6 +162,13 @@ describe("startup chrome visibility", () => {
     expect(document.querySelector(".note-window-menu")).toBeNull();
 
     noteMenuButton.click();
+    expect(document.querySelector(".note-window-menu")).not.toBeNull();
+    noteMenuButton.focus();
+    noteMenuButton.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+    expect(document.querySelector(".note-window-menu")).toBeNull();
+    expect(document.activeElement).not.toBe(noteMenuButton);
+
+    noteMenuButton.click();
     document.querySelector<HTMLButtonElement>('[data-action="show-note-list"]')!.click();
     await vi.waitFor(() => expect(showMainWindow).toHaveBeenCalledOnce());
 

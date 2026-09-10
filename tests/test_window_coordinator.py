@@ -236,6 +236,52 @@ def test_main_close_hides_manager_without_closing_note_windows(tmp_path: Path) -
     }
 
 
+def test_closing_last_note_after_manager_preserves_it_for_next_startup(
+    tmp_path: Path,
+) -> None:
+    windows, main_window = coordinator(tmp_path)
+    auxiliary_window = FakeWindow()
+
+    class StateSaver:
+        stopped = False
+
+        def flush(self) -> None:
+            if not self.stopped:
+                windows.save_window_state("Travel.md", 240, 160, 430, 650)
+
+        def stop(self) -> None:
+            self.stopped = True
+
+    windows.register(WindowSession(
+        "aux", "note", auxiliary_window, FakeBridge(), "Travel.md", StateSaver()
+    ))
+
+    windows.close_session("main")
+    windows.close_session("aux")
+    windows.unregister("aux")
+
+    assert main_window.destroyed == 1
+    assert windows.config_store.config.open_note_windows == {
+        "Travel.md": {"x": 240, "y": 160, "width": 430, "height": 650}
+    }
+
+
+def test_failed_last_note_is_not_preserved_after_manager_is_hidden(
+    tmp_path: Path,
+) -> None:
+    windows, _main_window = coordinator(tmp_path)
+    auxiliary_window = FakeWindow()
+    windows.register(WindowSession(
+        "aux", "note", auxiliary_window, FakeBridge(), "Broken.md"
+    ))
+    windows.save_window_state("Broken.md", 240, 160, 430, 650)
+
+    windows.close_session("main")
+    windows.close_session("aux", forget_note=True)
+
+    assert windows.config_store.config.open_note_windows == {}
+
+
 def test_closing_only_one_note_window_removes_it_from_next_startup(
     tmp_path: Path,
 ) -> None:

@@ -9,6 +9,8 @@ from desktop_notes.main import (
     MIN_WINDOW_WIDTH,
     _MonitorWorkArea,
     _allow_system_shutdown,
+    _handle_activation_request,
+    _normalize_note_window_after_show,
     _normalize_window_after_show,
     _restore_open_note_windows,
     _restore_window_from_hidden_start,
@@ -48,6 +50,9 @@ class FakeStateSaver:
     def schedule(self) -> None:
         pass
 
+    def flush(self) -> None:
+        pass
+
 
 def test_window_bounds_enforce_the_shared_logical_minimum() -> None:
     assert _visible_window_bounds(None, None, 100, 120) == (
@@ -62,15 +67,22 @@ def test_initial_bounds_are_normalized_before_state_tracking_starts(monkeypatch)
     window = FakeWindow()
     saver = FakeStateSaver()
     move_calls: list[tuple[object, int, int]] = []
+    resize_calls: list[tuple[object, int, int]] = []
     monkeypatch.setattr(
         "desktop_notes.main.move_window_to_physical",
         lambda target, x, y: move_calls.append((target, x, y)),
+    )
+    monkeypatch.setattr(
+        "desktop_notes.main.resize_window_without_showing",
+        lambda target, width, height: resize_calls.append((target, width, height)),
+        raising=False,
     )
 
     _normalize_window_after_show(window, saver, 350, 630, 3644, 386)
 
     assert move_calls == [(window, 3644, 386)]
-    assert window.resize_calls == [(350, 630)]
+    assert resize_calls == [(window, 350, 630)]
+    assert window.resize_calls == []
     assert window.events.moved.handlers == [saver.schedule]
     assert window.events.resized.handlers == [saver.schedule]
 
@@ -86,13 +98,18 @@ def test_hidden_start_restores_window_before_revealing_it(monkeypatch) -> None:
         "desktop_notes.main.move_window_to_physical",
         lambda _target, x, y: calls.append(("move", x, y)),
     )
+    monkeypatch.setattr(
+        "desktop_notes.main.resize_window_without_showing",
+        lambda _target, width, height: calls.append(("resize-hidden", width, height)),
+        raising=False,
+    )
 
     _restore_window_from_hidden_start(window, saver, 350, 630, 3644, 386)
 
     assert calls == [
         "hide",
         ("move", 3644, 386),
-        ("resize", 350, 630),
+        ("resize-hidden", 350, 630),
         "show",
     ]
     assert window.events.moved.handlers == [saver.schedule]
@@ -110,6 +127,11 @@ def test_hidden_manager_is_normalized_without_being_revealed(monkeypatch) -> Non
         "desktop_notes.main.move_window_to_physical",
         lambda _target, x, y: calls.append(("move", x, y)),
     )
+    monkeypatch.setattr(
+        "desktop_notes.main.resize_window_without_showing",
+        lambda _target, width, height: calls.append(("resize-hidden", width, height)),
+        raising=False,
+    )
 
     _restore_window_from_hidden_start(
         window,
@@ -124,8 +146,24 @@ def test_hidden_manager_is_normalized_without_being_revealed(monkeypatch) -> Non
     assert calls == [
         "hide",
         ("move", 3644, 386),
-        ("resize", 350, 630),
+        ("resize-hidden", 350, 630),
     ]
+
+
+def test_hidden_note_is_resized_without_revealing_it(monkeypatch) -> None:
+    window = FakeWindow()
+    saver = FakeStateSaver()
+    calls: list[object] = []
+    monkeypatch.setattr(
+        "desktop_notes.main.resize_window_without_showing",
+        lambda _target, width, height: calls.append(("resize-hidden", width, height)),
+        raising=False,
+    )
+
+    _normalize_note_window_after_show(window, saver, 350, 630)
+
+    assert calls == [("resize-hidden", 350, 630)]
+    assert window.resize_calls == []
 
 
 def test_auxiliary_window_stays_hidden_until_its_note_ui_is_ready() -> None:
@@ -227,6 +265,69 @@ def test_main_window_ready_restores_windows_for_existing_notes() -> None:
 
     assert restored == [["First.md", "Second.md"]]
     assert result == ["First.md", "Second.md"]
+
+
+def test_activation_does_not_show_main_while_note_window_is_open(tmp_path: Path) -> None:
+    store = ConfigStore(tmp_path / "config.json", tmp_path / "notes")
+    coordinator = WindowCoordinator(store)
+    main_window = type("MainWindow", (), {
+        "show": lambda self: setattr(self, "shown", self.shown + 1),
+        "run_js": lambda _self, _script: None,
+        "shown": 0,
+    })()
+    coordinator.register(WindowSession("main", "main", main_window, object()))
+    coordinator.register(WindowSession(
+        "note", "note", object(), object(), "Startup.md"
+    ))
+
+    _handle_activation_request(coordinator)
+
+    assert main_window.shown == 0
+
+
+def test_activation_does_not_show_main_while_note_window_is_being_restored(
+    tmp_path: Path,
+) -> None:
+    store = ConfigStore(tmp_path / "config.json", tmp_path / "notes")
+    coordinator = WindowCoordinator(store)
+    main_window = type("MainWindow", (), {
+        "show": lambda self: setattr(self, "shown", self.shown + 1),
+        "run_js": lambda _self, _script: None,
+        "shown": 0,
+    })()
+    coordinator.register(WindowSession("main", "main", main_window, object()))
+
+    def restore_note(
+        session_id: str,
+        name: str,
+        _width: int,
+        _height: int,
+        _x: int,
+        _y: int,
+        _position_space: str | None,
+    ) -> None:
+        _handle_activation_request(coordinator)
+        coordinator.register(WindowSession(session_id, "note", object(), object(), name))
+
+    coordinator.set_auxiliary_factory(restore_note)
+    coordinator.open_auxiliary("Startup.md")
+
+    assert main_window.shown == 0
+
+
+def test_activation_shows_main_when_no_note_window_is_open(tmp_path: Path) -> None:
+    store = ConfigStore(tmp_path / "config.json", tmp_path / "notes")
+    coordinator = WindowCoordinator(store)
+    main_window = type("MainWindow", (), {
+        "show": lambda self: setattr(self, "shown", self.shown + 1),
+        "run_js": lambda _self, _script: None,
+        "shown": 0,
+    })()
+    coordinator.register(WindowSession("main", "main", main_window, object()))
+
+    _handle_activation_request(coordinator)
+
+    assert main_window.shown == 1
 
 
 def test_restored_position_uses_its_secondary_monitor_work_area(monkeypatch) -> None:

@@ -249,7 +249,7 @@ class WindowCoordinator:
             "更改保存目录前，请先关闭独立记录窗口。",
         ))
 
-    def close_session(self, session_id: str) -> None:
+    def close_session(self, session_id: str, *, forget_note: bool = False) -> None:
         destroy: WindowSession | None = None
         hide: WindowSession | None = None
         with self._lock:
@@ -257,10 +257,17 @@ class WindowCoordinator:
             if session.role != "main":
                 destroy = session
                 if session.note_name:
+                    preserve_for_restart = (
+                        not forget_note
+                        and not self._main_visible
+                        and len(self._auxiliary_sessions_locked()) == 1
+                        and not self._reservations
+                    )
                     if session.state_saver is not None:
                         session.state_saver.flush()
                         session.state_saver.stop()
-                    self._remove_open_window_locked(session.note_name)
+                    if not preserve_for_restart:
+                        self._remove_open_window_locked(session.note_name)
             else:
                 if session.state_saver is not None:
                     session.state_saver.flush()
@@ -280,6 +287,17 @@ class WindowCoordinator:
         with self._lock:
             main = self._main_session_locked()
             self._main_visible = True
+        self._reveal_main(main)
+
+    def show_main_if_no_auxiliaries(self) -> None:
+        with self._lock:
+            if self._auxiliary_sessions_locked() or self._reservations:
+                return
+            main = self._main_session_locked()
+            self._main_visible = True
+        self._reveal_main(main)
+
+    def _reveal_main(self, main: WindowSession) -> None:
         try:
             main.window.show()
             main.window.run_js("window.desktopNotesShowHome?.()")

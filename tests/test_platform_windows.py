@@ -137,6 +137,50 @@ def test_enable_taskbar_minimize_adds_required_native_styles(
     assert written == [(123, 0x100A0000)]
 
 
+def test_hidden_window_resize_does_not_request_window_show(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[object, ...]] = []
+
+    class FakeFunction:
+        argtypes: object = None
+        restype: object = None
+
+        def __init__(self, callback: object) -> None:
+            self.callback = callback
+
+        def __call__(self, *args: object) -> object:
+            return self.callback(*args)  # type: ignore[operator]
+
+    class FakeHandle:
+        @staticmethod
+        def ToInt64() -> int:
+            return 123
+
+    class FakeUser32:
+        GetDpiForWindow = FakeFunction(lambda _handle: 144)
+        SetWindowPos = FakeFunction(lambda *args: calls.append(args) or True)
+
+    window = type(
+        "Window",
+        (),
+        {"native": type("Native", (), {"Handle": FakeHandle()})()},
+    )()
+    monkeypatch.setattr(platform_windows.sys, "platform", "win32")
+    monkeypatch.setattr(
+        platform_windows.ctypes,
+        "windll",
+        type("FakeWindll", (), {"user32": FakeUser32()})(),
+    )
+
+    platform_windows.resize_window_without_showing(window, 350, 630)
+
+    assert calls == [(123, None, 0, 0, 525, 945, 0x0016)]
+    assert calls[0][-1] & 0x0040 == 0  # SWP_SHOWWINDOW must stay absent.
+    assert FakeUser32.GetDpiForWindow.argtypes == [platform_windows.ctypes.wintypes.HWND]
+    assert FakeUser32.GetDpiForWindow.restype is platform_windows.ctypes.wintypes.UINT
+
+
 def test_open_directory_uses_windows_shell(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     opened: list[str] = []
     monkeypatch.setattr(platform_windows.sys, "platform", "win32")
