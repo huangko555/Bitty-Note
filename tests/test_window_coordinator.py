@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from desktop_notes.config import ConfigStore
 from desktop_notes.i18n import set_language
 from desktop_notes.window_coordinator import WindowCoordinator, WindowSession
@@ -136,7 +138,8 @@ def test_restart_restores_every_open_note_window_with_its_bounds(tmp_path: Path)
 
     restarted_store = ConfigStore(config_path, tmp_path / "notes")
     windows = WindowCoordinator(restarted_store)
-    windows.register(WindowSession("main", "main", FakeWindow(), FakeBridge()))
+    main_window = FakeWindow()
+    windows.register(WindowSession("main", "main", main_window, FakeBridge()))
     created: list[tuple[str, int, int, int, int, str | None]] = []
 
     def create_auxiliary(
@@ -163,6 +166,8 @@ def test_restart_restores_every_open_note_window_with_its_bounds(tmp_path: Path)
         ("First.md", 410, 610, 120, 80, "logical"),
         ("Second.md", 520, 720, 560, 140, "logical"),
     ]
+    windows.show_main_if_no_auxiliaries()
+    assert main_window.shown == 0
 
 
 def test_requesting_rename_focuses_open_note_and_starts_inline_edit(tmp_path: Path) -> None:
@@ -308,6 +313,43 @@ def test_closing_only_one_note_window_removes_it_from_next_startup(
 
     assert auxiliary_window.destroyed == 1
     assert state_saver.stopped is True
+    assert windows.config_store.config.open_note_windows == {}
+
+
+@pytest.mark.parametrize("note_names", [["Only.md"], ["First.md", "Second.md"]])
+def test_application_shutdown_preserves_all_notes_while_manager_is_open(
+    tmp_path: Path,
+    note_names: list[str],
+) -> None:
+    windows, _main_window = coordinator(tmp_path)
+    for index, name in enumerate(note_names):
+        windows.register(WindowSession(
+            f"note-{index}", "note", FakeWindow(), FakeBridge(), name
+        ))
+        windows.save_window_state(name, 100 + index * 40, 80, 430, 650)
+
+    windows.begin_close_request("main")
+    for index, _name in enumerate(note_names):
+        windows.close_session(f"note-{index}")
+        windows.unregister(f"note-{index}")
+    windows.close_session("main")
+
+    restarted = ConfigStore(windows.config_store.path, tmp_path / "notes")
+    assert set(restarted.config.open_note_windows) == set(note_names)
+
+
+def test_cancelled_manager_close_request_keeps_manager_visible(tmp_path: Path) -> None:
+    windows, main_window = coordinator(tmp_path)
+    auxiliary_window = FakeWindow()
+    windows.register(WindowSession(
+        "aux", "note", auxiliary_window, FakeBridge(), "Travel.md"
+    ))
+
+    windows.begin_close_request("main")
+    windows.cancel_app_close("main")
+    windows.close_session("aux")
+
+    assert main_window.hidden == 0
     assert windows.config_store.config.open_note_windows == {}
 
 

@@ -260,8 +260,6 @@ class WindowCoordinator:
                     preserve_for_restart = (
                         not forget_note
                         and not self._main_visible
-                        and len(self._auxiliary_sessions_locked()) == 1
-                        and not self._reservations
                     )
                     if session.state_saver is not None:
                         session.state_saver.flush()
@@ -282,6 +280,17 @@ class WindowCoordinator:
             return
         if hide is not None:
             hide.window.hide()
+
+    def begin_close_request(self, session_id: str) -> None:
+        """Record a manager close before its asynchronous page save completes."""
+        with self._lock:
+            session = self._sessions.get(session_id)
+            if (
+                session is not None
+                and session.role == "main"
+                and (self._auxiliary_sessions_locked() or self._reservations)
+            ):
+                self._main_visible = False
 
     def show_main(self) -> None:
         with self._lock:
@@ -307,8 +316,11 @@ class WindowCoordinator:
                 self._main_visible = False
             raise
 
-    def cancel_app_close(self) -> None:
-        return
+    def cancel_app_close(self, session_id: str) -> None:
+        with self._lock:
+            session = self._sessions.get(session_id)
+            if session is not None and session.role == "main":
+                self._main_visible = True
 
     def refresh_titles(self) -> None:
         with self._lock:

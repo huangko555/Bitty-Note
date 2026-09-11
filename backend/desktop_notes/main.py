@@ -457,6 +457,7 @@ def main() -> None:
             if target_bridge.allow_close:
                 target_state_saver.flush()
                 return None
+            coordinator.begin_close_request(target_bridge.session_id)
             with close_request_lock:
                 if not close_request_pending:
                     close_request_pending = True

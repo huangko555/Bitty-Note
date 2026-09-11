@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.8.2 — 2026-09-11
+
+### English
+
+- Preserve every note that was open when the manager begins closing, regardless of the number of note windows or asynchronous close order.
+- Keep the manager completely hidden on the next launch whenever one or more saved note windows are restored.
+
+### 简体中文
+
+- 主面板开始关闭时会保留当时打开的所有便签，不再受便签数量或异步关闭顺序影响。
+- 下次启动只要恢复了一个或多个便签，主面板就始终保持隐藏。
+
 ## v1.8.1 — 2026-09-10
 
 ### English

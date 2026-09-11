@@ -413,7 +413,7 @@ class DesktopBridge:
 
     def cancel_close(self) -> None:
         if self.coordinator is not None:
-            self.coordinator.cancel_app_close()
+            self.coordinator.cancel_app_close(self.session_id)
 
     def _require_window(self) -> webview.Window:
         if self._window is None:

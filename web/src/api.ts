@@ -379,7 +379,7 @@ function browserMock(): DesktopApi {
       },
       notes: summary(notes),
       system_fonts: ["Microsoft YaHei", "DengXian", "SimSun", "KaiTi"],
-      app_version: "1.8.1",
+      app_version: "1.8.2",
       update_state: { status: "unsupported", available_version: null },
       update_result: null,
       window_role: notePreviewEnabled ? "note" : "main",
