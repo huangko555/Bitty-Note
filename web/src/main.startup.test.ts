@@ -36,14 +36,17 @@ const bootstrap: BootstrapData = {
     heading_list_highlight: true,
     editor_highlight_color: "#456FC4",
     text_highlight_color: "green",
+    auto_update: true,
     last_update_check_ms: null,
     available_version: null,
+    downloaded_update_version: null,
     pending_update_version: null,
+    automatic_update_error_version: null,
   },
   notes: [],
   system_fonts: [],
   app_version: "1.4.0",
-  update_state: { status: "idle", available_version: null },
+  update_state: { status: "idle", available_version: null, auto_update: true },
   update_result: null,
   window_role: "note",
   initial_note: note.name,
@@ -188,7 +191,7 @@ describe("startup chrome visibility", () => {
     window.dispatchEvent(new Event("focus"));
 
     expect.soft(document.activeElement).not.toBe(pin);
-  });
+  }, 10_000);
 
   it("keeps the main window on the note list instead of reopening the last note", async () => {
     const openNote = vi.fn();

@@ -10,7 +10,8 @@ from typing import Any, Callable
 from .config import ConfigStore
 from .errors import UserVisibleError
 from .i18n import text
-from .platform_windows import focus_window
+from .platform_windows import focus_window, is_window_on_screen
+from .updates import UpdateRestartState
 
 
 AuxiliaryFactory = Callable[
@@ -27,6 +28,7 @@ class WindowSession:
     bridge: Any
     note_name: str | None = None
     state_saver: Any = None
+    update_ready: bool = False
 
 
 class WindowCoordinator:
@@ -321,6 +323,53 @@ class WindowCoordinator:
             session = self._sessions.get(session_id)
             if session is not None and session.role == "main":
                 self._main_visible = True
+
+    def set_update_ready(self, session_id: str, ready: bool) -> None:
+        with self._lock:
+            session = self._sessions.get(session_id)
+            if session is not None:
+                session.update_ready = bool(ready)
+
+    def update_restart_state(self) -> UpdateRestartState:
+        with self._lock:
+            sessions = list(self._sessions.values())
+            all_saved = bool(sessions) and not self._reservations and all(
+                session.update_ready for session in sessions
+            )
+        return UpdateRestartState(
+            all_windows_saved=all_saved,
+            all_windows_invisible=bool(sessions) and all(
+                not is_window_on_screen(session.window) for session in sessions
+            ),
+        )
+
+    def prepare_update_restart(self, allow_visible: bool) -> bool:
+        state = self.update_restart_state()
+        if not state.all_windows_saved:
+            return False
+        if not allow_visible and not state.all_windows_invisible:
+            return False
+        with self._lock:
+            savers = [
+                session.state_saver
+                for session in self._sessions.values()
+                if session.state_saver is not None
+            ]
+        for saver in savers:
+            saver.flush()
+        state = self.update_restart_state()
+        return state.all_windows_saved and (
+            allow_visible or state.all_windows_invisible
+        )
+
+    def notify_update_state_changed(self) -> None:
+        with self._lock:
+            windows = [session.window for session in self._sessions.values()]
+        for window in windows:
+            try:
+                window.run_js("window.desktopNotesRefreshUpdateState?.()")
+            except Exception:
+                pass
 
     def refresh_titles(self) -> None:
         with self._lock:

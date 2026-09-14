@@ -20,6 +20,7 @@ def test_existing_config_gets_editor_defaults(tmp_path: Path) -> None:
     config = ConfigStore(config_path, tmp_path / "fallback").config
 
     assert config.autostart is True
+    assert config.auto_update is True
     assert config.editor_font == "DengXian"
     assert config.editor_font_size == 14
     assert config.heading_divider is True
@@ -242,3 +243,13 @@ def test_invalid_language_falls_back_to_english(tmp_path: Path) -> None:
     )
 
     assert ConfigStore(config_path, tmp_path / "fallback").config.language == "en"
+
+
+def test_invalid_automatic_update_preference_falls_back_to_enabled(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps({"save_dir": str(tmp_path / "notes"), "auto_update": "false"}),
+        encoding="utf-8",
+    )
+
+    assert ConfigStore(config_path, tmp_path / "fallback").config.auto_update is True

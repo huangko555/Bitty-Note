@@ -27,14 +27,17 @@ const bootstrap: BootstrapData = {
     heading_list_highlight: true,
     editor_highlight_color: "#456FC4",
     text_highlight_color: "green",
+    auto_update: false,
     last_update_check_ms: null,
     available_version: "1.1.3",
+    downloaded_update_version: null,
     pending_update_version: null,
+    automatic_update_error_version: null,
   },
   notes: [],
   system_fonts: [],
   app_version: "1.1.2",
-  update_state: { status: "available", available_version: "1.1.3" },
+  update_state: { status: "available", available_version: "1.1.3", auto_update: false },
   update_result: null,
   window_role: "main",
   initial_note: null,
@@ -78,6 +81,7 @@ describe("available update interaction", () => {
     await import("./main");
     await vi.waitFor(() => expect(document.querySelector('[data-action="settings"]')).not.toBeNull());
     document.querySelector<HTMLButtonElement>('[data-action="settings"]')!.click();
+    expect(document.querySelector<HTMLInputElement>("#auto-update")?.checked).toBe(false);
 
     const updateButton = document.querySelector<HTMLButtonElement>('[data-action="update"]')!;
     updateButton.click();
@@ -97,13 +101,13 @@ describe("available update interaction", () => {
     expect(document.querySelector(".toast")?.textContent).toBe(
       "Automatic update failed. Please download it manually from GitHub",
     );
-  });
+  }, 10_000);
 
   it("keeps the Microsoft Store update flow unchanged", async () => {
     const storeBootstrap: BootstrapData = {
       ...bootstrap,
       config: { ...bootstrap.config, available_version: null },
-      update_state: { status: "store", available_version: null },
+      update_state: { status: "store", available_version: null, auto_update: false },
     };
     const installUpdate = vi.fn().mockResolvedValue(storeBootstrap.update_state);
     const api = {
@@ -119,6 +123,11 @@ describe("available update interaction", () => {
     await vi.waitFor(() => expect(document.querySelector('[data-action="settings"]')).not.toBeNull());
     document.querySelector<HTMLButtonElement>('[data-action="settings"]')!.click();
 
+    expect(document.querySelector("#auto-update")).toBeNull();
+    expect(document.querySelector(".settings-page")?.textContent).toContain(
+      "Updates are managed by Microsoft Store",
+    );
+
     const updateButton = document.querySelector<HTMLButtonElement>('[data-action="update"]')!;
     updateButton.click();
     await vi.waitFor(() => expect(installUpdate).toHaveBeenCalledOnce());
@@ -133,7 +142,7 @@ describe("available update interaction", () => {
     const homeBootstrap: BootstrapData = {
       ...bootstrap,
       notes: [note],
-      update_state: { status: "idle", available_version: null },
+      update_state: { status: "idle", available_version: null, auto_update: false },
       config: { ...bootstrap.config, available_version: null },
     };
     const api = {

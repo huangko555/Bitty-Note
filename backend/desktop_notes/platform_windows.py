@@ -124,6 +124,47 @@ def focus_window(window: object) -> None:
     ctypes.windll.user32.SetForegroundWindow(handle)
 
 
+def is_window_on_screen(window: object) -> bool:
+    """Return whether a window is currently visible and not minimized."""
+    if sys.platform != "win32":
+        return bool(getattr(window, "visible", True)) and not bool(
+            getattr(window, "minimized", False)
+        )
+
+    native = getattr(window, "native", None)
+    handle_object = getattr(native, "Handle", None)
+    if handle_object is None:
+        return True
+    handle = int(handle_object.ToInt64())
+    return bool(ctypes.windll.user32.IsWindowVisible(handle)) and not bool(
+        ctypes.windll.user32.IsIconic(handle)
+    )
+
+
+def is_session_locked() -> bool:
+    """Return true only when Windows denies access to its secure input desktop."""
+    if sys.platform != "win32":
+        return False
+
+    try:
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        open_input_desktop = user32.OpenInputDesktop
+        open_input_desktop.argtypes = [ctypes.wintypes.DWORD, ctypes.wintypes.BOOL, ctypes.wintypes.DWORD]
+        open_input_desktop.restype = ctypes.wintypes.HANDLE
+        close_desktop = user32.CloseDesktop
+        close_desktop.argtypes = [ctypes.wintypes.HANDLE]
+        close_desktop.restype = ctypes.wintypes.BOOL
+        ctypes.set_last_error(0)
+        desktop = open_input_desktop(0, False, 0x0100)  # DESKTOP_SWITCHDESKTOP
+        if desktop:
+            close_desktop(desktop)
+            return False
+        return ctypes.get_last_error() == 5  # ERROR_ACCESS_DENIED on the lock screen
+    except (AttributeError, OSError):
+        # An uncertain probe must never be allowed to trigger a visible restart.
+        return False
+
+
 def _get_window_style(handle: int) -> int:
     get_window_long = ctypes.windll.user32.GetWindowLongW
     get_window_long.argtypes = [ctypes.wintypes.HWND, ctypes.c_int]

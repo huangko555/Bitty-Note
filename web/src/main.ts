@@ -73,8 +73,9 @@ let noteContextMenuCleanup: (() => void) | null = null;
 let noteWindowMenuCleanup: (() => void) | null = null;
 let beginTitleRename: (() => void) | null = null;
 let appVersion = "";
-let updateState: UpdateState = { status: "idle", available_version: null };
+let updateState: UpdateState = { status: "idle", available_version: null, auto_update: true };
 let notifiedUpdateVersion: string | null = null;
+let reportedUpdateReady: boolean | null = null;
 
 const MIN_EDITOR_FONT_SIZE = 12;
 const MAX_EDITOR_FONT_SIZE = 22;
@@ -229,7 +230,7 @@ function titleBar(
     bar.classList.toggle("is-pinned", config.always_on_top);
   }
   const backUpdateClass = showUpdateOnBack
-    ? ` update-indicator ${updateState.status === "available" ? "has-update" : ""}`
+    ? ` update-indicator ${updateNeedsAttention() ? "has-update" : ""}`
     : "";
   const backUpdateDot = showUpdateOnBack
     ? '<span class="update-dot" aria-hidden="true"></span>'
@@ -277,6 +278,7 @@ function titleBar(
     titleText.classList.add("is-renamable");
     const beginRename = () => {
       if (!titleText.isConnected) return;
+      reportUpdateReady(false);
       const input = document.createElement("input");
       input.className = "title-rename-input no-drag";
       input.type = "text";
@@ -296,6 +298,7 @@ function titleBar(
         stopWatchingOutside();
         if (input.isConnected) input.replaceWith(titleText);
         bar.classList.remove("is-renaming");
+        reportCurrentUpdateReadiness();
       };
       const commit = async () => {
         if (committing) return;
@@ -311,6 +314,7 @@ function titleBar(
           stopWatchingOutside();
           input.replaceWith(titleText);
           bar.classList.remove("is-renaming");
+          reportCurrentUpdateReadiness();
         } catch (error) {
           committing = false;
           showRenameFailure(input, errorMessage(error), "below-title", (message, placement) => {
@@ -694,6 +698,7 @@ function setCurrentNoteBackground(shell: HTMLElement, background: NoteBackground
   currentNote.background = background;
   shell.dataset.noteBackground = background;
   dirty = true;
+  reportUpdateReady(false);
   scheduleSave();
 }
 
@@ -721,6 +726,7 @@ function modal(options: {
   message: string | HTMLElement;
   actions: { label: string; kind?: "primary" | "danger"; run: () => void | Promise<void> }[];
 }): void {
+  reportUpdateReady(false);
   document.querySelector(".modal-backdrop")?.remove();
   const backdrop = document.createElement("div");
   backdrop.className = "modal-backdrop";
@@ -743,6 +749,7 @@ function modal(options: {
       try {
         await action.run();
         backdrop.remove();
+        reportCurrentUpdateReadiness();
       } catch (error) {
         button.disabled = false;
         showError(error);
@@ -802,6 +809,7 @@ async function renderHome(refresh = true): Promise<void> {
   currentContent = "";
   dirty = false;
   locked = false;
+  reportUpdateReady(true);
   await api.rememberLastNote(null);
   if (refresh) {
     try {
@@ -818,7 +826,7 @@ async function renderHome(refresh = true): Promise<void> {
       <h1 class="home-title">${t("homeTitle")}</h1>
       <div class="home-actions">
         <button class="icon-button" data-action="show-archive" aria-label="${t("archive")}">${icon("archive")}</button>
-        <button class="icon-button update-indicator ${updateState.status === "available" ? "has-update" : ""}" data-action="settings" aria-label="${t("settings")}">${icon("settings")}<span class="update-dot" aria-hidden="true"></span></button>
+        <button class="icon-button update-indicator ${updateNeedsAttention() ? "has-update" : ""}" data-action="settings" aria-label="${t("settings")}">${icon("settings")}<span class="update-dot" aria-hidden="true"></span></button>
       </div>
     </div>
     <div class="note-list" aria-live="polite"></div>
@@ -1314,6 +1322,7 @@ async function showNote(note: OpenedNote, showToolbarOnOpen = true): Promise<voi
   currentContent = currentNote.content;
   dirty = false;
   locked = false;
+  reportUpdateReady(true);
   await api.rememberLastNote(note.name);
   const shell = pageShell(note.name, null, true, true, renameCurrentNote);
   shell.dataset.noteBackground = currentNote.background;
@@ -1335,6 +1344,7 @@ async function showNote(note: OpenedNote, showToolbarOnOpen = true): Promise<voi
       if (locked) return;
       currentContent = markdown;
       dirty = true;
+      reportUpdateReady(false);
       scheduleSave();
     },
     onFocusChange: (focused) => {
@@ -1771,6 +1781,7 @@ async function saveNow(force = false): Promise<boolean> {
   if (saveTimer !== null) window.clearTimeout(saveTimer);
   saveTimer = null;
   saving = true;
+  reportUpdateReady(false);
   const contentToSave = currentContent;
   try {
     const result = await api.saveNote(currentNote, contentToSave, force);
@@ -1795,6 +1806,7 @@ async function saveNow(force = false): Promise<boolean> {
     return false;
   } finally {
     saving = false;
+    reportCurrentUpdateReadiness();
   }
 }
 
@@ -1912,6 +1924,7 @@ declare global {
     desktopNotesShowHome?: () => void;
     desktopNotesBeginRename?: () => void;
     desktopNotesShowAuxiliaryLoadFailure?: () => void;
+    desktopNotesRefreshUpdateState?: () => void;
   }
 }
 
@@ -1922,10 +1935,39 @@ window.desktopNotesRefreshHome = () => {
 window.desktopNotesShowHome = () => void renderHome();
 window.desktopNotesBeginRename = () => beginTitleRename?.();
 window.desktopNotesShowAuxiliaryLoadFailure = () => showError(new Error(t("noteWindowLoadFailed")));
+window.desktopNotesRefreshUpdateState = () => {
+  void refreshUpdateState(false).catch(() => {});
+};
 
 function updateButtonText(): string {
   if (updateState.status === "store") return t("storeUpdates");
-  return updateState.status === "available" ? t("update") : t("checkUpdate");
+  return ["available", "error"].includes(updateState.status) ? t("update") : t("checkUpdate");
+}
+
+function updateNeedsAttention(): boolean {
+  return updateState.status === "error"
+    || (!config.auto_update && updateState.status === "available");
+}
+
+function syncUpdateIndicators(): void {
+  document.querySelectorAll(".update-indicator").forEach((element) => {
+    element.classList.toggle("has-update", updateNeedsAttention());
+  });
+}
+
+function reportUpdateReady(ready: boolean): void {
+  if (typeof api.setUpdateReady !== "function") return;
+  if (reportedUpdateReady === ready) return;
+  reportedUpdateReady = ready;
+  void api.setUpdateReady(ready).catch(() => {
+    if (reportedUpdateReady === ready) reportedUpdateReady = null;
+  });
+}
+
+function reportCurrentUpdateReadiness(): void {
+  reportUpdateReady(
+    !dirty && !saving && !locked && !document.querySelector(".modal-backdrop"),
+  );
 }
 
 function skillInstallPrompt(): string {
@@ -1960,17 +2002,23 @@ function showSkillInstallPrompt(): void {
 }
 
 function showAvailableUpdateOnce(state: UpdateState): void {
-  if (state.status !== "available" || !state.available_version) return;
-  if (notifiedUpdateVersion === state.available_version) return;
-  notifiedUpdateVersion = state.available_version;
+  if (!state.available_version) return;
+  const notification = `${state.status}:${state.available_version}`;
+  if (notifiedUpdateVersion === notification) return;
+  if (state.status === "error") {
+    notifiedUpdateVersion = notification;
+    showToast(t("updateFailed"), "warning");
+    return;
+  }
+  if (state.status !== "available" || config.auto_update) return;
+  notifiedUpdateVersion = notification;
   showToast(t("updateAvailable", { version: state.available_version }));
 }
 
 async function refreshUpdateState(force = false): Promise<UpdateState> {
   updateState = await api.checkUpdate(force);
-  document.querySelectorAll(".update-indicator").forEach((element) => {
-    element.classList.toggle("has-update", updateState.status === "available");
-  });
+  config.auto_update = updateState.auto_update;
+  syncUpdateIndicators();
   const updateButton = document.querySelector<HTMLElement>(".update-button");
   updateButton?.setAttribute("aria-label", updateButtonText());
   updateButton?.setAttribute("title", updateButtonText());
@@ -1979,6 +2027,7 @@ async function refreshUpdateState(force = false): Promise<UpdateState> {
 }
 
 async function renderSettings(): Promise<void> {
+  reportUpdateReady(true);
   const shell = pageShell("", renderHome, false, false);
   const main = document.createElement("main");
   main.className = "settings-page";
@@ -1986,7 +2035,7 @@ async function renderSettings(): Promise<void> {
     <div class="settings-heading">
       <div class="settings-title"><h1>${t("settingsTitle")}</h1><span>v${appVersion}</span></div>
       <div class="settings-actions">
-        <button class="button compact-button update-button update-indicator ${updateState.status === "available" ? "has-update" : ""}" data-action="update" aria-label="${updateButtonText()}" title="${updateButtonText()}">${icon("update")}<span class="update-dot" aria-hidden="true"></span></button>
+        <button class="button compact-button update-button update-indicator ${updateNeedsAttention() ? "has-update" : ""}" data-action="update" aria-label="${updateButtonText()}" title="${updateButtonText()}">${icon("update")}<span class="update-dot" aria-hidden="true"></span></button>
         <button class="button compact-button github-button" data-action="github" aria-label="${t("openGithub")}" title="${t("openGithub")}">${icon("github")}</button>
       </div>
     </div>
@@ -2001,6 +2050,12 @@ async function renderSettings(): Promise<void> {
       <div><label for="autostart">${t("autostart")}</label></div>
       <input id="autostart" type="checkbox" ${config.autostart ? "checked" : ""} />
     </section>
+    ${!["store", "unsupported"].includes(updateState.status) ? `
+      <section class="setting-card toggle-row">
+        <div><label for="auto-update">${t("autoUpdate")}</label><p>${t("autoUpdateDescription")}</p></div>
+        <input id="auto-update" type="checkbox" ${config.auto_update ? "checked" : ""} />
+      </section>` : updateState.status === "store" ? `
+      <section class="setting-card"><label>${t("storeManagedUpdates")}</label><p>${t("storeManagedUpdatesDescription")}</p></section>` : ""}
     <section class="setting-card">
       <label>${t("markdownPath")}</label>
       <div class="path-row"><input type="text" readonly value="${escapeHtml(config.save_dir)}" /><button class="button" data-action="browse">${t("change")}</button><button class="button" data-action="open-directory">${t("open")}</button></div>
@@ -2052,7 +2107,7 @@ async function renderSettings(): Promise<void> {
   });
   const updateButton = main.querySelector<HTMLButtonElement>('[data-action="update"]')!;
   updateButton.addEventListener("click", async () => {
-    const installingAvailableUpdate = updateState.status === "available";
+    const installingAvailableUpdate = ["available", "error"].includes(updateState.status);
     updateButton.disabled = true;
     try {
       if (updateState.status === "store") {
@@ -2060,7 +2115,7 @@ async function renderSettings(): Promise<void> {
         showSettingsStatus(t("storeOpened"));
         return;
       }
-      if (updateState.status === "available") {
+      if (["available", "error"].includes(updateState.status)) {
         const installedVersion = updateState.available_version;
         updateButton.setAttribute("aria-label", t("downloadingUpdate"));
         updateButton.setAttribute("title", t("downloadingUpdate"));
@@ -2100,9 +2155,7 @@ async function renderSettings(): Promise<void> {
     } finally {
       updateButton.classList.remove("is-checking");
       updateButton.classList.remove("is-downloading");
-      document.querySelectorAll(".update-indicator").forEach((element) => {
-        element.classList.toggle("has-update", updateState.status === "available");
-      });
+      syncUpdateIndicators();
       updateButton.setAttribute("aria-label", updateButtonText());
       updateButton.setAttribute("title", updateButtonText());
       updateButton.disabled = false;
@@ -2137,6 +2190,23 @@ async function renderSettings(): Promise<void> {
       showError(error);
     } finally {
       autostartToggle.disabled = false;
+    }
+  });
+  const autoUpdateToggle = main.querySelector<HTMLInputElement>("#auto-update");
+  autoUpdateToggle?.addEventListener("change", async () => {
+    const previous = config.auto_update;
+    const next = autoUpdateToggle.checked;
+    if (next === previous) return;
+    autoUpdateToggle.disabled = true;
+    try {
+      config.auto_update = await api.setAutoUpdate(next);
+      updateState.auto_update = config.auto_update;
+      syncUpdateIndicators();
+    } catch (error) {
+      autoUpdateToggle.checked = previous;
+      showError(error);
+    } finally {
+      autoUpdateToggle.disabled = false;
     }
   });
   shell.append(main);
@@ -2188,6 +2258,7 @@ async function start(): Promise<void> {
   api = await connectApi();
   const bootstrap = await api.bootstrap();
   config = bootstrap.config;
+  config.auto_update ??= true;
   config.pinned_notes ??= [];
   windowRole = bootstrap.window_role;
   setLanguage(config.language);
@@ -2195,6 +2266,7 @@ async function start(): Promise<void> {
   systemFonts = bootstrap.system_fonts;
   appVersion = bootstrap.app_version;
   updateState = bootstrap.update_state;
+  config.auto_update = updateState.auto_update;
   applyEditorAppearance();
   window.addEventListener("keydown", (event) => {
     handleWindowEditorHistoryShortcut(event, editor);
@@ -2228,8 +2300,10 @@ async function start(): Promise<void> {
   }
   if (windowRole === "main") {
     showAvailableUpdateOnce(updateState);
-    void refreshUpdateState(false).catch(() => {});
-    window.setInterval(() => void refreshUpdateState(false).catch(() => {}), 60 * 60 * 1000);
+    if (config.auto_update) void refreshUpdateState(false).catch(() => {});
+    window.setInterval(() => {
+      if (config.auto_update) void refreshUpdateState(false).catch(() => {});
+    }, 60 * 60 * 1000);
   }
   await api.windowReady?.();
 }

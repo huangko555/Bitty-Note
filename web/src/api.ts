@@ -61,6 +61,8 @@ interface PythonApi {
   set_language(language: AppLanguage): Promise<{ language: AppLanguage }>;
   check_update(force: boolean): Promise<UpdateState>;
   install_update(): Promise<UpdateState>;
+  set_auto_update(enabled: boolean): Promise<{ enabled: boolean }>;
+  set_update_ready(ready: boolean): Promise<void>;
   open_project_homepage(): Promise<void>;
   start_window_interaction(region: WindowInteractionRegion): Promise<void>;
   update_window_interaction(): Promise<void>;
@@ -127,6 +129,8 @@ export interface DesktopApi {
   setLanguage(language: AppLanguage): Promise<AppLanguage>;
   checkUpdate(force?: boolean): Promise<UpdateState>;
   installUpdate(): Promise<UpdateState>;
+  setAutoUpdate(enabled: boolean): Promise<boolean>;
+  setUpdateReady(ready: boolean): Promise<void>;
   openProjectHomepage(): Promise<void>;
   startWindowInteraction(region: WindowInteractionRegion): Promise<void>;
   updateWindowInteraction(): Promise<void>;
@@ -207,6 +211,8 @@ function desktopApi(raw: PythonApi): DesktopApi {
     setLanguage: async (language) => (await raw.set_language(language)).language,
     checkUpdate: (force = false) => raw.check_update(force),
     installUpdate: () => raw.install_update(),
+    setAutoUpdate: async (enabled) => (await raw.set_auto_update(enabled)).enabled,
+    setUpdateReady: (ready) => raw.set_update_ready(ready),
     openProjectHomepage: () => raw.open_project_homepage(),
     startWindowInteraction: (region) => raw.start_window_interaction(region),
     updateWindowInteraction: () => raw.update_window_interaction(),
@@ -330,6 +336,7 @@ function browserMock(): DesktopApi {
   });
   let saveDir = "Browser preview (no files are written)";
   let autostart = true;
+  let autoUpdate = true;
   let alwaysOnTop = false;
   let language: AppLanguage = notePreviewEnabled || homePreviewEnabled ? "zh-CN" : "en";
   let textHighlightColor: TextHighlightColor = "red";
@@ -373,14 +380,19 @@ function browserMock(): DesktopApi {
         heading_list_highlight: true,
         editor_highlight_color: "#456FC4",
         text_highlight_color: textHighlightColor,
+        auto_update: autoUpdate,
         last_update_check_ms: null,
         available_version: null,
+        downloaded_update_version: null,
         pending_update_version: null,
+        automatic_update_error_version: null,
       },
       notes: summary(notes),
       system_fonts: ["Microsoft YaHei", "DengXian", "SimSun", "KaiTi"],
-      app_version: "1.8.2",
-      update_state: { status: "unsupported", available_version: null },
+      app_version: "1.9.0",
+      update_state: updateDemoEnabled
+        ? { status: "idle", available_version: null, auto_update: autoUpdate }
+        : { status: "unsupported", available_version: null, auto_update: false },
       update_result: null,
       window_role: notePreviewEnabled ? "note" : "main",
       initial_note: notePreviewEnabled ? notes[0]?.name ?? null : null,
@@ -527,20 +539,25 @@ function browserMock(): DesktopApi {
       return language;
     },
     checkUpdate: async (force = false) => {
-      if (!updateDemoEnabled) return { status: "unsupported", available_version: null };
-      if (!force) return { status: "idle", available_version: null };
+      if (!updateDemoEnabled) return { status: "unsupported", available_version: null, auto_update: false };
+      if (!force) return { status: "idle", available_version: null, auto_update: autoUpdate };
       await demoDelay(1_200);
       demoUpdateAvailable = true;
-      return { status: "available", available_version: "1.2.0" };
+      return { status: "available", available_version: "1.2.0", auto_update: autoUpdate };
     },
     installUpdate: async () => {
       if (!updateDemoEnabled || !demoUpdateAvailable) {
-        return { status: "unsupported", available_version: null };
+        return { status: "unsupported", available_version: null, auto_update: false };
       }
       await demoDelay(1_600);
       demoUpdateAvailable = false;
-      return { status: "idle", available_version: null };
+      return { status: "idle", available_version: null, auto_update: autoUpdate };
     },
+    setAutoUpdate: async (enabled) => {
+      autoUpdate = enabled;
+      return autoUpdate;
+    },
+    setUpdateReady: async () => {},
     openProjectHomepage: async () => {
       window.open("https://github.com/huangko555/Bitty-Note", "_blank", "noopener");
     },

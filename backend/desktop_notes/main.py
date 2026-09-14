@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.wintypes
+import json
 import logging
 import sys
 import threading
@@ -21,17 +22,27 @@ from .platform_windows import (
     MIN_WINDOW_WIDTH,
     documents_directory,
     enable_taskbar_minimize,
+    is_session_locked,
     local_config_path,
     move_window_to_physical,
     resize_window_without_showing,
     set_autostart,
 )
+from .updates import UpdateService
 from .window_coordinator import WindowCoordinator, WindowSession
 
 
 AUXILIARY_LOAD_TIMEOUT_SECONDS = 12.0
 SINGLE_INSTANCE_MUTEX_NAME = "Local\\Bitty.Singleton"
 SHOW_MAIN_EVENT_NAME = "Local\\Bitty.ShowMain"
+
+
+def _auto_update_enabled_on_startup() -> bool:
+    try:
+        raw = json.loads(local_config_path().read_text(encoding="utf-8"))
+        return raw.get("auto_update", True) is not False
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return True
 
 
 def _show_window_when_ready(
@@ -331,8 +342,11 @@ def _restore_open_note_windows(
 
 
 def main() -> None:
-    if not is_store_package():
-        velopack.App().run()
+    store_package = is_store_package()
+    if not store_package:
+        velopack.App().set_auto_apply_on_startup(
+            _auto_update_enabled_on_startup()
+        ).run()
     instance_handles = _single_instance()
     if instance_handles is None:
         return
@@ -361,7 +375,17 @@ def main() -> None:
         raise RuntimeError("Web assets are missing. Run npm run build first.")
 
     coordinator = WindowCoordinator(config_store)
-    bridge = DesktopBridge(config_store, coordinator)
+    update_service = UpdateService(
+        config_store,
+        store_package=store_package,
+        runtime=coordinator,
+        session_locked=is_session_locked,
+    )
+    bridge = DesktopBridge(
+        config_store,
+        coordinator,
+        update_service=update_service,
+    )
     window = webview.create_window(
         text("Bitty", "小记"),
         str(index),
@@ -502,6 +526,7 @@ def main() -> None:
             session_id=session_id,
             window_role="note",
             initial_note=note_name,
+            update_service=update_service,
         )
         note_window = webview.create_window(
             Path(note_name).stem,
@@ -567,9 +592,11 @@ def main() -> None:
         if not _restore_open_note_windows(bridge, coordinator):
             coordinator.show_main()
         _watch_for_main_window_requests(activation_event, coordinator)
+        update_service.start()
 
     bridge._set_window_ready_callback(restore_notes_or_show_main)
     webview.start(gui="edgechromium", debug=False, private_mode=True)
+    update_service.stop()
 
     if sys.platform == "win32" and isinstance(instance, int):
         ctypes.windll.kernel32.CloseHandle(instance)

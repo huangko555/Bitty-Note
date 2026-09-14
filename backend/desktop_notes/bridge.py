@@ -45,6 +45,7 @@ class DesktopBridge:
         session_id: str = "main",
         window_role: str = "main",
         initial_note: str | None = None,
+        update_service: UpdateService | None = None,
     ):
         self.config_store = config_store
         self.coordinator = coordinator
@@ -53,7 +54,7 @@ class DesktopBridge:
         self.initial_note = initial_note
         self._repository = NotesRepository(Path(config_store.config.save_dir))
         self._storage = StorageManager(config_store, send_file_to_trash)
-        self._updates = UpdateService(config_store)
+        self._updates = update_service or UpdateService(config_store)
         self._window: webview.Window | None = None
         self._window_interaction = None
         self._lock = threading.RLock()
@@ -110,11 +111,18 @@ class DesktopBridge:
             self._require_window().set_title(text("Bitty", "小记"))
         return {"language": normalized}
 
-    def check_update(self, force: bool = False) -> dict[str, str | None]:
+    def check_update(self, force: bool = False) -> dict[str, str | bool | None]:
         return self._updates.check(force)
 
-    def install_update(self) -> dict[str, str | None]:
+    def install_update(self) -> dict[str, str | bool | None]:
         return self._updates.install()
+
+    def set_auto_update(self, enabled: bool) -> dict[str, bool]:
+        return self._updates.set_auto_update(enabled)
+
+    def set_update_ready(self, ready: bool) -> None:
+        if self.coordinator is not None:
+            self.coordinator.set_update_ready(self.session_id, ready)
 
     def open_project_homepage(self) -> None:
         import webbrowser

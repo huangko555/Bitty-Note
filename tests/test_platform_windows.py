@@ -9,6 +9,51 @@ from desktop_notes import platform_windows
 from desktop_notes.errors import UserVisibleError
 
 
+def test_window_is_on_screen_only_when_visible_and_not_minimized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeHandle:
+        @staticmethod
+        def ToInt64() -> int:
+            return 123
+
+    class FakeUser32:
+        IsWindowVisible = staticmethod(lambda _handle: True)
+        IsIconic = staticmethod(lambda _handle: False)
+
+    window = type(
+        "Window",
+        (),
+        {"native": type("Native", (), {"Handle": FakeHandle()})()},
+    )()
+    monkeypatch.setattr(platform_windows.sys, "platform", "win32")
+    monkeypatch.setattr(
+        platform_windows.ctypes,
+        "windll",
+        type("FakeWindll", (), {"user32": FakeUser32()})(),
+    )
+
+    assert platform_windows.is_window_on_screen(window) is True
+    FakeUser32.IsIconic = staticmethod(lambda _handle: True)
+    assert platform_windows.is_window_on_screen(window) is False
+    FakeUser32.IsIconic = staticmethod(lambda _handle: False)
+    FakeUser32.IsWindowVisible = staticmethod(lambda _handle: False)
+    assert platform_windows.is_window_on_screen(window) is False
+
+
+def test_session_lock_probe_fails_closed_when_state_is_uncertain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(platform_windows.sys, "platform", "win32")
+    monkeypatch.setattr(
+        platform_windows.ctypes,
+        "WinDLL",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("unavailable")),
+    )
+
+    assert platform_windows.is_session_locked() is False
+
+
 def test_window_interaction_scales_the_shared_minimum_for_dpi(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

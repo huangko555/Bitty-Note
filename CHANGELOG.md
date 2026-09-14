@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.9.0 — 2026-09-14
+
+### English
+
+- Added quiet automatic updates for the GitHub edition: updates download in the background and install after Windows has been locked for 2 minutes, after every app window has been minimized or hidden for 30 minutes, or on the next launch.
+- Protected active work during automatic updates: visible-but-unfocused windows never trigger a restart, and installation waits until every note has finished saving.
+- Added an Automatic Updates setting, enabled by default, while keeping manual update checks available when it is turned off; Microsoft Store editions continue to use Store-managed updates.
+- Kept routine update activity unobtrusive, surfacing an indicator only when manual attention is needed or an automatic update fails.
+
+### 简体中文
+
+- GitHub 版新增静默自动更新：更新会在后台下载，并于 Windows 锁屏满 2 分钟、所有应用窗口最小化或隐藏满 30 分钟，或下次启动时安装。
+- 自动更新会保护正在进行的工作：窗口仍可见但未聚焦时绝不触发重启，并且只有所有便签均已保存后才会安装。
+- 新增默认开启的“自动更新”设置；关闭后仍可手动检查更新，Microsoft Store 版继续由商店管理更新。
+- 日常检查和下载保持安静，仅在需要手动处理或自动更新失败时显示提醒。
+
 ## v1.8.2 — 2026-09-11
 
 ### English

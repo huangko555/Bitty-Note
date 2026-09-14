@@ -77,9 +77,12 @@ class AppConfig:
     heading_list_highlight: bool = True
     editor_highlight_color: str = DEFAULT_EDITOR_HIGHLIGHT_COLOR
     text_highlight_color: str = DEFAULT_TEXT_HIGHLIGHT_COLOR
+    auto_update: bool = True
     last_update_check_ms: int | None = None
     available_version: str | None = None
+    downloaded_update_version: str | None = None
     pending_update_version: str | None = None
+    automatic_update_error_version: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -118,6 +121,8 @@ class ConfigStore:
             allowed = {item.name for item in fields(AppConfig)}
             values = {key: value for key, value in raw.items() if key in allowed}
             values.setdefault("save_dir", str(self.default_save_dir))
+            if not isinstance(values.get("auto_update", True), bool):
+                values["auto_update"] = True
             if values.get("language", "en") not in SUPPORTED_LANGUAGES:
                 values["language"] = "en"
             if values.get("window_position_space") not in (None, "logical"):

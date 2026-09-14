@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from desktop_notes import window_coordinator as coordinator_module
 from desktop_notes.config import ConfigStore
 from desktop_notes.i18n import set_language
 from desktop_notes.window_coordinator import WindowCoordinator, WindowSession
@@ -394,3 +395,32 @@ def test_new_note_window_cascades_from_the_window_that_created_it(tmp_path: Path
     windows.open_auxiliary("New.md", "source")
 
     assert created == [(444, 284)]
+
+
+def test_update_restart_requires_every_window_saved_and_out_of_sight(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    windows, main_window = coordinator(tmp_path)
+    note_window = FakeWindow()
+    windows.register(WindowSession(
+        "note", "note", note_window, FakeBridge(), "Travel.md"
+    ))
+    visible = {id(main_window): False, id(note_window): False}
+    monkeypatch.setattr(
+        coordinator_module,
+        "is_window_on_screen",
+        lambda window: visible[id(window)],
+    )
+
+    assert windows.update_restart_state().all_windows_saved is False
+    windows.set_update_ready("main", True)
+    windows.set_update_ready("note", True)
+    assert windows.update_restart_state() == coordinator_module.UpdateRestartState(
+        all_windows_saved=True,
+        all_windows_invisible=True,
+    )
+
+    visible[id(note_window)] = True
+    assert windows.update_restart_state().all_windows_invisible is False
+    assert windows.prepare_update_restart(False) is False
+    assert windows.prepare_update_restart(True) is True

@@ -38,8 +38,9 @@ export type AppLanguage = "en" | "zh-CN";
 export type TextHighlightColor = "red" | "yellow" | "blue" | "green";
 
 export interface UpdateState {
-  status: "idle" | "available" | "unsupported" | "store";
+  status: "idle" | "available" | "error" | "unsupported" | "store";
   available_version: string | null;
+  auto_update: boolean;
 }
 
 export interface UpdateResult {
@@ -65,9 +66,12 @@ export interface AppConfig {
   heading_list_highlight: boolean;
   editor_highlight_color: string;
   text_highlight_color: TextHighlightColor;
+  auto_update: boolean;
   last_update_check_ms: number | null;
   available_version: string | null;
+  downloaded_update_version: string | null;
   pending_update_version: string | null;
+  automatic_update_error_version: string | null;
 }
 
 export interface BootstrapData {
