@@ -42,6 +42,7 @@ class WindowCoordinator:
         self._create_auxiliary: AuxiliaryFactory | None = None
         self._lock = threading.RLock()
         self._main_visible = False
+        self._main_close_request_pending = False
         self._cascade_index = 0
 
     def set_auxiliary_factory(
@@ -262,6 +263,13 @@ class WindowCoordinator:
                     preserve_for_restart = (
                         not forget_note
                         and not self._main_visible
+                        and (
+                            self._main_close_request_pending
+                            or (
+                                len(self._auxiliary_sessions_locked()) == 1
+                                and not self._reservations
+                            )
+                        )
                     )
                     if session.state_saver is not None:
                         session.state_saver.flush()
@@ -271,6 +279,7 @@ class WindowCoordinator:
             else:
                 if session.state_saver is not None:
                     session.state_saver.flush()
+                self._main_close_request_pending = False
                 if self._auxiliary_sessions_locked() or self._reservations:
                     self._main_visible = False
                     hide = session
@@ -293,11 +302,13 @@ class WindowCoordinator:
                 and (self._auxiliary_sessions_locked() or self._reservations)
             ):
                 self._main_visible = False
+                self._main_close_request_pending = True
 
     def show_main(self) -> None:
         with self._lock:
             main = self._main_session_locked()
             self._main_visible = True
+            self._main_close_request_pending = False
         self._reveal_main(main)
 
     def show_main_if_no_auxiliaries(self) -> None:
@@ -306,6 +317,7 @@ class WindowCoordinator:
                 return
             main = self._main_session_locked()
             self._main_visible = True
+            self._main_close_request_pending = False
         self._reveal_main(main)
 
     def _reveal_main(self, main: WindowSession) -> None:
@@ -323,6 +335,7 @@ class WindowCoordinator:
             session = self._sessions.get(session_id)
             if session is not None and session.role == "main":
                 self._main_visible = True
+                self._main_close_request_pending = False
 
     def set_update_ready(self, session_id: str, ready: bool) -> None:
         with self._lock:

@@ -317,6 +317,25 @@ def test_closing_only_one_note_window_removes_it_from_next_startup(
     assert windows.config_store.config.open_note_windows == {}
 
 
+def test_closing_one_of_two_notes_after_hiding_manager_forgets_only_that_note(
+    tmp_path: Path,
+) -> None:
+    windows, _main_window = coordinator(tmp_path)
+    for index, name in enumerate(("Closed.md", "Still Open.md")):
+        windows.register(WindowSession(
+            f"note-{index}", "note", FakeWindow(), FakeBridge(), name
+        ))
+        windows.save_window_state(name, 100 + index * 40, 80, 430, 650)
+
+    windows.begin_close_request("main")
+    windows.close_session("main")
+    windows.close_session("note-0")
+    windows.unregister("note-0")
+
+    restarted = ConfigStore(windows.config_store.path, tmp_path / "notes")
+    assert set(restarted.config.open_note_windows) == {"Still Open.md"}
+
+
 @pytest.mark.parametrize("note_names", [["Only.md"], ["First.md", "Second.md"]])
 def test_application_shutdown_preserves_all_notes_while_manager_is_open(
     tmp_path: Path,

@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.9.1 — 2026-09-14
+
+### English
+
+- Fixed startup restoration so notes closed before exiting no longer reopen; the next launch now restores exactly the note windows that were still open when the app exited.
+
+### 简体中文
+
+- 修复启动恢复会重新打开此前已关闭便签的问题；下次启动现在只恢复退出应用时仍然打开的便签窗口。
+
 ## v1.9.0 — 2026-09-14
 
 ### English

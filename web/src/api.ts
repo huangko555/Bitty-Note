@@ -389,7 +389,7 @@ function browserMock(): DesktopApi {
       },
       notes: summary(notes),
       system_fonts: ["Microsoft YaHei", "DengXian", "SimSun", "KaiTi"],
-      app_version: "1.9.0",
+      app_version: "1.9.1",
       update_state: updateDemoEnabled
         ? { status: "idle", available_version: null, auto_update: autoUpdate }
         : { status: "unsupported", available_version: null, auto_update: false },
