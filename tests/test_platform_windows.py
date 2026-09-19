@@ -9,6 +9,51 @@ from desktop_notes import platform_windows
 from desktop_notes.errors import UserVisibleError
 
 
+class _FakeEvent:
+    def __init__(self) -> None:
+        self.handlers: list[object] = []
+
+    def __iadd__(self, handler: object) -> "_FakeEvent":
+        self.handlers.append(handler)
+        return self
+
+
+class _FakeWebViewCore:
+    def __init__(self) -> None:
+        self.ProcessFailed = _FakeEvent()
+        self.reloads = 0
+
+    def Reload(self) -> None:
+        self.reloads += 1
+
+
+class _FakeWebViewControl:
+    def __init__(self) -> None:
+        self.CoreWebView2 = _FakeWebViewCore()
+        self.invalidations = 0
+        self.updates = 0
+
+    def Invalidate(self) -> None:
+        self.invalidations += 1
+
+    def Update(self) -> None:
+        self.updates += 1
+
+
+def _fake_webview_window() -> tuple[object, object, _FakeWebViewControl]:
+    control = _FakeWebViewControl()
+    native = type(
+        "Native",
+        (),
+        {
+            "Controls": [control],
+            "Activated": _FakeEvent(),
+            "InvokeRequired": False,
+        },
+    )()
+    return type("Window", (), {"native": native})(), native, control
+
+
 def test_window_is_on_screen_only_when_visible_and_not_minimized(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -224,6 +269,64 @@ def test_hidden_window_resize_does_not_request_window_show(
     assert calls[0][-1] & 0x0040 == 0  # SWP_SHOWWINDOW must stay absent.
     assert FakeUser32.GetDpiForWindow.argtypes == [platform_windows.ctypes.wintypes.HWND]
     assert FakeUser32.GetDpiForWindow.restype is platform_windows.ctypes.wintypes.UINT
+
+
+def test_webview_recovery_reloads_an_exited_main_renderer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window, _native, control = _fake_webview_window()
+    monkeypatch.setattr(platform_windows.sys, "platform", "win32")
+
+    assert platform_windows.install_webview_recovery(window) is True
+    assert len(control.CoreWebView2.ProcessFailed.handlers) == 1
+
+    args = type(
+        "Failure",
+        (),
+        {"ProcessFailedKind": "RenderProcessExited", "Reason": "Crashed"},
+    )()
+    control.CoreWebView2.ProcessFailed.handlers[0](control.CoreWebView2, args)
+
+    assert control.CoreWebView2.reloads == 1
+
+
+def test_webview_surface_is_refreshed_when_window_is_activated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window, native, control = _fake_webview_window()
+    monkeypatch.setattr(platform_windows.sys, "platform", "win32")
+
+    assert platform_windows.install_webview_recovery(window) is True
+    assert len(native.Activated.handlers) == 1
+
+    native.Activated.handlers[0](native, object())
+
+    assert control.invalidations == 1
+    assert control.updates == 1
+
+
+def test_webview_recovery_is_installed_once_and_ignores_subframe_exit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window, native, control = _fake_webview_window()
+    monkeypatch.setattr(platform_windows.sys, "platform", "win32")
+
+    assert platform_windows.install_webview_recovery(window) is True
+    assert platform_windows.install_webview_recovery(window) is True
+    assert len(control.CoreWebView2.ProcessFailed.handlers) == 1
+    assert len(native.Activated.handlers) == 1
+
+    args = type(
+        "Failure",
+        (),
+        {
+            "ProcessFailedKind": "CoreWebView2ProcessFailedKind.FrameRenderProcessExited",
+            "Reason": "Crashed",
+        },
+    )()
+    control.CoreWebView2.ProcessFailed.handlers[0](control.CoreWebView2, args)
+
+    assert control.CoreWebView2.reloads == 0
 
 
 def test_open_directory_uses_windows_shell(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

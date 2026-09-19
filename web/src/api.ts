@@ -316,14 +316,56 @@ function browserMock(): DesktopApi {
       },
     ]
     : notePreviewEnabled
-      ? [{
-        name: "便签详情预览.md",
-        content: "# 便签详情\n\n这是用于调整界面的本地预览便签。\n\n- 可以修改背景颜色\n- 可以展开右上角菜单\n- 可以测试标题重命名状态",
-        revision: "preview-note",
-        has_bom: false,
-        newline: "\n",
-        background: "sand",
-      }]
+      ? [
+        {
+          name: "便签详情预览.md",
+          content: "# 便签详情\n\n这是用于调整界面的本地预览便签。\n\n- 可以修改背景颜色\n- 可以展开右上角菜单\n- 可以测试标题重命名状态",
+          revision: "preview-note",
+          has_bom: false,
+          newline: "\n",
+          background: "sand",
+        },
+        {
+          name: "本周计划.md",
+          content: "集中处理本周准备推进的事情。",
+          revision: "preview-note-2",
+          has_bom: false,
+          newline: "\n",
+          background: "mint",
+        },
+        {
+          name: "项目发布检查清单.md",
+          content: "整理发布前需要确认的构建、文档和版本信息。",
+          revision: "preview-note-3",
+          has_bom: false,
+          newline: "\n",
+          background: "sky",
+        },
+        {
+          name: "会议记录.md",
+          content: "记录今天讨论的结论与后续行动。",
+          revision: "preview-note-4",
+          has_bom: false,
+          newline: "\n",
+          background: "default",
+        },
+        {
+          name: "突然想到的产品改进方向.md",
+          content: "先记下来，之后再整理成完整方案。",
+          revision: "preview-note-5",
+          has_bom: false,
+          newline: "\n",
+          background: "lavender",
+        },
+        {
+          name: "购物清单.md",
+          content: "周末需要采购的物品。",
+          revision: "preview-note-6",
+          has_bom: false,
+          newline: "\n",
+          background: "default",
+        },
+      ]
       : [];
   let archivedNotes: OpenedNote[] = [];
   let demoUpdateAvailable = false;
@@ -340,7 +382,7 @@ function browserMock(): DesktopApi {
   let alwaysOnTop = false;
   let language: AppLanguage = notePreviewEnabled || homePreviewEnabled ? "zh-CN" : "en";
   let textHighlightColor: TextHighlightColor = "red";
-  let pinnedNotes: string[] = [];
+  let pinnedNotes: string[] = notePreviewEnabled ? ["本周计划.md"] : [];
   const revision = () => `${Date.now()}-${Math.random()}`;
   const summary = (items: OpenedNote[]) =>
     items.map((note, index) => ({
@@ -389,7 +431,7 @@ function browserMock(): DesktopApi {
       },
       notes: summary(notes),
       system_fonts: ["Microsoft YaHei", "DengXian", "SimSun", "KaiTi"],
-      app_version: "1.9.1",
+      app_version: "1.10.0",
       update_state: updateDemoEnabled
         ? { status: "idle", available_version: null, auto_update: autoUpdate }
         : { status: "unsupported", available_version: null, auto_update: false },

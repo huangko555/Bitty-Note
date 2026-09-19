@@ -74,13 +74,14 @@ describe("note background interaction colors", () => {
     expect(styles).not.toMatch(/\.note-card:hover,[^{]*{[^}]*transform:/);
   });
 
-  it("lays the background choices out in one row below the menu label", () => {
+  it("lays the background choices across the top without a label", () => {
     expect(styles).toMatch(
-      /\.note-window-menu-color-section\s*{[^}]*grid-template-columns:\s*16px 1fr[^}]*row-gap:\s*6px/,
+      /\.note-window-menu-color-section\s*{[^}]*padding:\s*10px 16px/,
     );
     expect(styles).toMatch(
-      /\.note-window-menu-colors\s*{[^}]*grid-column:\s*2[^}]*grid-template-columns:\s*repeat\(8,\s*1fr\)/,
+      /\.note-window-menu-colors\s*{[^}]*display:\s*grid[^}]*grid-template-columns:\s*repeat\(8,\s*1fr\)[^}]*gap:\s*6px/,
     );
+    expect(styles).not.toContain(".note-window-menu-color-label");
     expect(styles).toMatch(
       /\.note-background-option::after\s*{[^}]*inset:\s*0[^}]*border:\s*2px solid transparent/,
     );

@@ -71,6 +71,7 @@ let overlayScrollbarCleanup: (() => void) | null = null;
 let toolbarInteractionCleanup: (() => void) | null = null;
 let noteContextMenuCleanup: (() => void) | null = null;
 let noteWindowMenuCleanup: (() => void) | null = null;
+let noteWindowMenuRefreshRequest = 0;
 let beginTitleRename: (() => void) | null = null;
 let appVersion = "";
 let updateState: UpdateState = { status: "idle", available_version: null, auto_update: true };
@@ -162,6 +163,7 @@ type IconName =
   | "copy"
   | "heading"
   | "highlighter"
+  | "home"
   | "github"
   | "italic"
   | "list"
@@ -195,6 +197,7 @@ function icon(name: IconName): string {
     filePenLine: '<path d="M12 22h6a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v10"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10.4 12.6a2.1 2.1 0 1 1 3 3L8 21l-4 1 1-4Z"/>',
     heading: '<path d="M6 12h12"/><path d="M6 20V4"/><path d="M18 20V4"/>',
     highlighter: '<path class="highlight-icon-fill" d="m14 4 8 8-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4Z"/><path class="highlight-icon-fill" d="m9 11-6 6v3h9l3-3Z"/><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/>',
+    home: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
     github: '<path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3.3-.4 6.8-1.6 6.8-7A5.4 5.4 0 0 0 19.4 4 5 5 0 0 0 19.3.5S18 0 15 2a13.4 13.4 0 0 0-7 0C5-.1 3.7.5 3.7.5A5 5 0 0 0 3.6 4a5.4 5.4 0 0 0-1.4 3.7c0 5.4 3.5 6.5 6.8 7A4.8 4.8 0 0 0 8 18v4"/><path d="M8 19c-3 .9-3-1.5-4-2"/>',
     italic: '<line x1="19" x2="10" y1="4" y2="4"/><line x1="14" x2="5" y1="20" y2="20"/><line x1="15" x2="9" y1="4" y2="20"/>',
     list: '<path d="M3 5h.01"/><path d="M3 12h.01"/><path d="M3 19h.01"/><path d="M8 5h13"/><path d="M8 12h13"/><path d="M8 19h13"/>',
@@ -238,8 +241,7 @@ function titleBar(
   bar.innerHTML = `
     <div class="title-left">
       ${isNoteWindow
-        ? `<button id="window-pin-button" class="window-button no-drag ${config.always_on_top ? "is-active" : ""}" data-action="pin" aria-label="${t("pin")}" aria-pressed="${config.always_on_top}">${icon("pin")}</button>
-           <button class="window-button no-drag quick-create-button" data-action="quick-create" aria-label="${t("createNote")}">${icon("plus")}</button>`
+        ? `<button id="window-pin-button" class="window-button no-drag ${config.always_on_top ? "is-active" : ""}" data-action="pin" aria-label="${t("pin")}" aria-pressed="${config.always_on_top}">${icon("pin")}</button>`
         : back
           ? `<button class="window-button no-drag${backUpdateClass}" data-action="back" aria-label="${t("back")}">${icon("back")}${backUpdateDot}</button>`
           : '<span class="app-mark">Bitty</span>'}
@@ -256,9 +258,6 @@ function titleBar(
   if (!isNoteWindow && back) {
     bar.querySelector('[data-action="back"]')?.addEventListener("click", back);
   }
-  bar.querySelector('[data-action="quick-create"]')?.addEventListener("click", () => {
-    void quickCreateNote();
-  });
   bar.querySelector<HTMLButtonElement>('[data-action="note-menu"]')
     ?.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -450,20 +449,62 @@ function showNoteWindowMenu(
   const actions = document.createElement("div");
   actions.className = "note-window-menu-actions";
   actions.innerHTML = `
-    <button type="button" role="menuitem" data-action="rename">${icon("pencil")}<span>${t("rename")}</span></button>
-    <button type="button" role="menuitem" data-action="show-note-list">${icon("list")}<span>${t("openNoteList")}</span></button>
-    <div class="note-window-menu-separator" role="separator"></div>
+    <button type="button" role="menuitem" data-action="rename">${icon("pencil")}<span>${t("renameCurrentNote")}</span></button>
     <button class="danger" type="button" role="menuitem" data-action="close-note">${icon("close")}<span>${t("closeNoteWindow")}</span></button>`;
-  const colorLabel = document.createElement("div");
-  colorLabel.className = "note-window-menu-color-label";
-  colorLabel.textContent = t("noteBackground");
-  const colorIcon = document.createElement("span");
-  colorIcon.className = "note-window-menu-color-icon";
-  colorIcon.innerHTML = icon("palette");
   const colorSection = document.createElement("div");
   colorSection.className = "note-window-menu-color-section";
-  colorSection.append(colorIcon, colorLabel, colors);
-  menu.append(colorSection, actions);
+  colorSection.append(colors);
+  const separator = document.createElement("div");
+  separator.className = "note-window-menu-separator";
+  separator.setAttribute("role", "separator");
+  const noteSeparator = separator.cloneNode() as HTMLElement;
+  const noteSection = document.createElement("div");
+  noteSection.className = "note-window-menu-note-section";
+  noteSection.innerHTML = `
+    <div class="note-window-menu-note-heading">
+      <span>${t("openNotes")}</span>
+      <button type="button" role="menuitem" data-action="create-note">${icon("plus")}<span>${t("newNoteShort")}</span></button>
+    </div>
+    <div class="note-window-menu-note-list"></div>
+    <button class="note-window-menu-view-all" type="button" role="menuitem" data-action="show-note-list">${icon("home")}<span>${t("openNoteHome")}</span></button>`;
+  const quickNoteList = noteSection.querySelector<HTMLElement>(".note-window-menu-note-list")!;
+  const renderQuickNotes = () => {
+    quickNoteList.replaceChildren();
+    const quickNotes = notes
+      .filter((note) => note.name.toLocaleLowerCase() !== currentNote?.name.toLocaleLowerCase())
+      .slice(0, 5);
+    if (quickNotes.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "note-window-menu-note-empty";
+      empty.textContent = t("noOtherNotes");
+      quickNoteList.append(empty);
+      return;
+    }
+    for (const note of quickNotes) {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "note-window-menu-note-item";
+      item.dataset.noteName = note.name;
+      item.setAttribute("role", "menuitem");
+      item.setAttribute("aria-label", t("openNote", { name: note.name }));
+      const background = noteBackground(note.background);
+      const backgroundAttribute = background === "default" ? "" : ` data-note-background="${background}"`;
+      const indicator = note.pinned
+        ? `<span class="note-window-menu-note-pin"${backgroundAttribute}>${icon("pin")}</span>`
+        : background === "default"
+          ? ""
+          : `<span class="note-window-menu-note-color"${backgroundAttribute} aria-hidden="true"></span>`;
+      item.innerHTML = `
+        <span class="note-window-menu-note-content">
+          <span class="note-window-menu-note-title">${escapeHtml(note.name.replace(/\.md$/i, ""))}</span>
+          <span class="note-window-menu-note-preview">${escapeHtml(note.preview || t("emptyNote"))}</span>
+        </span>
+        ${indicator}`;
+      quickNoteList.append(item);
+    }
+  };
+  renderQuickNotes();
+  menu.append(colorSection, separator, actions, noteSeparator, noteSection);
   shell.append(menu);
   button.classList.add("is-active");
   button.setAttribute("aria-expanded", "true");
@@ -499,11 +540,29 @@ function showNoteWindowMenu(
   window.addEventListener("blur", onBlur);
   window.addEventListener("resize", onBlur);
 
+  quickNoteList.addEventListener("click", async (event) => {
+    const item = event.target instanceof Element
+      ? event.target.closest<HTMLButtonElement>(".note-window-menu-note-item")
+      : null;
+    const noteName = item?.dataset.noteName;
+    if (!noteName || !quickNoteList.contains(item)) return;
+    close();
+    try {
+      if (!(await saveNow())) return;
+      await api.openNoteWindow(noteName);
+    } catch (error) {
+      showError(error);
+    }
+  });
+  noteSection.querySelector('[data-action="create-note"]')?.addEventListener("click", () => {
+    close();
+    void quickCreateNote();
+  });
   actions.querySelector('[data-action="rename"]')?.addEventListener("click", () => {
     close();
     beginTitleRename?.();
   });
-  actions.querySelector('[data-action="show-note-list"]')?.addEventListener("click", async () => {
+  noteSection.querySelector('[data-action="show-note-list"]')?.addEventListener("click", async () => {
     close();
     try {
       if (!(await saveNow())) return;
@@ -516,6 +575,16 @@ function showNoteWindowMenu(
     close();
     void closeApplication();
   });
+  const refreshRequest = ++noteWindowMenuRefreshRequest;
+  void api.listNotes()
+    .then((refreshedNotes) => {
+      if (refreshRequest !== noteWindowMenuRefreshRequest) return;
+      notes = refreshedNotes;
+      if (menu.isConnected) renderQuickNotes();
+    })
+    .catch((error: unknown) => {
+      if (menu.isConnected) showError(error);
+    });
   colors.querySelector<HTMLButtonElement>("button.is-active")?.focus({ preventScroll: true });
 }
 

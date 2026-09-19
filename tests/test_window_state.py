@@ -183,6 +183,33 @@ def test_auxiliary_window_stays_hidden_until_its_note_ui_is_ready() -> None:
     timer.cancel()
 
 
+def test_revealed_auxiliary_refreshes_its_webview_surface(monkeypatch) -> None:
+    calls: list[object] = []
+    window = type("LoadingWindow", (), {"show": lambda _self: calls.append("show")})()
+    bridge = type("LoadingBridge", (), {})()
+    bridge._set_window_ready_callback = lambda callback: setattr(bridge, "ready", callback)
+    monkeypatch.setattr(
+        "desktop_notes.main.install_webview_recovery",
+        lambda target: calls.append(("install-recovery", target)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "desktop_notes.main.refresh_webview_surface",
+        lambda target: calls.append(("refresh-surface", target)),
+        raising=False,
+    )
+
+    timer = _show_window_when_ready(window, bridge, lambda: None, 30)
+    bridge.ready()
+
+    assert calls == [
+        ("install-recovery", window),
+        "show",
+        ("refresh-surface", window),
+    ]
+    timer.cancel()
+
+
 def test_system_shutdown_overrides_pywebview_close_cancellation() -> None:
     shutdown = type("CloseArgs", (), {"CloseReason": "WindowsShutDown", "Cancel": True})()
     user_close = type("CloseArgs", (), {"CloseReason": "UserClosing", "Cancel": True})()

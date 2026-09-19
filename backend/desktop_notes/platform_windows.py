@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.wintypes
+import logging
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -122,6 +123,127 @@ def focus_window(window: object) -> None:
     handle = int(handle_object.ToInt64())
     ctypes.windll.user32.ShowWindowAsync(handle, 9)  # SW_RESTORE
     ctypes.windll.user32.SetForegroundWindow(handle)
+
+
+def _webview_control(native: object) -> object | None:
+    controls = getattr(native, "Controls", None)
+    if controls is None:
+        return None
+    try:
+        candidates = list(controls)
+    except TypeError:
+        count = int(getattr(controls, "Count", 0))
+        candidates = [controls[index] for index in range(count)]
+    for control in candidates:
+        try:
+            if getattr(control, "CoreWebView2", None) is not None:
+                return control
+        except Exception:
+            continue
+    return None
+
+
+def _run_on_native_ui_thread(native: object, action: object) -> None:
+    if not bool(getattr(native, "InvokeRequired", False)):
+        action()  # type: ignore[operator]
+        return
+    from System import Action  # type: ignore[import-not-found]
+
+    native.Invoke(Action(action))
+
+
+def refresh_webview_surface(window: object) -> bool:
+    """Force WinForms and WebView2 to present an already-rendered surface."""
+    if sys.platform != "win32":
+        return False
+    native = getattr(window, "native", None)
+    if native is None:
+        return False
+    refreshed = False
+
+    def refresh() -> None:
+        nonlocal refreshed
+        control = _webview_control(native)
+        if control is None:
+            return
+        control.Invalidate()
+        control.Update()
+        invalidate_parent = getattr(native, "Invalidate", None)
+        if callable(invalidate_parent):
+            invalidate_parent(True)
+        update_parent = getattr(native, "Update", None)
+        if callable(update_parent):
+            update_parent()
+        refreshed = True
+
+    try:
+        _run_on_native_ui_thread(native, refresh)
+    except Exception:
+        logging.exception("Failed to refresh the WebView2 surface.")
+        return False
+    return refreshed
+
+
+def _native_enum_name(value: object) -> str:
+    to_string = getattr(value, "ToString", None)
+    name = str(to_string()) if callable(to_string) else str(value)
+    return name.rsplit(".", 1)[-1]
+
+
+def install_webview_recovery(window: object) -> bool:
+    """Recover a failed renderer and repaint WebView2 when its window reactivates."""
+    if sys.platform != "win32":
+        return False
+    native = getattr(window, "native", None)
+    if native is None:
+        return False
+    installed = False
+
+    def install() -> None:
+        nonlocal installed
+        if bool(getattr(window, "_bitty_webview_recovery_installed", False)):
+            installed = True
+            return
+        control = _webview_control(native)
+        if control is None:
+            return
+        core = control.CoreWebView2
+
+        def on_process_failed(_sender: object, args: object) -> None:
+            kind = _native_enum_name(getattr(args, "ProcessFailedKind", "Unknown"))
+            reason = _native_enum_name(getattr(args, "Reason", "Unknown"))
+            logging.error("WebView2 process failure: kind=%s reason=%s", kind, reason)
+            if kind == "RenderProcessExited":
+                try:
+                    core.Reload()
+                except Exception:
+                    logging.exception("Failed to reload WebView2 after renderer exit.")
+                return
+            # GPU exits are normally self-healing, and an unresponsive renderer
+            # may still recover without discarding unsaved in-memory edits. A
+            # repaint is safe for both and also repairs stale compositor output.
+            if kind in {"GpuProcessExited", "RenderProcessUnresponsive"}:
+                refresh_webview_surface(window)
+
+        def on_activated(_sender: object, _args: object) -> None:
+            refresh_webview_surface(window)
+
+        core.ProcessFailed += on_process_failed
+        native.Activated += on_activated
+        setattr(
+            window,
+            "_bitty_webview_recovery_handlers",
+            (on_process_failed, on_activated),
+        )
+        setattr(window, "_bitty_webview_recovery_installed", True)
+        installed = True
+
+    try:
+        _run_on_native_ui_thread(native, install)
+    except Exception:
+        logging.exception("Failed to install WebView2 recovery handlers.")
+        return False
+    return installed
 
 
 def is_window_on_screen(window: object) -> bool:

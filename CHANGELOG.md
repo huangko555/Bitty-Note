@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.10.0 — 2026-09-19
+
+### English
+
+- Fixed note windows that could intermittently turn blank after opening or remaining idle by repainting WebView2 surfaces when windows are revealed or reactivated and recovering failed renderer processes.
+- Redesigned the note-window menu with background colors at the top, clearer actions, and a compact Quick open list showing up to five other notes with titles, previews, pin state, and background colors; the list now refreshes whenever the menu opens.
+- Moved New note into the Quick open section, added an explicit Open Bitty Note home action, and removed the separate quick-create button from the title bar.
+- Expanded both embedded UI font subsets to cover all current Simplified Chinese interface text, including the automatic-update messages.
+
+### 简体中文
+
+- 修复便签窗口在打开或长时间闲置后偶发全白的问题；窗口显示或重新激活时会刷新 WebView2 画面，并在渲染进程故障后自动恢复。
+- 重新设计便签窗口菜单：背景颜色置于顶部，操作层级更加清晰，并新增紧凑的“快速打开”列表，最多显示五个其他便签的标题、预览、置顶状态和背景颜色；每次打开菜单都会刷新列表。
+- 将“新建便签”移入“快速打开”区域，新增明确的“打开便签主页”操作，并移除标题栏中单独的快速新建按钮。
+- 扩充两份内嵌界面字体子集，覆盖当前全部简体中文界面文字，包括自动更新相关提示。
+
 ## v1.9.1 — 2026-09-14
 
 ### English

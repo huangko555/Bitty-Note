@@ -22,10 +22,12 @@ from .platform_windows import (
     MIN_WINDOW_WIDTH,
     documents_directory,
     enable_taskbar_minimize,
+    install_webview_recovery,
     is_session_locked,
     local_config_path,
     move_window_to_physical,
     resize_window_without_showing,
+    refresh_webview_surface,
     set_autostart,
 )
 from .updates import UpdateService
@@ -68,7 +70,9 @@ def _show_window_when_ready(
             return
         timer.cancel()
         try:
+            install_webview_recovery(target_window)
             target_window.show()
+            refresh_webview_surface(target_window)
         except Exception:
             logging.exception("Failed to reveal a loaded auxiliary window.")
             on_failure()
@@ -589,6 +593,7 @@ def main() -> None:
     coordinator.set_auxiliary_factory(create_auxiliary)
 
     def restore_notes_or_show_main() -> None:
+        install_webview_recovery(window)
         if not _restore_open_note_windows(bridge, coordinator):
             coordinator.show_main()
         _watch_for_main_window_requests(activation_event, coordinator)

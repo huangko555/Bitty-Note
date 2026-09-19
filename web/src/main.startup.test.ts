@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { DesktopApi } from "./api";
-import type { BootstrapData, OpenedNote } from "./types";
+import type { BootstrapData, NoteSummary, OpenedNote } from "./types";
 
 const { connectApi } = vi.hoisted(() => ({
   connectApi: vi.fn(),
@@ -74,7 +74,24 @@ describe("startup chrome visibility", () => {
   });
 
   it("keeps startup chrome hidden without focusing the restored editor", async () => {
+    const staleMenuNotes: NoteSummary[] = [
+      { name: note.name, preview: "当前便签", modified_ms: 2, background: "sky" },
+      { name: "Before rename.md", preview: "旧列表内容", modified_ms: 1 },
+    ];
+    const refreshedMenuNotes: NoteSummary[] = [
+      { name: note.name, preview: "当前便签", modified_ms: 8, background: "sky" },
+      { name: "Pinned.md", preview: "置顶且有颜色", modified_ms: 7, pinned: true, background: "mint" },
+      { name: "Colored.md", preview: "仅设置了颜色", modified_ms: 6, background: "sky" },
+      { name: "Plain.md", preview: "默认样式", modified_ms: 5, background: "default" },
+      { name: "Fourth.md", preview: "第四条", modified_ms: 4 },
+      { name: "Fifth.md", preview: "第五条", modified_ms: 3 },
+      { name: "Hidden.md", preview: "超过五条后隐藏", modified_ms: 2 },
+    ];
     const showMainWindow = vi.fn().mockResolvedValue(undefined);
+    const createdNote = { ...note, name: "Created.md", revision: "created-revision" };
+    const createNote = vi.fn().mockResolvedValue(createdNote);
+    const openNoteWindow = vi.fn().mockResolvedValue("opened");
+    const listNotes = vi.fn().mockResolvedValue(refreshedMenuNotes);
     const saveNote = vi.fn().mockResolvedValue({
       status: "saved",
       revision: "revision-2",
@@ -83,10 +100,13 @@ describe("startup chrome visibility", () => {
       newline: "\n",
     });
     const api = {
-      bootstrap: vi.fn().mockResolvedValue(bootstrap),
+      bootstrap: vi.fn().mockResolvedValue({ ...bootstrap, notes: staleMenuNotes }),
       getAlwaysOnTop: vi.fn().mockResolvedValue(false),
       acquireNote: vi.fn().mockResolvedValue(true),
       openNote: vi.fn().mockResolvedValue(note),
+      listNotes,
+      createNote,
+      openNoteWindow,
       showMainWindow,
       rememberLastNote: vi.fn().mockResolvedValue(undefined),
       saveNote,
@@ -145,17 +165,35 @@ describe("startup chrome visibility", () => {
     appearanceButton.click();
 
     expect(document.querySelector(".title-pin-indicator")).toBeNull();
+    expect(document.querySelector('[data-action="quick-create"]')).toBeNull();
     const noteMenuButton = document.querySelector<HTMLButtonElement>('[data-action="note-menu"]')!;
     noteMenuButton.click();
+    await vi.waitFor(() => expect(listNotes).toHaveBeenCalledOnce());
     const noteMenu = document.querySelector<HTMLElement>(".note-window-menu")!;
     expect(noteMenu).not.toBeNull();
-    expect(noteMenu.querySelector(".note-window-menu-color-label")?.textContent)
-      .toBe("背景颜色");
+    expect(noteMenu.querySelector(".note-window-menu-color-label")).toBeNull();
     expect(noteMenu.querySelectorAll(".note-window-menu-colors .note-background-option"))
       .toHaveLength(8);
-    expect(noteMenu.querySelector('[data-action="rename"]')).not.toBeNull();
-    expect(noteMenu.querySelector('[data-action="show-note-list"]')).not.toBeNull();
+    expect(noteMenu.querySelector(".note-window-menu-note-heading > span")?.textContent)
+      .toBe("快速打开");
+    expect(noteMenu.querySelector('[data-action="create-note"]')?.textContent).toContain("新建");
+    expect(noteMenu.querySelector('[data-action="rename"]')?.textContent)
+      .toContain("重命名此便签");
+    expect(noteMenu.querySelector('[data-action="show-note-list"]')?.textContent)
+      .toContain("打开便签主页");
     expect(noteMenu.querySelector('[data-action="close-note"]')).not.toBeNull();
+    const quickNotes = noteMenu.querySelectorAll<HTMLElement>(".note-window-menu-note-item");
+    expect(quickNotes).toHaveLength(5);
+    expect(noteMenu.textContent).not.toContain("Startup");
+    expect(noteMenu.textContent).not.toContain("Before rename");
+    expect(noteMenu.textContent).not.toContain("Hidden");
+    expect(quickNotes[0]!.querySelector(".note-window-menu-note-pin")?.getAttribute("data-note-background"))
+      .toBe("mint");
+    expect(quickNotes[0]!.querySelector(".note-window-menu-note-color")).toBeNull();
+    expect(quickNotes[1]!.querySelector(".note-window-menu-note-color")?.getAttribute("data-note-background"))
+      .toBe("sky");
+    expect(quickNotes[2]!.querySelector(".note-window-menu-note-pin, .note-window-menu-note-color"))
+      .toBeNull();
     noteMenu.querySelector<HTMLButtonElement>('[data-background="mint"]')!.click();
     expect(shell.dataset.noteBackground).toBe("mint");
     await vi.waitFor(() => expect(saveNote).toHaveBeenCalled());
@@ -165,11 +203,16 @@ describe("startup chrome visibility", () => {
     expect(document.querySelector(".note-window-menu")).toBeNull();
 
     noteMenuButton.click();
+    await vi.waitFor(() => expect(listNotes).toHaveBeenCalledTimes(2));
     expect(document.querySelector(".note-window-menu")).not.toBeNull();
     noteMenuButton.focus();
     noteMenuButton.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
     expect(document.querySelector(".note-window-menu")).toBeNull();
     expect(document.activeElement).not.toBe(noteMenuButton);
+
+    noteMenuButton.click();
+    document.querySelectorAll<HTMLButtonElement>(".note-window-menu-note-item")[0]!.click();
+    await vi.waitFor(() => expect(openNoteWindow).toHaveBeenCalledWith("Pinned.md"));
 
     noteMenuButton.click();
     document.querySelector<HTMLButtonElement>('[data-action="show-note-list"]')!.click();
@@ -186,6 +229,12 @@ describe("startup chrome visibility", () => {
     });
     expect(colorPalette.classList.contains("visible")).toBe(false);
     expect(highlight?.dataset.highlightColor).toBe("red");
+
+    noteMenuButton.click();
+    document.querySelector<HTMLButtonElement>('[data-action="create-note"]')!.click();
+    await vi.waitFor(() => expect(createNote).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(openNoteWindow).toHaveBeenCalledWith(createdNote.name));
+    expect(document.querySelector(".note-window-menu")).toBeNull();
 
     pin.focus();
     window.dispatchEvent(new Event("focus"));
