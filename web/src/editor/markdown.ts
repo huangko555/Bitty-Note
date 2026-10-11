@@ -1,6 +1,8 @@
 import MarkdownIt, {
   type Delimiter,
+  type Env,
   type MarkdownIt as MarkdownItInstance,
+  type StateBlock,
   type StateInline,
 } from "markdown-it";
 import taskLists from "markdown-it-task-lists";
@@ -16,7 +18,6 @@ import {
   isHighlightColor,
 } from "./highlight";
 import { noteSchema } from "./schema";
-import { t } from "../i18n";
 
 const EMPTY_PARAGRAPH_MARKER = "<!-- bitty-empty-line -->";
 const EMPTY_PARAGRAPH_SENTINEL = "BITTY_EMPTY_PARAGRAPH";
@@ -130,46 +131,153 @@ function highlightPlugin(markdown: MarkdownItInstance): void {
   markdown.inline.ruler2.before("fragments_join", "highlight", highlightPostProcess);
 }
 
-const inspector = new MarkdownIt("commonmark", {
-  html: true,
-  linkify: false,
-  typographer: false,
-}).enable("strikethrough").use(highlightPlugin);
-
-const renderer = new MarkdownIt("commonmark", {
+// Start with text and paragraphs. Formats outside the toolbar must never
+// become tokens that can change, discard, or downgrade surrounding content.
+const renderer = new MarkdownIt("zero", {
   html: false,
+  breaks: true,
   linkify: false,
   typographer: false,
 })
-  .enable("strikethrough")
+  .enable(["list", "newline", "escape", "emphasis", "strikethrough"])
   .use(highlightPlugin)
   .use(taskLists, { enabled: true, label: false });
 
-const blockTokens = new Set([
-  "paragraph_open",
-  "paragraph_close",
-  "heading_open",
-  "heading_close",
-  "bullet_list_open",
-  "bullet_list_close",
-  "ordered_list_open",
-  "ordered_list_close",
-  "list_item_open",
-  "list_item_close",
-  "inline",
-]);
+// Explicit paragraphs keep renderer separator newlines out of list text,
+// while preserving the user's spaces and actual line breaks.
+renderer.renderer.rules.paragraph_open = () => "<p>";
+renderer.renderer.rules.paragraph_close = () => "</p>\n";
+renderer.renderer.rules.softbreak = () => "<br>";
+renderer.renderer.rules.hardbreak = () => "<br>";
 
-const inlineTokens = new Set([
-  "text",
-  "strong_open",
-  "strong_close",
-  "em_open",
-  "em_close",
-  "s_open",
-  "s_close",
-  "mark_open",
-  "mark_close",
-]);
+// The task plugin retains the space after "[ ]" as label text. Remove only
+// that syntax separator before the DOM parser preserves the user's spacing.
+renderer.core.ruler.push("note_task_spacing", (state) => {
+  for (const token of state.tokens) {
+    const checkbox = token.children?.[0];
+    const label = token.children?.[1];
+    if (checkbox?.type === "html_inline" && checkbox.content.includes("task-list-item-checkbox")
+      && label?.type === "text") {
+      label.content = label.content.replace(/^ /, "");
+    }
+  }
+});
+
+renderer.block.ruler.before("paragraph", "note_heading", (state, startLine, _endLine, silent) => {
+  const start = state.bMarks[startLine]! + state.tShift[startLine]!;
+  const end = state.eMarks[startLine]!;
+  if (state.sCount[startLine]! - state.blkIndent >= 4) return false;
+  if (state.src[start] !== "#" || (start + 1 < end && !/[ \t]/.test(state.src[start + 1]!))) {
+    return false;
+  }
+  if (silent) return true;
+  state.line = startLine + 1;
+  const opening = state.push("heading_open", "h1", 1);
+  opening.markup = "#";
+  opening.map = [startLine, state.line];
+  const inline = state.push("inline", "", 0);
+  inline.content = state.src.slice(start + 1, end)
+    .replace(/[ \t]+#+[ \t]*$/, "").trim();
+  inline.map = [startLine, state.line];
+  inline.children = [];
+  state.push("heading_close", "h1", -1).markup = "#";
+  return true;
+}, { alt: ["paragraph"] });
+
+interface MarkdownEnvironment extends Env {
+  commentPrefix: string;
+  comments: string[];
+}
+
+function protectComments(markdown: string): { markdown: string; env: MarkdownEnvironment } {
+  let commentPrefix = "<!--BITTY_COMMENT_";
+  while (markdown.includes(commentPrefix)) commentPrefix += "_";
+  const comments: string[] = [];
+  // Protect the whole supported comment before block parsing, so blank lines
+  // and Markdown inside a comment cannot affect the surrounding document.
+  const protectedMarkdown = markdown.replace(/<!--[\s\S]*?-->/g, (comment, offset: number) => {
+    let backslashes = 0;
+    for (let index = offset - 1; index >= 0 && markdown[index] === "\\"; index -= 1) {
+      backslashes += 1;
+    }
+    if (backslashes % 2) return comment;
+    // Only standalone structural markers are metadata. Protect ordinary
+    // comments first so marker examples inside them keep their original source.
+    const linePrefix = markdown.slice(markdown.lastIndexOf("\n", offset - 1) + 1, offset);
+    if (comment === FOLDED_MARKER
+      && /^[ \t]*(?:#[ \t]+|(?:[-+*]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)$/.test(linePrefix)) {
+      return comment;
+    }
+    if (comment === EMPTY_PARAGRAPH_MARKER
+      && /^[ \t]*(?:(?:[-+*]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)?$/.test(linePrefix)
+      && /^[ \t]*(?:\n|$)/.test(markdown.slice(offset + comment.length))) {
+      return comment;
+    }
+    return `${commentPrefix}${comments.push(comment) - 1}-->`;
+  });
+  return { markdown: protectedMarkdown, env: { commentPrefix, comments } };
+}
+
+function commentAt(source: string, position: number, env: MarkdownEnvironment) {
+  if (!source.startsWith(env.commentPrefix, position)) return null;
+  const index = source.slice(position + env.commentPrefix.length).match(/^(\d+)-->/);
+  if (!index) return null;
+  const comment = env.comments[Number(index[1])];
+  if (comment === undefined) return null;
+  return {
+    source: comment,
+    length: env.commentPrefix.length + index[0].length,
+  };
+}
+
+renderer.inline.ruler.before("text", "note_comment", (state, silent) => {
+  const comment = commentAt(state.src, state.pos, state.env as MarkdownEnvironment);
+  if (!comment) return false;
+  if (!silent) state.push("html_comment", "", 0).content = comment.source;
+  state.pos += comment.length;
+  return true;
+});
+
+renderer.block.ruler.before("paragraph", "note_comment", (
+  state: StateBlock, startLine, _endLine, silent,
+) => {
+  const start = state.bMarks[startLine]! + state.tShift[startLine]!;
+  const comment = commentAt(state.src, start, state.env as MarkdownEnvironment);
+  if (!comment || state.src.slice(start + comment.length, state.eMarks[startLine]).trim()) {
+    return false;
+  }
+  if (silent) return true;
+  state.line = startLine + 1;
+  const commentBlock = state.push("html_comment_block", "", 0);
+  commentBlock.content = comment.source;
+  commentBlock.map = [startLine, state.line];
+  return true;
+}, { alt: ["paragraph"] });
+
+for (const [type, tag] of [["html_comment", "span"], ["html_comment_block", "div"]] as const) {
+  renderer.renderer.rules[type] = (tokens, index) =>
+    `<${tag} data-html-comment="${renderer.utils.escapeHtml(tokens[index]!.content)}" hidden></${tag}>`;
+}
+
+function escapeNoteText(text: string, startOfLine: boolean): string {
+  return text.split("\n").map((line, index) => {
+    // Escape only syntax this editor recognizes. Links, backticks and HTML
+    // tags stay literal; escaped comments/highlights must stay literal too.
+    let escaped = line.replace(/[\\*_~]/g, (marker, offset: number) =>
+      marker === "_" && /\w/.test(line[offset - 1] ?? "") && /\w/.test(line[offset + 1] ?? "")
+        ? marker : `\\${marker}`,
+    ).replace(/<!--/g, "\\<!--")
+      .replace(/={2,}(?=\{(?:red|yellow|blue|green)\}|[^\s{=])/g, (markers) =>
+        markers.replace(/=/g, "\\="),
+      );
+    if (startOfLine || index > 0) {
+      escaped = escaped.replace(/^([ \t]*)(#(?=[ \t]|$)|[-+](?=[ \t]|$))/, "$1\\$2")
+        .replace(/^([ \t]*\d+)([.)])(?=[ \t]|$)/, "$1\\$2")
+        .replace(/^\[([ xX])\](?=[ \t])/, "\\[$1]");
+    }
+    return escaped;
+  }).join("\n");
+}
 
 const serializer = new MarkdownSerializer(
   {
@@ -202,12 +310,19 @@ const serializer = new MarkdownSerializer(
       if (node.attrs.collapsed) state.write(`${FOLDED_MARKER} `);
       state.renderContent(node);
     },
-    raw_block(state, node) {
-      state.write(node.textContent);
+    html_comment_block(state, node) {
+      state.text(String(node.attrs.source), false);
       state.closeBlock(node);
     },
-    text(state, node) {
-      state.text(node.text ?? "", true);
+    html_comment(state, node) {
+      state.text(String(node.attrs.source), false);
+    },
+    hard_break(state) {
+      state.write("\n");
+    },
+    text(state, node, parent, index) {
+      const startOfLine = index === 0 || parent.child(index - 1).type === noteSchema.nodes.hard_break;
+      state.text(escapeNoteText(node.text ?? "", startOfLine), false);
     },
   },
   {
@@ -257,31 +372,9 @@ function withoutFinalNewlines(markdown: string): string {
   return markdown.replace(/\n+$/, "");
 }
 
-function supportedSyntax(markdown: string): string | null {
-  markdown = markdown.replaceAll(
-    EMPTY_PARAGRAPH_MARKER,
-    EMPTY_PARAGRAPH_SENTINEL,
-  );
-  if (/^\s*\|?.+\|.+\n\s*\|?\s*:?-{3,}/m.test(markdown)) {
-    return t("markdownTable");
-  }
-
-  const tokens = inspector.parse(markdown, {});
-  for (const token of tokens) {
-    if (!blockTokens.has(token.type)) return t("markdownUnsupportedBlock", { type: token.type });
-    if (token.type === "heading_open" && token.tag !== "h1") return t("markdownLowerHeading");
-    if (token.type === "inline") {
-      for (const child of token.children ?? []) {
-        if (!inlineTokens.has(child.type)) return t("markdownUnsupportedInline", { type: child.type });
-      }
-    }
-  }
-  return null;
-}
-
-function topLevelSourceBlocks(markdown: string): Array<string | null> {
+function topLevelSourceBlocks(markdown: string, env: MarkdownEnvironment): Array<string | null> {
   const lines = markdown.split("\n");
-  const ranges = inspector.parse(markdown, {})
+  const ranges = renderer.parse(markdown, env)
     .filter((token) => token.level === 0 && token.map)
     .map((token) => ({ range: token.map as [number, number], type: token.type }));
   const uniqueRanges = ranges.filter(({ range: [start, end] }, index) =>
@@ -325,12 +418,13 @@ function topLevelSourceBlocks(markdown: string): Array<string | null> {
   return blocks;
 }
 
-function parseRenderedBlock(markdown: string): ProseMirrorNode[] {
+function parseRenderedBlock(markdown: string, env: MarkdownEnvironment): ProseMirrorNode[] {
   const container = document.createElement("div");
   container.innerHTML = renderer.render(
-    markdown.replaceAll(EMPTY_PARAGRAPH_MARKER, EMPTY_PARAGRAPH_SENTINEL),
+    markdown,
+    env,
   );
-  const parsed = ProseMirrorDOMParser.fromSchema(noteSchema).parse(container);
+  const parsed = ProseMirrorDOMParser.fromSchema(noteSchema).parse(container, { preserveWhitespace: true });
   const restoreMetadata = (node: ProseMirrorNode): ProseMirrorNode => {
     if (
       node.type === noteSchema.nodes.paragraph
@@ -412,7 +506,12 @@ export function serializeMarkdown(doc: ProseMirrorNode): string {
 }
 
 export function parseMarkdown(source: string): MarkdownParseResult {
-  const markdown = protectFoldedMarkers(normalizeNewlines(source));
+  const protectedSource = protectComments(normalizeNewlines(source));
+  const env = protectedSource.env;
+  const markdown = protectFoldedMarkers(protectedSource.markdown).replace(
+    /^([ \t]*(?:(?:[-+*]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)?)<!-- bitty-empty-line -->[ \t]*$/gm,
+    "$1" + EMPTY_PARAGRAPH_SENTINEL,
+  );
   if (!markdown) {
     return {
       mode: "wysiwyg",
@@ -422,21 +521,17 @@ export function parseMarkdown(source: string): MarkdownParseResult {
   }
 
   const nodes: ProseMirrorNode[] = [];
-  for (const block of topLevelSourceBlocks(markdown)) {
+  for (const block of topLevelSourceBlocks(markdown, env)) {
     if (block === null) {
       nodes.push(noteSchema.nodes.paragraph.create());
       continue;
     }
-    if (supportedSyntax(block)) {
-      nodes.push(
-        noteSchema.nodes.raw_block.create(
-          null,
-          block ? noteSchema.text(block) : undefined,
-        ),
-      );
-    } else {
-      nodes.push(...parseRenderedBlock(block));
-    }
+    nodes.push(...parseRenderedBlock(block, env));
+  }
+  // ProseMirror uses AllSelection when no editable textblock exists. Keep a
+  // place to type so a comment-only note does not lose its comments on input.
+  if (nodes.length && nodes.every((node) => node.type === noteSchema.nodes.html_comment_block)) {
+    nodes.push(noteSchema.nodes.paragraph.create());
   }
   const parsedDoc = noteSchema.topNodeType.createAndFill(null, nodes)
     ?? noteSchema.topNodeType.createAndFill()!;

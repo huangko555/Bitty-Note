@@ -1,7 +1,7 @@
 import { TextSelection } from "prosemirror-state";
 import { type EditorView } from "prosemirror-view";
 
-const TEXTBLOCK_SELECTOR = "p, h1, .raw-markdown-block";
+const TEXTBLOCK_SELECTOR = "p, h1";
 const pendingRecovery = new WeakMap<EditorView, number>();
 
 export function recoverClickedTextblockSelection(

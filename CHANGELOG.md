@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.10.1 — 2026-10-11
+
+### English
+
+- Fixed task lists and highlights disappearing after reopening notes containing unsupported Markdown or HTML tags. Rendering now recognizes supported toolbar formats and displays other syntax as plain text.
+- Preserved hidden HTML comments, escaped text, and ordinary line breaks through edits and saves, while retaining existing front matter and fold markers.
+
+### 简体中文
+
+- 修复便签包含不支持的 Markdown 语法或 HTML 标签时，重新打开后任务列表和高亮失效的问题；改为只识别工具栏支持的格式，其余语法显示原文。
+- 编辑和保存时保留隐藏的 HTML 注释、转义文本和普通换行，并继续保留现有 front matter 与折叠元数据。
+
 ## v1.10.0 — 2026-09-19
 
 ### English
