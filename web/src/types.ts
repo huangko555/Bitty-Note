@@ -83,6 +83,7 @@ export interface BootstrapData {
   update_result: UpdateResult | null;
   window_role: "main" | "note";
   initial_note: string | null;
+  initial_note_data?: OpenedNote | null;
 }
 
 export interface MigrationResult {

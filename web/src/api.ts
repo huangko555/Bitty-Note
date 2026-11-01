@@ -10,7 +10,8 @@ import { t } from "./i18n";
 
 interface PythonApi {
   bootstrap(): Promise<BootstrapData>;
-  window_ready(): Promise<void>;
+  window_ready(noteName: string | null): Promise<void>;
+  window_failed(stage: string): Promise<boolean>;
   list_notes(): Promise<BootstrapData["notes"]>;
   list_archived_notes(): Promise<BootstrapData["notes"]>;
   create_note(name: string): Promise<OpenedNote>;
@@ -92,7 +93,8 @@ declare global {
 
 export interface DesktopApi {
   bootstrap(): Promise<BootstrapData>;
-  windowReady(): Promise<void>;
+  windowReady(noteName?: string | null): Promise<void>;
+  windowFailed(stage: string): Promise<boolean>;
   listNotes(): Promise<BootstrapData["notes"]>;
   listArchivedNotes(): Promise<BootstrapData["notes"]>;
   createNote(name: string): Promise<OpenedNote>;
@@ -143,7 +145,8 @@ export interface DesktopApi {
 function desktopApi(raw: PythonApi): DesktopApi {
   return {
     bootstrap: () => raw.bootstrap(),
-    windowReady: () => raw.window_ready(),
+    windowReady: (noteName = null) => raw.window_ready(noteName),
+    windowFailed: (stage) => raw.window_failed(stage),
     listNotes: () => raw.list_notes(),
     listArchivedNotes: () => raw.list_archived_notes(),
     createNote: (name) => raw.create_note(name),
@@ -431,7 +434,7 @@ function browserMock(): DesktopApi {
       },
       notes: summary(notes),
       system_fonts: ["Microsoft YaHei", "DengXian", "SimSun", "KaiTi"],
-      app_version: "1.10.1",
+      app_version: "1.10.2",
       update_state: updateDemoEnabled
         ? { status: "idle", available_version: null, auto_update: autoUpdate }
         : { status: "unsupported", available_version: null, auto_update: false },
@@ -440,6 +443,7 @@ function browserMock(): DesktopApi {
       initial_note: notePreviewEnabled ? notes[0]?.name ?? null : null,
     }),
     windowReady: async () => {},
+    windowFailed: async () => false,
     listNotes: async () => summary([...notes].sort((left, right) => {
       const leftPinned = pinnedNotes.some((item) => item.toLocaleLowerCase() === left.name.toLocaleLowerCase());
       const rightPinned = pinnedNotes.some((item) => item.toLocaleLowerCase() === right.name.toLocaleLowerCase());
@@ -494,7 +498,7 @@ function browserMock(): DesktopApi {
     requestNoteRename: async () => "available",
     openNote: async (name) => {
       const note = notes.find((item) => item.name === name);
-      if (!note) throw new Error(t("missingTitle"));
+      if (!note) throw Object.assign(new Error(t("missingTitle")), { name: "NoteNotFoundError" });
       return { ...note };
     },
     saveNote: async (note, content) => {
@@ -621,20 +625,24 @@ export async function connectApi(): Promise<DesktopApi> {
   const initialApi = getNativeApi();
   if (initialApi) return desktopApi(initialApi);
   if (import.meta.env.DEV) return browserMock();
-  await new Promise<void>((resolve) => {
-    // WebView2 can take a few seconds to inject the native bridge on a cold
-    // start. Keep the loading view alive long enough to avoid falling back to
-    // browser preview mode inside the packaged application.
-    const finish = () => {
+  await new Promise<void>((resolve, reject) => {
+    let finished = false;
+    const finish = (ready: boolean) => {
+      if (finished) return;
+      finished = true;
       window.clearInterval(poll);
       window.clearTimeout(timeout);
-      resolve();
+      window.removeEventListener("pywebviewready", check);
+      if (ready) resolve();
+      else reject(new Error(t("noteWindowLoadFailed")));
     };
-    const poll = window.setInterval(() => {
-      if (getNativeApi()) finish();
-    }, 25);
-    const timeout = window.setTimeout(finish, 5_000);
+    const check = () => { if (getNativeApi()) finish(true); };
+    const poll = window.setInterval(check, 25);
+    const timeout = window.setTimeout(() => finish(false), 5_000);
+    window.addEventListener("pywebviewready", check);
+    check();
   });
   const readyApi = getNativeApi();
-  return readyApi ? desktopApi(readyApi) : browserMock();
+  if (!readyApi) throw new Error(t("noteWindowLoadFailed"));
+  return desktopApi(readyApi);
 }

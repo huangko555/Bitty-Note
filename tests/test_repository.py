@@ -283,3 +283,61 @@ def test_legacy_archive_is_merged_without_overwriting(tmp_path: Path) -> None:
     assert not legacy_archive.exists()
     assert (archive / "记录.md").read_text(encoding="utf-8") == "新目录"
     assert (archive / "记录 (2).md").read_text(encoding="utf-8") == "旧目录"
+
+
+def test_unchanged_note_summaries_do_not_reread_every_file(tmp_path, monkeypatch):
+    repository = NotesRepository(tmp_path)
+    note = repository.create_note("Cache")
+    original_read = Path.read_bytes
+    reads = []
+    def read(path):
+        reads.append(path.name)
+        return original_read(path)
+    monkeypatch.setattr(Path, "read_bytes", read)
+    assert repository.list_notes() == repository.list_notes()
+    assert reads == [note.name]
+    (tmp_path / note.name).write_text("updated preview", encoding="utf-8")
+    assert repository.list_notes()[0].preview == "updated preview"
+    assert reads == [note.name, note.name]
+
+
+def test_summary_cache_retries_transient_reads_without_metadata_changes(tmp_path, monkeypatch):
+    repository = NotesRepository(tmp_path)
+    (tmp_path / "Retry.md").write_text("readable content", encoding="utf-8")
+    read = Path.read_bytes
+    calls = []
+    def sometimes_locked(path):
+        calls.append(path)
+        if len(calls) == 1:
+            raise PermissionError("temporarily locked")
+        return read(path)
+    monkeypatch.setattr(Path, "read_bytes", sometimes_locked)
+    assert repository.list_notes()[0].preview != "readable content"
+    assert repository.list_notes()[0].preview == "readable content"
+    assert len(calls) == 2
+
+
+def test_listing_skips_a_file_deleted_during_the_scan(tmp_path, monkeypatch):
+    repository = NotesRepository(tmp_path)
+    (tmp_path / "Kept.md").write_text("kept", encoding="utf-8")
+    disappearing = tmp_path / "Disappearing.md"
+    disappearing.write_text("removed during read", encoding="utf-8")
+    read = Path.read_bytes
+    def remove_during_read(path):
+        if path == disappearing:
+            path.unlink()
+        return read(path)
+    monkeypatch.setattr(Path, "read_bytes", remove_during_read)
+    assert [note.name for note in repository.list_notes()] == ["Kept.md"]
+
+
+def test_missing_note_errors_are_distinct_from_temporary_access_errors(tmp_path, monkeypatch):
+    from desktop_notes.errors import NoteNotFoundError
+    repository = NotesRepository(tmp_path)
+    with pytest.raises(NoteNotFoundError):
+        repository.open_note("Missing.md")
+    (tmp_path / "Locked.md").write_text("content", encoding="utf-8")
+    monkeypatch.setattr(Path, "read_bytes", lambda _path: (_ for _ in ()).throw(PermissionError("locked")))
+    with pytest.raises(UserVisibleError) as error:
+        repository.open_note("Locked.md")
+    assert not isinstance(error.value, NoteNotFoundError)

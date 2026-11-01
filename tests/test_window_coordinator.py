@@ -443,3 +443,66 @@ def test_update_restart_requires_every_window_saved_and_out_of_sight(
     assert windows.update_restart_state().all_windows_invisible is False
     assert windows.prepare_update_restart(False) is False
     assert windows.prepare_update_restart(True) is True
+
+
+def test_update_cannot_restart_while_a_note_is_still_loading(tmp_path, monkeypatch):
+    windows, _main = coordinator(tmp_path)
+    child = FakeWindow()
+    windows.register(WindowSession("note", "note", child, FakeBridge(), "Pending.md", update_ready=True, loading=True))
+    windows.set_update_ready("main", True)
+    monkeypatch.setattr(coordinator_module, "is_window_on_screen", lambda _window: False)
+    assert windows.update_restart_state().all_windows_saved is False
+    assert windows.prepare_update_restart(False) is False
+    windows.mark_ready("note")
+    assert windows.update_restart_state().all_windows_saved is True
+
+
+def test_close_does_not_hold_coordinator_lock_while_flushing_window_state(tmp_path):
+    import threading
+
+    windows, _main = coordinator(tmp_path)
+    state_lock = threading.Lock()
+    background_started = threading.Event()
+    close_flushing = threading.Event()
+    errors = []
+
+    class StateSaver:
+        def flush(self):
+            close_flushing.set()
+            if not state_lock.acquire(timeout=0.5):
+                raise RuntimeError("window-state lock and coordinator lock are inverted")
+            state_lock.release()
+        def stop(self):
+            pass
+
+    child = FakeWindow()
+    windows.register(WindowSession("note", "note", child, FakeBridge(), "Note.md", StateSaver()))
+    def background_save():
+        with state_lock:
+            background_started.set()
+            assert close_flushing.wait(2)
+            windows.note_name("note")
+    def close():
+        try:
+            windows.close_session("note")
+        except Exception as error:
+            errors.append(error)
+    background = threading.Thread(target=background_save)
+    background.start()
+    assert background_started.wait(2)
+    closer = threading.Thread(target=close)
+    closer.start()
+    closer.join(2)
+    background.join(2)
+    assert not closer.is_alive() and not background.is_alive()
+    assert errors == []
+    assert child.destroyed == 1
+
+
+def test_renamed_note_is_the_target_for_renderer_recovery(tmp_path):
+    windows, _main = coordinator(tmp_path)
+    bridge = FakeBridge()
+    bridge.initial_note = "Before.md"
+    windows.register(WindowSession("note", "note", FakeWindow(), bridge, "Before.md"))
+    windows.rename_note("note", "Before.md", "After", lambda: SimpleNamespace(name="After.md"))
+    assert bridge.initial_note == "After.md"

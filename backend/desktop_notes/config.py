@@ -109,6 +109,8 @@ class ConfigStore:
             raise ValueError(f"Unknown configuration fields: {sorted(unknown)}")
         with self._lock:
             updated = replace(self._config, **changes)
+            if updated == self._config and self.path.is_file():
+                return self._config
             self._write(updated)
             self._config = updated
             return updated
@@ -118,12 +120,29 @@ class ConfigStore:
             return AppConfig(save_dir=str(self.default_save_dir))
         try:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                raise ValueError("Configuration must be an object")
             allowed = {item.name for item in fields(AppConfig)}
             values = {key: value for key, value in raw.items() if key in allowed}
-            values.setdefault("save_dir", str(self.default_save_dir))
-            if not isinstance(values.get("auto_update", True), bool):
-                values["auto_update"] = True
-            if values.get("language", "en") not in SUPPORTED_LANGUAGES:
+            defaults = AppConfig(save_dir=str(self.default_save_dir))
+            if not isinstance(values.get("save_dir"), str) or not values["save_dir"].strip():
+                values["save_dir"] = defaults.save_dir
+            for name in ("autostart", "always_on_top", "auto_update", "heading_divider", "heading_list_highlight"):
+                if name in values and not isinstance(values[name], bool):
+                    values[name] = getattr(defaults, name)
+            for name in ("window_width", "window_height"):
+                value = values.get(name)
+                if name in values and (not isinstance(value, int) or isinstance(value, bool) or value <= 0):
+                    values[name] = getattr(defaults, name)
+            for name in ("window_x", "window_y", "last_update_check_ms"):
+                value = values.get(name)
+                if value is not None and (not isinstance(value, int) or isinstance(value, bool)):
+                    values[name] = None
+            for name in ("last_note", "available_version", "downloaded_update_version", "pending_update_version", "automatic_update_error_version"):
+                if values.get(name) is not None and not isinstance(values[name], str):
+                    values[name] = None
+            language = values.get("language", "en")
+            if not isinstance(language, str) or language not in SUPPORTED_LANGUAGES:
                 values["language"] = "en"
             if values.get("window_position_space") not in (None, "logical"):
                 values["window_position_space"] = None

@@ -22,6 +22,7 @@ import {
   trackWindowActivity,
 } from "./editor/selection-visibility";
 import { setLanguage, t } from "./i18n";
+import { NoteSession } from "./note-session";
 import {
   isPointerInsideElement,
   shouldBeginTitleBarDrag,
@@ -49,16 +50,21 @@ const app = document.querySelector<HTMLElement>("#app")!;
 prepareForWindowStartup();
 
 let api: DesktopApi;
+let startupStage = "bootstrap";
 let config: AppConfig;
 let notes: NoteSummary[] = [];
-let currentNote: OpenedNote | null = null;
+const noteSession = new NoteSession(
+  (note, content, force) => api.saveNote(note, content, force),
+  (issue) => {
+    if (issue.kind === "conflict") showConflict(issue.result);
+    else if (issue.kind === "missing") showMissing();
+    else showSaveFailure(issue.error);
+  },
+  reportCurrentUpdateReadiness,
+);
 let windowRole: "main" | "note" = "main";
 let editor: EditorController | null = null;
 trackWindowActivity(window, () => editor?.clearSelection());
-let currentContent = "";
-let dirty = false;
-let saving = false;
-let locked = false;
 let saveTimer: number | null = null;
 let archiveCandidate: string | null = null;
 let archiveTimer: number | null = null;
@@ -412,7 +418,7 @@ function showNoteWindowMenu(
     if (releasePointerFocusOnClose) button.blur();
     return;
   }
-  if (!currentNote) return;
+  if (!noteSession.note) return;
 
   const shell = bar.parentElement;
   if (!shell) return;
@@ -432,8 +438,8 @@ function showNoteWindowMenu(
     swatch.dataset.background = option.value;
     swatch.setAttribute("aria-label", t(option.label));
     swatch.setAttribute("role", "menuitemradio");
-    swatch.setAttribute("aria-checked", String(currentNote.background === option.value));
-    swatch.classList.toggle("is-active", currentNote.background === option.value);
+    swatch.setAttribute("aria-checked", String(noteSession.note.background === option.value));
+    swatch.classList.toggle("is-active", noteSession.note.background === option.value);
     swatch.innerHTML = icon("check");
     swatch.addEventListener("click", () => {
       setCurrentNoteBackground(shell, option.value);
@@ -471,7 +477,7 @@ function showNoteWindowMenu(
   const renderQuickNotes = () => {
     quickNoteList.replaceChildren();
     const quickNotes = notes
-      .filter((note) => note.name.toLocaleLowerCase() !== currentNote?.name.toLocaleLowerCase())
+      .filter((note) => note.name.toLocaleLowerCase() !== noteSession.note?.name.toLocaleLowerCase())
       .slice(0, 5);
     if (quickNotes.length === 0) {
       const empty = document.createElement("div");
@@ -763,10 +769,9 @@ function pageShell(
 }
 
 function setCurrentNoteBackground(shell: HTMLElement, background: NoteBackground): void {
-  if (!currentNote || currentNote.background === background) return;
-  currentNote.background = background;
+  if (!noteSession.note || noteSession.note.background === background) return;
+  noteSession.edit({ background });
   shell.dataset.noteBackground = background;
-  dirty = true;
   reportUpdateReady(false);
   scheduleSave();
 }
@@ -874,10 +879,7 @@ async function renderHome(refresh = true): Promise<void> {
   deleteCandidate = null;
   if (deleteTimer !== null) window.clearTimeout(deleteTimer);
   deleteTimer = null;
-  currentNote = null;
-  currentContent = "";
-  dirty = false;
-  locked = false;
+  noteSession.load(null);
   reportUpdateReady(true);
   await api.rememberLastNote(null);
   if (refresh) {
@@ -1129,7 +1131,7 @@ function defaultNewNoteStem(): string {
 }
 
 async function quickCreateNote(): Promise<void> {
-  if (currentNote && !(await saveNow())) return;
+  if (noteSession.note && !(await saveNow())) return;
   try {
     await refreshNotes();
     const created = await api.createNote(availableNoteName(defaultNewNoteStem()));
@@ -1373,28 +1375,27 @@ async function confirmArchive(name: string): Promise<void> {
   }
 }
 
-async function openNote(name: string, showToolbarOnOpen = true): Promise<boolean> {
+async function openNote(name: string, showToolbarOnOpen = true, initialNote?: OpenedNote | null): Promise<boolean> {
   try {
-    if (!(await api.acquireNote(name))) return false;
-    await showNote(await api.openNote(name), showToolbarOnOpen);
+    if (initialNote && initialNote.name.toLowerCase() !== name.toLowerCase()) {
+      throw new Error(t("noteWindowLoadFailed"));
+    }
+    if (!initialNote && !(await api.acquireNote(name))) return false;
+    await showNote(initialNote ?? await api.openNote(name), showToolbarOnOpen);
     return true;
   } catch (error) {
     showError(error);
-    if (windowRole === "note") await api.closeWindow();
+    if (windowRole === "note") throw error;
     else await renderHome();
     return false;
   }
 }
 
 async function showNote(note: OpenedNote, showToolbarOnOpen = true): Promise<void> {
-  currentNote = { ...note, background: noteBackground(note.background) };
-  currentContent = currentNote.content;
-  dirty = false;
-  locked = false;
+  noteSession.load({ ...note, background: noteBackground(note.background) });
   reportUpdateReady(true);
-  await api.rememberLastNote(note.name);
   const shell = pageShell(note.name, null, true, true, renameCurrentNote);
-  shell.dataset.noteBackground = currentNote.background;
+  shell.dataset.noteBackground = noteSession.note!.background;
   const main = document.createElement("main");
   main.className = "note-page";
   main.innerHTML = `<div class="editor-host"></div><div class="format-toolbar" aria-label="${t("formatToolbar")}"></div>`;
@@ -1408,11 +1409,9 @@ async function showNote(note: OpenedNote, showToolbarOnOpen = true): Promise<voi
   );
   host.addEventListener("pointerdown", selectionVisibility.editorPressStarted, true);
   host.addEventListener("mousedown", selectionVisibility.editorPressStarted, true);
-  const created = createEditor(host, currentNote.content, {
+  const created = createEditor(host, noteSession.content, {
     onChange: (markdown) => {
-      if (locked) return;
-      currentContent = markdown;
-      dirty = true;
+      noteSession.edit({ content: markdown });
       reportUpdateReady(false);
       scheduleSave();
     },
@@ -1432,7 +1431,7 @@ async function showNote(note: OpenedNote, showToolbarOnOpen = true): Promise<voi
     if (!noteEditor?.handleDocumentTailPress(event)) return;
     selectionVisibility.show();
   }, true);
-  currentContent = created.snapshot.markdown;
+  noteSession.load(noteSession.note, created.snapshot.markdown);
   if (created.snapshot.mode !== "raw") {
     renderToolbar(toolbar, () => selectionVisibility.focusChanged(false));
   } else {
@@ -1445,6 +1444,7 @@ async function showNote(note: OpenedNote, showToolbarOnOpen = true): Promise<voi
     noteEditor.focus();
     selectionVisibility.show();
   }, 0);
+  await api.rememberLastNote(note.name);
 }
 
 const toolbarItems: { action: EditorAction; icon: IconName; title: Parameters<typeof t>[0] }[] = [
@@ -1484,7 +1484,7 @@ function renderToolbar(toolbar: HTMLElement, onWindowFocusLost: () => void): voi
     button.innerHTML = icon(item.icon);
     button.addEventListener("mousedown", (event) => {
       event.preventDefault();
-      if (locked) return;
+      if (noteSession.locked) return;
       if (item.action === "highlight") editor?.toggleHighlight(config.text_highlight_color);
       else editor?.run(item.action);
     });
@@ -1606,7 +1606,7 @@ function renderToolbar(toolbar: HTMLElement, onWindowFocusLost: () => void): voi
     .forEach((swatch) => {
       swatch.addEventListener("click", () => {
         const color = swatch.dataset.highlightColor as HighlightColor;
-        if (!locked) {
+        if (!noteSession.locked) {
           setPreferredTextHighlightColor(color);
           editor?.applyHighlight(color);
         }
@@ -1845,38 +1845,9 @@ function scheduleSave(): void {
 }
 
 async function saveNow(force = false): Promise<boolean> {
-  if (!currentNote || saving) return !dirty;
-  if (!dirty && !force) return true;
   if (saveTimer !== null) window.clearTimeout(saveTimer);
   saveTimer = null;
-  saving = true;
-  reportUpdateReady(false);
-  const contentToSave = currentContent;
-  try {
-    const result = await api.saveNote(currentNote, contentToSave, force);
-    if (result.status === "saved" || result.status === "unchanged") {
-      if (result.revision) currentNote.revision = result.revision;
-      currentNote.content = contentToSave;
-      dirty = currentContent !== contentToSave;
-      locked = false;
-      if (dirty) scheduleSave();
-      return true;
-    }
-    if (result.status === "conflict") {
-      showConflict(result);
-    } else {
-      showMissing();
-    }
-    locked = true;
-    return false;
-  } catch (error) {
-    locked = true;
-    showSaveFailure(error);
-    return false;
-  } finally {
-    saving = false;
-    reportCurrentUpdateReadiness();
-  }
+  return noteSession.flush(force);
 }
 
 function showConflict(result: SaveResult): void {
@@ -1887,16 +1858,16 @@ function showConflict(result: SaveResult): void {
       {
         label: t("reloadExternal"),
         run: async () => {
-          if (!currentNote || result.external_content === null || result.revision === null) return;
-          currentNote = {
-            ...currentNote,
+          if (!noteSession.note || result.external_content === null || result.revision === null) return;
+          const externalNote = {
+            ...noteSession.note,
             content: result.external_content,
             revision: result.revision,
             has_bom: result.has_bom,
             newline: result.newline,
             background: noteBackground(result.external_background),
           };
-          await showNote(currentNote);
+          await showNote(externalNote);
         },
       },
       { label: t("copyCurrent"), run: copyCurrentContent },
@@ -1904,10 +1875,8 @@ function showConflict(result: SaveResult): void {
         label: t("overwriteExternal"),
         kind: "danger",
         run: async () => {
-          if (!currentNote || result.revision === null) return;
-          currentNote.revision = result.revision;
-          locked = false;
-          dirty = true;
+          if (!noteSession.note || result.revision === null) return;
+          noteSession.resume(result.revision);
           await saveNow(true);
         },
       },
@@ -1923,8 +1892,7 @@ function showMissing(): void {
       {
         label: t("returnHome"),
         run: async () => {
-          dirty = false;
-          locked = false;
+          noteSession.load(null);
           await api.showMainWindow();
           await api.closeWindow();
         },
@@ -1934,9 +1902,9 @@ function showMissing(): void {
         label: t("recreate"),
         kind: "primary",
         run: async () => {
-          if (!currentNote) return;
-          currentNote = await api.recreateNote(currentNote, currentContent);
-          await showNote(currentNote);
+          if (!noteSession.note) return;
+          const recreated = await noteSession.recreate((note, content) => api.recreateNote(note, content));
+          if (recreated && await saveNow()) await showNote(noteSession.note!);
         },
       },
     ],
@@ -1953,8 +1921,7 @@ function showSaveFailure(error: unknown): void {
         label: t("retrySave"),
         kind: "primary",
         run: async () => {
-          locked = false;
-          dirty = true;
+          noteSession.resume();
           await saveNow();
         },
       },
@@ -1963,23 +1930,26 @@ function showSaveFailure(error: unknown): void {
 }
 
 async function copyCurrentContent(): Promise<void> {
-  await navigator.clipboard.writeText(currentContent);
+  await navigator.clipboard.writeText(noteSession.content);
   showToast(t("copied"));
 }
 
 async function renameCurrentNote(requestedName: string): Promise<string | null> {
-  if (!currentNote || !(await saveNow())) return null;
-  const renamed = await api.renameNote(currentNote.name, requestedName);
-  currentNote = renamed;
-  currentContent = renamed.content;
-  dirty = false;
+  const previousContent = noteSession.content;
+  const previousBackground = noteSession.note?.background;
+  const renamed = await noteSession.rename(requestedName, (note, name) => api.renameNote(note.name, name));
+  if (!renamed) return null;
+  if (!noteSession.dirty && !noteSession.locked && (
+    noteSession.content !== previousContent || renamed.background !== previousBackground
+  )) await showNote(renamed, false);
+  if (noteSession.dirty) scheduleSave();
   await api.rememberLastNote(renamed.name);
   return renamed.name;
 }
 
 async function closeApplication(): Promise<void> {
   if (await saveNow()) {
-    await editorPreferenceSave;
+    await Promise.all([editorPreferenceSave, textHighlightColorSave]);
     await api.closeWindow();
   } else {
     await api.cancelClose();
@@ -2035,7 +2005,7 @@ function reportUpdateReady(ready: boolean): void {
 
 function reportCurrentUpdateReadiness(): void {
   reportUpdateReady(
-    !dirty && !saving && !locked && !document.querySelector(".modal-backdrop"),
+    !noteSession.dirty && !noteSession.saving && !noteSession.locked && !document.querySelector(".modal-backdrop"),
   );
 }
 
@@ -2283,27 +2253,21 @@ async function renderSettings(): Promise<void> {
 }
 
 async function checkExternalChange(): Promise<void> {
-  if (!currentNote || saving || locked) return;
   try {
-    const disk = await api.openNote(currentNote.name);
-    if (disk.revision === currentNote.revision) return;
-    if (!dirty) {
+    const disk = await noteSession.refresh((name) => api.openNote(name));
+    if (disk) {
       await showNote(disk);
       showToast(t("externalReloaded"));
-    } else {
-      showConflict({
-        status: "conflict",
-        revision: disk.revision,
-        external_content: disk.content,
-        has_bom: disk.has_bom,
-        newline: disk.newline,
-        external_background: noteBackground(disk.background),
-      });
-      locked = true;
     }
-  } catch {
-    if (dirty) showMissing();
-    else if (windowRole === "note") {
+  } catch (error) {
+    if (!error || typeof error !== "object" || !("name" in error) || error.name !== "NoteNotFoundError") {
+      showError(error);
+      return;
+    }
+    if (noteSession.dirty) {
+      noteSession.block();
+      showMissing();
+    } else if (windowRole === "note") {
       await api.showMainWindow();
       await api.closeWindow();
     } else {
@@ -2340,24 +2304,21 @@ async function start(): Promise<void> {
   window.addEventListener("keydown", (event) => {
     handleWindowEditorHistoryShortcut(event, editor);
   });
-  if (windowRole === "note") await syncAlwaysOnTop();
   window.addEventListener("focus", () => {
     void checkExternalChange();
     if (windowRole === "note") void syncAlwaysOnTop();
     if (document.querySelector(".home-page")) void refreshHomeOnFocus();
   });
+  startupStage = "note";
   let openedInitialNote = false;
   if (windowRole === "note" && bootstrap.initial_note) {
-    try {
-      openedInitialNote = await openNote(bootstrap.initial_note, false);
-    } catch {
-      openedInitialNote = false;
-    }
+    openedInitialNote = await openNote(bootstrap.initial_note, false, bootstrap.initial_note_data);
   }
   if (windowRole === "main") await renderHome();
   if (!openedInitialNote && windowRole === "note") {
     app.innerHTML = `<div class="fatal-error"><h1>${t("startupFailed")}</h1><p>${t("noteWindowLoadFailed")}</p></div>`;
     await api.closeWindow();
+    return;
   }
   if (windowRole === "main" && bootstrap.update_result) {
     showToast(
@@ -2374,9 +2335,11 @@ async function start(): Promise<void> {
       if (config.auto_update) void refreshUpdateState(false).catch(() => {});
     }, 60 * 60 * 1000);
   }
-  await api.windowReady?.();
+  startupStage = "frontend";
+  await api.windowReady?.(noteSession.note?.name ?? null);
 }
 
 void start().catch((error) => {
   app.innerHTML = `<div class="fatal-error"><h1>${t("startupFailed")}</h1><p>${escapeHtml(errorMessage(error))}</p></div>`;
+  if (api?.windowFailed) void api.windowFailed(startupStage).catch(() => {});
 });

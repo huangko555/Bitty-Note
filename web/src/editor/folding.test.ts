@@ -1,4 +1,4 @@
-import { EditorState } from "prosemirror-state";
+import { EditorState, TextSelection } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -114,4 +114,19 @@ describe("folding", () => {
 
     expect(host.scrollTop).toBe(240);
   });
+});
+
+
+it("reuses fold decorations across selection-only updates", () => {
+  const plugin = foldingPlugin();
+  const doc = noteSchema.node("doc", null, [
+    noteSchema.node("heading", { level: 1 }, noteSchema.text("Title")),
+    noteSchema.node("paragraph", null, noteSchema.text("body")),
+  ]);
+  let state = EditorState.create({ schema: noteSchema, doc, plugins: [plugin] });
+  const initial = plugin.props.decorations!.call(plugin, state);
+  state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, 2)));
+  expect(plugin.props.decorations!.call(plugin, state)).toBe(initial);
+  state = state.apply(state.tr.insertText("X"));
+  expect(plugin.props.decorations!.call(plugin, state)).not.toBe(initial);
 });

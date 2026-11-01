@@ -29,6 +29,7 @@ class WindowSession:
     note_name: str | None = None
     state_saver: Any = None
     update_ready: bool = False
+    loading: bool = False
 
 
 class WindowCoordinator:
@@ -61,12 +62,20 @@ class WindowCoordinator:
         if refresh_titles:
             self.refresh_titles()
 
+    def mark_ready(self, session_id: str) -> None:
+        with self._lock:
+            session = self._sessions.get(session_id)
+            if session is not None:
+                session.loading = False
+
     def unregister(self, session_id: str) -> None:
         close_main: WindowSession | None = None
         with self._lock:
             session = self._sessions.pop(session_id, None)
             if session and session.note_name:
-                self._note_owners.pop(self._key(session.note_name), None)
+                key = self._key(session.note_name)
+                if self._note_owners.get(key) == session_id:
+                    self._note_owners.pop(key, None)
             if (
                 session is not None
                 and session.role != "main"
@@ -181,7 +190,9 @@ class WindowCoordinator:
             factory(session_id, name, width, height, x, y, position_space)
         except Exception:
             with self._lock:
-                self._reservations.pop(self._key(name), None)
+                key = self._key(name)
+                if self._reservations.get(key) == session_id:
+                    self._reservations.pop(key, None)
             raise
         return {"status": "opened"}
 
@@ -192,6 +203,8 @@ class WindowCoordinator:
         if owner is None:
             return {"status": "available"}
 
+        if owner.loading:
+            return {"status": "focused"}
         self._focus(owner)
         try:
             owner.window.run_js("window.desktopNotesBeginRename?.()")
@@ -218,6 +231,8 @@ class WindowCoordinator:
                     session = self._sessions[session_id]
                     self._note_owners.pop(self._key(old_name), None)
                     session.note_name = new_name
+                    if session.role == "note":
+                        session.bridge.initial_note = new_name
                     self._note_owners[self._key(new_name)] = session_id
                 self._move_saved_size_locked(old_name, new_name)
         if focus is not None:
@@ -256,7 +271,18 @@ class WindowCoordinator:
         destroy: WindowSession | None = None
         hide: WindowSession | None = None
         with self._lock:
-            session = self._sessions[session_id]
+            session = self._sessions.get(session_id)
+        if session is None:
+            return
+        # The state saver also calls back into this coordinator. Never acquire
+        # its lock while holding ours: the background save uses the reverse order.
+        if session.state_saver is not None:
+            session.state_saver.flush()
+            if session.role != "main":
+                session.state_saver.stop()
+        with self._lock:
+            if self._sessions.get(session_id) is not session:
+                return
             if session.role != "main":
                 destroy = session
                 if session.note_name:
@@ -271,14 +297,9 @@ class WindowCoordinator:
                             )
                         )
                     )
-                    if session.state_saver is not None:
-                        session.state_saver.flush()
-                        session.state_saver.stop()
                     if not preserve_for_restart:
                         self._remove_open_window_locked(session.note_name)
             else:
-                if session.state_saver is not None:
-                    session.state_saver.flush()
                 self._main_close_request_pending = False
                 if self._auxiliary_sessions_locked() or self._reservations:
                     self._main_visible = False
@@ -347,7 +368,7 @@ class WindowCoordinator:
         with self._lock:
             sessions = list(self._sessions.values())
             all_saved = bool(sessions) and not self._reservations and all(
-                session.update_ready for session in sessions
+                session.update_ready and not session.loading for session in sessions
             )
         return UpdateRestartState(
             all_windows_saved=all_saved,
@@ -535,6 +556,8 @@ class WindowCoordinator:
 
     @staticmethod
     def _focus(session: WindowSession) -> None:
+        if session.loading:
+            return
         try:
             focus_window(session.window)
         except Exception:

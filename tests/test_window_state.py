@@ -33,6 +33,7 @@ class FakeEvents:
     def __init__(self) -> None:
         self.moved = FakeEvent()
         self.resized = FakeEvent()
+        self.closed = FakeEvent()
 
 
 class FakeWindow:
@@ -169,9 +170,10 @@ def test_hidden_note_is_resized_without_revealing_it(monkeypatch) -> None:
 def test_auxiliary_window_stays_hidden_until_its_note_ui_is_ready() -> None:
     shown: list[bool] = []
     failed: list[bool] = []
-    window = type("LoadingWindow", (), {"show": lambda _self: shown.append(True)})()
+    window = type("LoadingWindow", (), {"show": lambda _self: shown.append(True), "events": FakeEvents()})()
     bridge = type("LoadingBridge", (), {})()
     bridge._set_window_ready_callback = lambda callback: setattr(bridge, "ready", callback)
+    bridge._set_window_failed_callback = lambda callback: setattr(bridge, "failed", callback)
 
     timer = _show_window_when_ready(window, bridge, lambda: failed.append(True), 30)
     assert shown == []
@@ -185,9 +187,10 @@ def test_auxiliary_window_stays_hidden_until_its_note_ui_is_ready() -> None:
 
 def test_revealed_auxiliary_refreshes_its_webview_surface(monkeypatch) -> None:
     calls: list[object] = []
-    window = type("LoadingWindow", (), {"show": lambda _self: calls.append("show")})()
+    window = type("LoadingWindow", (), {"show": lambda _self: calls.append("show"), "events": FakeEvents()})()
     bridge = type("LoadingBridge", (), {})()
     bridge._set_window_ready_callback = lambda callback: setattr(bridge, "ready", callback)
+    bridge._set_window_failed_callback = lambda callback: setattr(bridge, "failed", callback)
     monkeypatch.setattr(
         "desktop_notes.main.install_webview_recovery",
         lambda target: calls.append(("install-recovery", target)),
@@ -203,7 +206,6 @@ def test_revealed_auxiliary_refreshes_its_webview_surface(monkeypatch) -> None:
     bridge.ready()
 
     assert calls == [
-        ("install-recovery", window),
         "show",
         ("refresh-surface", window),
     ]

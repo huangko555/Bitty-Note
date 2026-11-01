@@ -276,3 +276,20 @@ def test_automatic_download_failure_marks_the_version_and_notifies_windows(
         "auto_update": True,
     }
     assert runtime.notifications == 1
+
+
+def test_disabling_updates_during_final_readiness_check_prevents_restart(tmp_path, monkeypatch):
+    FakeManager.checks = FakeManager.downloads = FakeManager.restarts = 0
+    monkeypatch.setattr(updates.velopack, "HttpSource", lambda _url: object())
+    monkeypatch.setattr(updates.velopack, "UpdateManager", FakeManager)
+    runtime = FakeRuntime(saved=True, invisible=True)
+    clock = FakeClock()
+    service = updates.UpdateService(make_store(tmp_path), runtime=runtime, clock=clock)
+    service.maintain()
+    clock.advance(updates.INVISIBLE_INSTALL_DELAY_SECONDS)
+    def prepare(_allow_visible):
+        service.set_auto_update(False)
+        return True
+    runtime.prepare_update_restart = prepare
+    service.maintain()
+    assert FakeManager.restarts == 0

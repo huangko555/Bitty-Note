@@ -6,6 +6,7 @@ import logging
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from send2trash import send2trash
 
@@ -125,7 +126,7 @@ def focus_window(window: object) -> None:
     ctypes.windll.user32.SetForegroundWindow(handle)
 
 
-def _webview_control(native: object) -> object | None:
+def _webview_control(native: object, *, require_initialized: bool = True) -> object | None:
     controls = getattr(native, "Controls", None)
     if controls is None:
         return None
@@ -136,7 +137,9 @@ def _webview_control(native: object) -> object | None:
         candidates = [controls[index] for index in range(count)]
     for control in candidates:
         try:
-            if getattr(control, "CoreWebView2", None) is not None:
+            if getattr(control, "CoreWebView2", None) is not None or (
+                not require_initialized and hasattr(control, "CoreWebView2InitializationCompleted")
+            ):
                 return control
         except Exception:
             continue
@@ -190,8 +193,13 @@ def _native_enum_name(value: object) -> str:
     return name.rsplit(".", 1)[-1]
 
 
-def install_webview_recovery(window: object) -> bool:
-    """Recover a failed renderer and repaint WebView2 when its window reactivates."""
+def install_webview_recovery(
+    window: object,
+    on_startup_failure: Callable[[str], bool] | None = None,
+) -> bool:
+    """Monitor initialization as well as renderer failures and reactivation."""
+    if on_startup_failure is not None:
+        setattr(window, "_bitty_startup_failure_callback", on_startup_failure)
     if sys.platform != "win32":
         return False
     native = getattr(window, "native", None)
@@ -204,15 +212,41 @@ def install_webview_recovery(window: object) -> bool:
         if bool(getattr(window, "_bitty_webview_recovery_installed", False)):
             installed = True
             return
-        control = _webview_control(native)
+        control = _webview_control(native, require_initialized=False)
         if control is None:
             return
         core = control.CoreWebView2
+
+        def startup_failed(stage: str) -> bool:
+            callback = getattr(window, "_bitty_startup_failure_callback", None)
+            return bool(callback(stage)) if callback is not None else False
+
+        if core is None:
+            if not getattr(window, "_bitty_webview_initialization_handler", None):
+                def on_initialized(_sender: object, args: object) -> None:
+                    if bool(getattr(args, "IsSuccess", False)):
+                        install_webview_recovery(window)
+                    else:
+                        logging.error("WebView2 initialization failed.")
+                        startup_failed("webview")
+
+                control.CoreWebView2InitializationCompleted += on_initialized
+                setattr(window, "_bitty_webview_initialization_handler", on_initialized)
+            installed = True
+            return
+
+        def on_navigation_completed(_sender: object, args: object) -> None:
+            if not bool(getattr(args, "IsSuccess", True)):
+                startup_failed("navigation")
 
         def on_process_failed(_sender: object, args: object) -> None:
             kind = _native_enum_name(getattr(args, "ProcessFailedKind", "Unknown"))
             reason = _native_enum_name(getattr(args, "Reason", "Unknown"))
             logging.error("WebView2 process failure: kind=%s reason=%s", kind, reason)
+            if kind in {
+                "BrowserProcessExited", "RenderProcessExited", "RenderProcessUnresponsive",
+            } and startup_failed("renderer"):
+                return
             if kind == "RenderProcessExited":
                 try:
                     core.Reload()
@@ -229,11 +263,13 @@ def install_webview_recovery(window: object) -> bool:
             refresh_webview_surface(window)
 
         core.ProcessFailed += on_process_failed
+        if hasattr(control, "NavigationCompleted"):
+            control.NavigationCompleted += on_navigation_completed
         native.Activated += on_activated
         setattr(
             window,
             "_bitty_webview_recovery_handlers",
-            (on_process_failed, on_activated),
+            (on_process_failed, on_activated, on_navigation_completed),
         )
         setattr(window, "_bitty_webview_recovery_installed", True)
         installed = True

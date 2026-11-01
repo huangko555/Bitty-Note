@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Callable
 
 import webview
@@ -58,7 +59,11 @@ class DesktopBridge:
         self._window: webview.Window | None = None
         self._window_interaction = None
         self._lock = threading.RLock()
+        self._startup_lock = threading.Lock()
         self._window_ready = False
+        self._window_failed = False
+        self._window_failure_stage: str | None = None
+        self._window_failed_callback: Callable[[str], None] | None = None
         self._window_ready_callback: Callable[[], None] | None = None
         self._always_on_top = False
         self.allow_close = False
@@ -67,17 +72,59 @@ class DesktopBridge:
         self._window = window
 
     def _set_window_ready_callback(self, callback: Callable[[], None]) -> None:
-        with self._lock:
+        with self._startup_lock:
+            if self._window_failed:
+                return
             if not self._window_ready:
                 self._window_ready_callback = callback
                 return
         callback()
 
-    def window_ready(self) -> None:
-        with self._lock:
+    def _set_window_failed_callback(self, callback: Callable[[str], None]) -> None:
+        with self._startup_lock:
+            self._window_failed_callback = callback
+            stage = self._window_failure_stage
+        if stage is not None:
+            callback(stage)
+
+    def _cancel_window_startup(self) -> None:
+        with self._startup_lock:
+            self._window_failed = True
+            self._window_ready_callback = None
+            self._window_failed_callback = None
+
+    def window_failed(self, stage: str = "frontend") -> bool:
+        with self._startup_lock:
+            if self._window_ready or self._window_failed:
+                return False
+            self._window_failed = True
+            self._window_failure_stage = stage if stage in {
+                "frontend", "bootstrap", "note", "navigation", "webview", "renderer", "timeout",
+            } else "frontend"
+            self._window_ready_callback = None
+            callback = self._window_failed_callback
+            self._window_failed_callback = None
+        if callback is not None:
+            callback(self._window_failure_stage)
+        return True
+
+    def window_ready(self, note_name: str | None = None) -> None:
+        with self._startup_lock:
+            if self._window_failed:
+                return
+            if self.window_role == "note" and (
+                not isinstance(note_name, str)
+                or not self.initial_note
+                or note_name.casefold() != self.initial_note.casefold()
+            ):
+                raise UserVisibleError(text(
+                    "The loaded note does not match this window.",
+                    "加载的便签与此窗口不匹配。",
+                ))
             self._window_ready = True
             callback = self._window_ready_callback
             self._window_ready_callback = None
+            self._window_failed_callback = None
         if callback is not None:
             callback()
 
@@ -86,9 +133,21 @@ class DesktopBridge:
             update_result = (
                 self._updates.consume_result() if self.window_role == "main" else None
             )
-            notes = self._ordered_notes()
-            if self.coordinator is not None:
-                self.coordinator.reconcile_saved_sizes([note.name for note in notes])
+            initial_note_data = None
+            if self.window_role == "note":
+                if not self.initial_note:
+                    raise UserVisibleError(text("No note was requested.", "未指定要打开的便签。"))
+                opened_note = self._repository.open_note(self.initial_note)
+                if self.coordinator is not None and not self.coordinator.acquire_note(
+                    self.session_id, opened_note.name
+                ):
+                    raise UserVisibleError(text("This note is already open.", "此便签已在其他窗口打开。"))
+                initial_note_data = opened_note.to_dict()
+                notes = []
+            else:
+                notes = self._ordered_notes()
+                if self.coordinator is not None:
+                    self.coordinator.reconcile_saved_sizes([note.name for note in notes])
             config = self.config_store.config.to_dict()
             config["always_on_top"] = self._always_on_top
             return {
@@ -100,6 +159,7 @@ class DesktopBridge:
                 "update_result": update_result,
                 "window_role": self.window_role,
                 "initial_note": self.initial_note,
+                "initial_note_data": initial_note_data,
             }
 
     def set_language(self, language: str) -> dict[str, str]:
@@ -427,6 +487,15 @@ class DesktopBridge:
         if self._window is None:
             raise UserVisibleError(text("The window isn't ready yet.", "窗口尚未准备完成。"))
         return self._window
+
+
+def javascript_api(bridge: DesktopBridge) -> SimpleNamespace:
+    """Keep pywebview from recursively reflecting configuration, paths and services."""
+    return SimpleNamespace(**{
+        name: getattr(bridge, name)
+        for name, method in vars(DesktopBridge).items()
+        if not name.startswith("_") and name != "attach_window" and callable(method)
+    })
 
 
 class WindowStateSaver:

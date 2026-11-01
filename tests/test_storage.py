@@ -64,3 +64,49 @@ def test_migrate_renames_target_collision_without_overwrite(tmp_path: Path) -> N
 
     assert (target / "记录.md").read_text(encoding="utf-8") == "目标"
     assert (target / "记录 (2).md").read_text(encoding="utf-8") == "来源"
+
+
+def test_migration_keeps_source_edited_after_copy(tmp_path, monkeypatch):
+    source, target = tmp_path / "source", tmp_path / "target"
+    source.mkdir()
+    note = source / "Note.md"
+    note.write_text("copied content", encoding="utf-8")
+    config = ConfigStore(tmp_path / "config.json", source)
+    update = config.update
+
+    def update_and_edit(**changes):
+        result = update(**changes)
+        note.write_text("new content written during migration", encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(config, "update", update_and_edit)
+    result = StorageManager(config, lambda path: path.unlink()).migrate(target)
+    assert note.read_text(encoding="utf-8") == "new content written during migration"
+    assert result.retained_files == (str(note),)
+    assert (target / note.name).read_text(encoding="utf-8") == "copied content"
+
+
+def test_migration_does_not_overwrite_a_target_created_during_copy(tmp_path, monkeypatch):
+    import pytest
+    from desktop_notes import storage
+    from desktop_notes.errors import UserVisibleError
+
+    source, target = tmp_path / "source", tmp_path / "target"
+    source.mkdir()
+    target.mkdir()
+    note = source / "Note.md"
+    note.write_text("source", encoding="utf-8")
+    config = ConfigStore(tmp_path / "config.json", source)
+    copy = storage.shutil.copy2
+
+    def copy_and_create_target(src, destination):
+        result = copy(src, destination)
+        (target / note.name).write_text("concurrent target", encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(storage.shutil, "copy2", copy_and_create_target)
+    with pytest.raises(UserVisibleError):
+        StorageManager(config, lambda path: path.unlink()).migrate(target)
+    assert (target / note.name).read_text(encoding="utf-8") == "concurrent target"
+    assert note.read_text(encoding="utf-8") == "source"
+    assert config.config.save_dir == str(source)

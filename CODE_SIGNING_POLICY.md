@@ -21,7 +21,7 @@ Changes from contributors without write access must be reviewed before they are 
 
 ## Build and release controls
 
-- Official GitHub artifacts must be produced by the public Windows build workflow in `.github/workflows/build-windows.yml` from a tagged source revision.
+- Official GitHub artifacts must be produced by `scripts/publish-github.ps1` from the final reviewed commit. The release tag, published source, and verified artifacts must identify that same revision. The public Windows build workflow provides additional traceable builds.
 - Microsoft Store packages must be built from the same reviewed source revision and use the identity assigned in Partner Center.
 - Product name and version metadata must match the release being signed.
 - Build scripts and release workflows are reviewed as security-sensitive code.

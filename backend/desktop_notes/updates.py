@@ -223,7 +223,7 @@ class UpdateService:
             logging.exception("Automatic update download failed.")
             self._runtime.notify_update_state_changed()
             return
-        if update is None or version is None:
+        if update is None or version is None or not self._config_store.config.auto_update or self._stop.is_set():
             self._reset_opportunity_timers()
             return
         if self._download_notified_version != version:
@@ -257,6 +257,9 @@ class UpdateService:
 
         try:
             with self._lock:
+                if not self._config_store.config.auto_update or self._stop.is_set():
+                    self._reset_opportunity_timers()
+                    return
                 self._apply_downloaded_update_locked(update, version)
         except UserVisibleError:
             logging.exception("Automatic update installation failed.")

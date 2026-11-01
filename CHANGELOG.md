@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.10.2 — 2026-11-01
+
+### English
+
+- Fixed intermittent blank note windows and improved opening speed. Windows now appear only after the requested note is ready, and packaged builds no longer fall back to preview content when initialization fails.
+- Preserved the latest text and background changes when saving, closing, or renaming notes; prevented stale external-read responses from replacing newer edits and kept notes open during temporary file-access failures.
+- Fixed a window-close deadlock, restored renamed notes correctly after renderer recovery, and prevented automatic restarts while notes are loading or automatic updates have been disabled.
+- Protected storage migrations from concurrent source edits and newly created destination files, and made startup tolerate malformed configuration without discarding valid storage settings.
+- Reduced repeated note-preview reads, configuration writes, and rebuilding of fold controls during selection changes.
+
+### 简体中文
+
+- 修复便签窗口偶发白屏并加快打开速度：仅在目标便签内容就绪后显示窗口，正式版初始化失败时不再回退到演示内容。
+- 保存、关闭或重命名便签时保留最新输入和背景颜色，防止过期的外部读取结果覆盖新编辑；文件暂时无法读取时保持便签打开。
+- 修复关闭窗口时的死锁，确保渲染恢复后仍打开重命名后的正确便签，并阻止在便签加载中或已关闭自动更新后自动重启。
+- 存储迁移时保护再次被修改的源文件和新出现的目标文件；配置损坏时保留有效的保存目录等设置，避免无法启动。
+- 减少便签预览的重复读取、配置重复写盘，以及选区变化时折叠控件的重复构建。
+
 ## v1.10.1 — 2026-10-11
 
 ### English

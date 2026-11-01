@@ -253,3 +253,38 @@ def test_invalid_automatic_update_preference_falls_back_to_enabled(tmp_path: Pat
     )
 
     assert ConfigStore(config_path, tmp_path / "fallback").config.auto_update is True
+
+
+@pytest.mark.parametrize("raw", [[], 12, "invalid", {"window_width": "invalid", "save_dir": None}])
+def test_malformed_config_uses_safe_field_defaults(tmp_path, raw):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    config = ConfigStore(path, tmp_path / "notes").config
+    assert config.save_dir == str(tmp_path / "notes")
+    assert config.window_width == 350
+
+
+def test_unchanged_config_updates_do_not_rewrite_the_file(tmp_path, monkeypatch):
+    store = ConfigStore(tmp_path / "config.json", tmp_path / "notes")
+    writes = []
+    write = store._write
+    def record(value):
+        writes.append(value)
+        write(value)
+    monkeypatch.setattr(store, "_write", record)
+    store.update(last_note="Note.md")
+    store.update(last_note="Note.md")
+    store.update(last_note="Note.md")
+    assert len(writes) == 1
+
+
+def test_invalid_optional_config_fields_keep_the_valid_save_directory(tmp_path):
+    directory = str(tmp_path / "existing")
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"save_dir": directory, "language": [], "window_width": True, "autostart": "false", "last_update_check_ms": "invalid"}), encoding="utf-8")
+    config = ConfigStore(path, tmp_path / "fallback").config
+    assert config.save_dir == directory
+    assert config.language == "en"
+    assert config.window_width == 350
+    assert config.autostart is True
+    assert config.last_update_check_ms is None

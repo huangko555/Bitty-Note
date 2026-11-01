@@ -9,7 +9,7 @@ from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 
-from .errors import UserVisibleError
+from .errors import NoteNotFoundError, UserVisibleError
 from .i18n import text as message
 from .models import NoteSummary, OpenedNote, SaveResult
 from .note_document import parse_note_document, render_note_document
@@ -83,64 +83,65 @@ class NotesRepository:
     def __init__(self, root: Path):
         self.root = root.resolve()
         self._lock = threading.RLock()
+        self._summary_cache: dict[Path, tuple[tuple[int, int, int, int], NoteSummary]] = {}
         self.root.mkdir(parents=True, exist_ok=True)
         self._migrate_legacy_archive_directory()
 
     def list_notes(self) -> list[NoteSummary]:
-        notes: list[NoteSummary] = []
-        with self._lock:
-            for entry in os.scandir(self.root):
-                if entry.is_symlink() or not entry.is_file(follow_symlinks=False):
-                    continue
-                if Path(entry.name).suffix.lower() != ".md":
-                    continue
-                try:
-                    data = Path(entry.path).read_bytes()
-                    text, _, _ = _decode_utf8(data, entry.name)
-                    document = parse_note_document(text)
-                    preview = _plain_preview(document.content)
-                    background = document.background
-                except (OSError, UserVisibleError):
-                    preview = message("Couldn't read this file", "无法读取此文件")
-                    background = "default"
-                notes.append(
-                    NoteSummary(
-                        name=entry.name,
-                        preview=preview,
-                        modified_ms=entry.stat(follow_symlinks=False).st_mtime_ns // 1_000_000,
-                        background=background,
-                    )
-                )
-        return sorted(notes, key=lambda note: (-note.modified_ms, note.name.casefold()))
+        return self._list_directory(self.root)
 
     def list_archived_notes(self) -> list[NoteSummary]:
-        archive_dir = self.root / ARCHIVE_DIRECTORY
-        if not archive_dir.is_dir() or archive_dir.is_symlink():
+        archive = self.root / ARCHIVE_DIRECTORY
+        if not archive.is_dir() or archive.is_symlink():
             return []
+        return self._list_directory(archive)
+
+    def _list_directory(self, directory: Path) -> list[NoteSummary]:
         notes: list[NoteSummary] = []
+        seen: set[Path] = set()
         with self._lock:
-            for entry in os.scandir(archive_dir):
-                if entry.is_symlink() or not entry.is_file(follow_symlinks=False):
-                    continue
-                if Path(entry.name).suffix.lower() != ".md":
-                    continue
-                try:
-                    data = Path(entry.path).read_bytes()
-                    text, _, _ = _decode_utf8(data, entry.name)
-                    document = parse_note_document(text)
-                    preview = _plain_preview(document.content)
-                    background = document.background
-                except (OSError, UserVisibleError):
-                    preview = message("Couldn't read this file", "无法读取此文件")
-                    background = "default"
-                notes.append(
-                    NoteSummary(
-                        name=entry.name,
-                        preview=preview,
-                        modified_ms=entry.stat(follow_symlinks=False).st_mtime_ns // 1_000_000,
-                        background=background,
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    try:
+                        if entry.is_symlink() or not entry.is_file(follow_symlinks=False):
+                            continue
+                        if Path(entry.name).suffix.lower() != ".md":
+                            continue
+                        stat = entry.stat(follow_symlinks=False)
+                    except FileNotFoundError:
+                        continue
+                    path = Path(entry.path)
+                    seen.add(path)
+                    signature = (stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size, stat.st_ino)
+                    cached = self._summary_cache.get(path)
+                    if cached is not None and cached[0] == signature:
+                        notes.append(cached[1])
+                        continue
+                    try:
+                        data = path.read_bytes()
+                        text, _, _ = _decode_utf8(data, entry.name)
+                        document = parse_note_document(text)
+                        preview = _plain_preview(document.content)
+                        background = document.background
+                    except FileNotFoundError:
+                        self._summary_cache.pop(path, None)
+                        continue
+                    except (OSError, UserVisibleError):
+                        # Retry transient failures even when the file metadata is unchanged.
+                        self._summary_cache.pop(path, None)
+                        notes.append(NoteSummary(
+                            entry.name, message("Couldn't read this file", "无法读取此文件"),
+                            stat.st_mtime_ns // 1_000_000,
+                        ))
+                        continue
+                    summary = NoteSummary(
+                        entry.name, preview, stat.st_mtime_ns // 1_000_000, background,
                     )
-                )
+                    self._summary_cache[path] = (signature, summary)
+                    notes.append(summary)
+            for path in list(self._summary_cache):
+                if path.parent == directory and path not in seen:
+                    self._summary_cache.pop(path, None)
         return sorted(notes, key=lambda note: (-note.modified_ms, note.name.casefold()))
 
     def create_note(self, requested_name: str) -> OpenedNote:
@@ -361,7 +362,7 @@ class NotesRepository:
         try:
             data = path.read_bytes()
         except FileNotFoundError as error:
-            raise UserVisibleError(message(
+            raise NoteNotFoundError(message(
                 f'The note “{path.name}” no longer exists.',
                 f"记录“{path.name}”已经不存在。",
             )) from error

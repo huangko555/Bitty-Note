@@ -6,14 +6,16 @@ import json
 import logging
 import sys
 import threading
+import time
 from dataclasses import dataclass
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Callable
 
 import webview
 import velopack
 
-from .bridge import DesktopBridge, NoteWindowStateSaver, WindowStateSaver
+from .bridge import DesktopBridge, NoteWindowStateSaver, WindowStateSaver, javascript_api
 from .config import ConfigStore
 from .distribution import is_store_package
 from .i18n import set_language, text
@@ -34,7 +36,7 @@ from .updates import UpdateService
 from .window_coordinator import WindowCoordinator, WindowSession
 
 
-AUXILIARY_LOAD_TIMEOUT_SECONDS = 12.0
+AUXILIARY_LOAD_TIMEOUT_SECONDS = 8.0
 SINGLE_INSTANCE_MUTEX_NAME = "Local\\Bitty.Singleton"
 SHOW_MAIN_EVENT_NAME = "Local\\Bitty.ShowMain"
 
@@ -42,9 +44,23 @@ SHOW_MAIN_EVENT_NAME = "Local\\Bitty.ShowMain"
 def _auto_update_enabled_on_startup() -> bool:
     try:
         raw = json.loads(local_config_path().read_text(encoding="utf-8"))
-        return raw.get("auto_update", True) is not False
+        return not isinstance(raw, dict) or raw.get("auto_update", True) is not False
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return True
+
+
+def _configure_logging() -> None:
+    try:
+        directory = local_config_path().parent / "logs"
+        directory.mkdir(parents=True, exist_ok=True)
+        handler = RotatingFileHandler(
+            directory / "bitty.log", maxBytes=512_000, backupCount=2, encoding="utf-8"
+        )
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        logging.getLogger().addHandler(handler)
+        logging.getLogger().setLevel(logging.INFO)
+    except OSError:
+        logging.basicConfig(level=logging.ERROR)
 
 
 def _show_window_when_ready(
@@ -52,10 +68,13 @@ def _show_window_when_ready(
     target_bridge: DesktopBridge,
     on_failure: Callable[[], None],
     timeout_seconds: float = AUXILIARY_LOAD_TIMEOUT_SECONDS,
+    *,
+    on_ready: Callable[[], None] | None = None,
 ) -> threading.Timer:
-    """Keep a child window hidden until its note UI reports that it is ready."""
+    """Reveal only validated content; close promptly on failure or timeout."""
     completion_lock = threading.Lock()
     completed = False
+    started = time.monotonic()
 
     def finish() -> bool:
         nonlocal completed
@@ -70,24 +89,54 @@ def _show_window_when_ready(
             return
         timer.cancel()
         try:
-            install_webview_recovery(target_window)
             target_window.show()
             refresh_webview_surface(target_window)
+            if on_ready is not None:
+                on_ready()
+            logging.info("Note window ready in %.0f ms.", (time.monotonic() - started) * 1000)
         except Exception:
             logging.exception("Failed to reveal a loaded auxiliary window.")
             on_failure()
 
-    def fail() -> None:
+    def fail(stage: str) -> None:
         if not finish():
             return
-        logging.error("Auxiliary window did not finish loading before the timeout.")
+        timer.cancel()
+        logging.error(
+            "Note window startup failed: stage=%s elapsed_ms=%.0f",
+            stage,
+            (time.monotonic() - started) * 1000,
+        )
         on_failure()
 
-    timer = threading.Timer(timeout_seconds, fail)
+    def cancel() -> None:
+        if finish():
+            timer.cancel()
+            target_bridge._cancel_window_startup()
+
+    timer = threading.Timer(timeout_seconds, lambda: target_bridge.window_failed("timeout"))
     timer.daemon = True
+    target_window.events.closed += cancel
+    target_bridge._set_window_failed_callback(fail)
     target_bridge._set_window_ready_callback(reveal)
     timer.start()
     return timer
+
+
+def _handle_auxiliary_load_failure(
+    coordinator: WindowCoordinator, main_window: object, session_id: str,
+) -> None:
+    # Reveal the manager before unregistering the last child, or the coordinator
+    # would treat the hidden manager as an application that should exit.
+    try:
+        coordinator.show_main()
+    finally:
+        coordinator.close_session(session_id, forget_note=True)
+        coordinator.unregister(session_id)
+    try:
+        main_window.run_js("window.desktopNotesShowAuxiliaryLoadFailure?.()")
+    except Exception:
+        pass
 
 
 class _MONITORINFO(ctypes.Structure):
@@ -356,7 +405,7 @@ def main() -> None:
         return
     instance, activation_event = instance_handles
 
-    logging.basicConfig(level=logging.ERROR)
+    _configure_logging()
     default_notes = documents_directory() / "Bitty-Note"
     config_store = ConfigStore(local_config_path(), default_notes)
     config = config_store.config
@@ -393,7 +442,7 @@ def main() -> None:
     window = webview.create_window(
         text("Bitty", "小记"),
         str(index),
-        js_api=bridge,
+        js_api=javascript_api(bridge),
         width=width,
         height=height,
         x=None,
@@ -535,7 +584,7 @@ def main() -> None:
         note_window = webview.create_window(
             Path(note_name).stem,
             str(index),
-            js_api=note_bridge,
+            js_api=javascript_api(note_bridge),
             width=note_width,
             height=note_height,
             x=note_x,
@@ -559,6 +608,7 @@ def main() -> None:
             note_bridge,
             note_name,
             note_state_saver,
+            loading=True,
         ))
         try:
             wire_window(
@@ -573,15 +623,13 @@ def main() -> None:
             )
 
             def load_failed() -> None:
-                coordinator.show_main()
-                try:
-                    window.run_js("window.desktopNotesShowAuxiliaryLoadFailure?.()")
-                except Exception:
-                    pass
-                coordinator.close_session(session_id, forget_note=True)
-                coordinator.unregister(session_id)
+                _handle_auxiliary_load_failure(coordinator, window, session_id)
 
-            _show_window_when_ready(note_window, note_bridge, load_failed)
+            _show_window_when_ready(
+                note_window, note_bridge, load_failed,
+                on_ready=lambda: coordinator.mark_ready(session_id),
+            )
+            install_webview_recovery(note_window, note_bridge.window_failed)
         except Exception:
             try:
                 coordinator.close_session(session_id, forget_note=True)

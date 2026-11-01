@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [switch]$PreflightOnly
+    [switch]$PreflightOnly,
+    [string]$ArtifactValidationScript
 )
 
 $ErrorActionPreference = 'Stop'
@@ -241,6 +242,16 @@ $fullPackage = Get-Item -LiteralPath $fullPackagePath
 if ($manifestAsset[0].Size -ne $fullPackage.Length -or
     $manifestAsset[0].SHA256.ToLowerInvariant() -ne (Get-FileDigest -Path $fullPackagePath)) {
     throw 'releases.win.json does not match the full package size and SHA-256.'
+}
+
+if ($ArtifactValidationScript) {
+    $validationPath = (Resolve-Path -LiteralPath $ArtifactValidationScript -ErrorAction Stop).Path
+    Write-Host "Validating the final release artifacts before pushing or publishing..."
+    $global:LASTEXITCODE = 0
+    & $validationPath -OutputDirectory $outputDirectory -Version $version -Commit $head
+    if ($LASTEXITCODE -ne 0) {
+        throw "Release artifact validation failed with exit code $LASTEXITCODE."
+    }
 }
 
 & git show-ref --verify --quiet "refs/tags/$tag"

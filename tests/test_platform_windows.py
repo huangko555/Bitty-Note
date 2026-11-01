@@ -30,6 +30,8 @@ class _FakeWebViewCore:
 class _FakeWebViewControl:
     def __init__(self) -> None:
         self.CoreWebView2 = _FakeWebViewCore()
+        self.CoreWebView2InitializationCompleted = _FakeEvent()
+        self.NavigationCompleted = _FakeEvent()
         self.invalidations = 0
         self.updates = 0
 
@@ -435,3 +437,52 @@ def test_autostart_does_not_rewrite_an_unchanged_command(
     platform_windows.set_autostart(True)
 
     assert written == []
+
+
+def test_webview_initialization_failure_is_reported_before_ui_is_ready(monkeypatch):
+    window, _native, control = _fake_webview_window()
+    control.CoreWebView2 = None
+    failures = []
+    monkeypatch.setattr(platform_windows.sys, "platform", "win32")
+    assert platform_windows.install_webview_recovery(window, lambda stage: failures.append(stage) or True)
+    handler = control.CoreWebView2InitializationCompleted.handlers[0]
+    handler(control, type("Result", (), {"IsSuccess": False})())
+    assert failures == ["webview"]
+
+
+def test_webview_initialization_success_installs_navigation_and_process_monitoring(monkeypatch):
+    window, _native, control = _fake_webview_window()
+    core = control.CoreWebView2
+    control.CoreWebView2 = None
+    failures = []
+    monkeypatch.setattr(platform_windows.sys, "platform", "win32")
+    assert platform_windows.install_webview_recovery(window, lambda stage: failures.append(stage) or True)
+    control.CoreWebView2 = core
+    control.CoreWebView2InitializationCompleted.handlers[0](control, type("Result", (), {"IsSuccess": True})())
+    control.NavigationCompleted.handlers[0](control, type("Result", (), {"IsSuccess": False})())
+    assert failures == ["navigation"]
+    assert len(core.ProcessFailed.handlers) == 1
+
+
+def test_startup_renderer_failure_does_not_reload_a_window_being_closed(monkeypatch):
+    window, _native, control = _fake_webview_window()
+    failures = []
+    monkeypatch.setattr(platform_windows.sys, "platform", "win32")
+    platform_windows.install_webview_recovery(window, lambda stage: failures.append(stage) or True)
+    control.CoreWebView2.ProcessFailed.handlers[0](control.CoreWebView2, type("Failure", (), {"ProcessFailedKind": "RenderProcessExited"})())
+    assert failures == ["renderer"]
+    assert control.CoreWebView2.reloads == 0
+
+
+@pytest.mark.parametrize("kind", ["GpuProcessExited", "FrameRenderProcessExited"])
+def test_recoverable_subprocess_failure_does_not_cancel_initial_note(monkeypatch, kind):
+    window, _native, control = _fake_webview_window()
+    failures = []
+    monkeypatch.setattr(platform_windows.sys, "platform", "win32")
+    platform_windows.install_webview_recovery(window, lambda stage: failures.append(stage) or True)
+    control.CoreWebView2.ProcessFailed.handlers[0](
+        control.CoreWebView2, type("Failure", (), {"ProcessFailedKind": kind})()
+    )
+    assert failures == []
+    assert control.CoreWebView2.reloads == 0
+    assert control.invalidations == (1 if kind == "GpuProcessExited" else 0)

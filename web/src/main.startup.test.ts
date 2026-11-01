@@ -289,4 +289,52 @@ describe("startup chrome visibility", () => {
     await vi.waitFor(() => expect(closeWindow).toHaveBeenCalledOnce());
     expect(document.querySelector(".fatal-error")?.textContent).toContain("启动");
   });
+
+  it("renders the requested startup payload without reopening it through separate RPCs", async () => {
+    const acquireNote = vi.fn();
+    const openNote = vi.fn();
+    const windowReady = vi.fn().mockResolvedValue(undefined);
+    const api = {
+      bootstrap: vi.fn().mockResolvedValue({ ...bootstrap, initial_note_data: note }),
+      acquireNote,
+      openNote,
+      rememberLastNote: vi.fn().mockResolvedValue(undefined),
+      setUpdateReady: vi.fn().mockResolvedValue(undefined),
+      windowReady,
+    } as unknown as DesktopApi;
+    connectApi.mockResolvedValue(api);
+    await import("./main");
+    await vi.waitFor(() => expect(windowReady).toHaveBeenCalledWith(note.name));
+    expect(document.querySelector(".ProseMirror")?.textContent).toBe(note.content);
+    expect(acquireNote).not.toHaveBeenCalled();
+    expect(openNote).not.toHaveBeenCalled();
+  });
+
+  it("reports bootstrap failure immediately without ever marking the window ready", async () => {
+    const windowFailed = vi.fn().mockResolvedValue(undefined);
+    const windowReady = vi.fn();
+    connectApi.mockResolvedValue({
+      bootstrap: vi.fn().mockRejectedValue(new Error("fixture failure")),
+      windowFailed,
+      windowReady,
+    } as unknown as DesktopApi);
+    await import("./main");
+    await vi.waitFor(() => expect(windowFailed).toHaveBeenCalledOnce());
+    expect(windowReady).not.toHaveBeenCalled();
+  });
+
+  it("rejects startup data for another note before displaying an editor", async () => {
+    const windowFailed = vi.fn().mockResolvedValue(undefined);
+    const windowReady = vi.fn();
+    connectApi.mockResolvedValue({
+      bootstrap: vi.fn().mockResolvedValue({ ...bootstrap, initial_note_data: { ...note, name: "Wrong.md" } }),
+      windowFailed,
+      windowReady,
+    } as unknown as DesktopApi);
+    await import("./main");
+    await vi.waitFor(() => expect(windowFailed).toHaveBeenCalledOnce());
+    expect(windowReady).not.toHaveBeenCalled();
+    expect(document.querySelector(".ProseMirror")).toBeNull();
+  });
+
 });

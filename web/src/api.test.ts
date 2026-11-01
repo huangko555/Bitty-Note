@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { connectApi } from "./api";
 
@@ -17,5 +17,34 @@ describe("browser preview summaries", () => {
     await api.archiveNote(note.name);
 
     expect((await api.listArchivedNotes())[0]?.preview).toBe("标题 2313 默认高亮");
+  });
+});
+
+
+describe("packaged native bridge startup", () => {
+  afterEach(() => {
+    delete window.pywebview;
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+  });
+
+  it("never substitutes preview notes when the packaged bridge times out", async () => {
+    vi.stubEnv("DEV", false);
+    vi.useFakeTimers();
+    const result = connectApi().then(() => "resolved", () => "rejected");
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await result).toBe("rejected");
+  });
+
+  it("connects immediately when pywebview signals readiness", async () => {
+    vi.stubEnv("DEV", false);
+    vi.useFakeTimers();
+    const resolved = vi.fn();
+    const pending = connectApi().then(resolved);
+    window.pywebview = { api: { bootstrap: vi.fn() } } as unknown as Window["pywebview"];
+    window.dispatchEvent(new Event("pywebviewready"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(resolved).toHaveBeenCalledOnce();
+    await pending;
   });
 });

@@ -1,13 +1,15 @@
 import createLucideElement from "lucide/dist/esm/createElement.mjs";
 import ChevronUp from "lucide/dist/esm/icons/chevron-up.mjs";
 import { type Node as ProseMirrorNode } from "prosemirror-model";
-import { Plugin, TextSelection } from "prosemirror-state";
+import { Plugin, PluginKey, TextSelection } from "prosemirror-state";
 import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
 
 import { t } from "../i18n";
 import { preserveVisualAnchorDuring } from "./editor-viewport";
 import { preserveViewportInHistory } from "./history-viewport";
 import { noteSchema } from "./schema";
+
+const foldingKey = new PluginKey<DecorationSet>("folding");
 
 export const FOLD_HOVER_EVENT = "bitty-fold-hover";
 
@@ -201,9 +203,16 @@ function foldingDecorations(doc: ProseMirrorNode): DecorationSet {
 }
 
 export function foldingPlugin(): Plugin {
-  return new Plugin({
+  return new Plugin<DecorationSet>({
+    key: foldingKey,
+    state: {
+      init: (_config, state) => foldingDecorations(state.doc),
+      apply: (transaction, current) => transaction.docChanged
+        ? foldingDecorations(transaction.doc)
+        : current,
+    },
     props: {
-      decorations: (state) => foldingDecorations(state.doc),
+      decorations: (state) => foldingKey.getState(state) ?? null,
     },
     appendTransaction: (transactions, _oldState, newState) => {
       if (!transactions.some((transaction) => transaction.docChanged)) return null;

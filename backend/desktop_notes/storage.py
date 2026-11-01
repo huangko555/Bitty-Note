@@ -58,7 +58,7 @@ class StorageManager:
         sources = self._managed_files(source)
         target.mkdir(parents=True, exist_ok=True)
         stage = Path(tempfile.mkdtemp(prefix=".desktop-notes-migration-", dir=target))
-        plans: list[tuple[Path, Path, Path]] = []
+        plans: list[tuple[Path, Path, Path, str]] = []
         committed: list[Path] = []
         try:
             reserved: set[str] = set()
@@ -67,16 +67,19 @@ class StorageManager:
                 staged_file = stage / final_relative
                 staged_file.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source_file, staged_file)
-                if _digest(source_file) != _digest(staged_file):
+                digest = _digest(staged_file)
+                if _digest(source_file) != digest:
                     raise UserVisibleError(message(
                         f"Migration verification failed: {source_file.name}",
                         f"迁移校验失败：{source_file.name}",
                     ))
-                plans.append((source_file, staged_file, target / final_relative))
+                plans.append((source_file, staged_file, target / final_relative, digest))
 
-            for _, staged_file, final_file in plans:
+            for _, staged_file, final_file, _digest_value in plans:
+                if not final_file.parent.resolve().is_relative_to(target):
+                    raise UserVisibleError(message("The target path is outside the storage folder.", "目标路径超出保存目录。"))
                 final_file.parent.mkdir(parents=True, exist_ok=True)
-                os.replace(staged_file, final_file)
+                self._commit_copy(staged_file, final_file)
                 committed.append(final_file)
 
             try:
@@ -90,8 +93,11 @@ class StorageManager:
 
             retained: list[str] = []
             recycled_count = 0
-            for source_file, _, _ in plans:
+            for source_file, _, _, digest in plans:
                 try:
+                    if _digest(source_file) != digest:
+                        retained.append(str(source_file))
+                        continue
                     self.trash_file(source_file)
                     recycled_count += 1
                 except Exception:
@@ -111,6 +117,23 @@ class StorageManager:
             )) from error
         finally:
             shutil.rmtree(stage, ignore_errors=True)
+
+    @staticmethod
+    def _commit_copy(staged: Path, final: Path) -> None:
+        # Exclusive creation must also protect files that appeared after planning.
+        created = False
+        try:
+            with final.open("xb") as destination:
+                created = True
+                with staged.open("rb") as source:
+                    shutil.copyfileobj(source, destination)
+                destination.flush()
+                os.fsync(destination.fileno())
+            shutil.copystat(staged, final)
+        except OSError:
+            if created:
+                final.unlink(missing_ok=True)
+            raise
 
     @staticmethod
     def _managed_files(root: Path) -> list[tuple[Path, Path]]:
