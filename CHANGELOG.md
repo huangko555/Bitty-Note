@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.11.0 — 2026-11-04
+
+### English
+
+- Select text across multiple rows, then drag any selected row's handle to move, reorder, or delete the whole group. Groups retain their internal order and include complete heading sections and list subtrees.
+- Added group highlighting, item counts and hidden-content hints, with one-step undo, selection preservation after moving, and cancellation when the document changes during a drag.
+- Right-click the note title bar to open the existing note menu. The rename field retains its text-editing context menu.
+- Updated editor, Markdown parser and build/test dependencies to address known security vulnerabilities.
+
+### 简体中文
+
+- 划选多行文字后，拖动任意选中行的手柄即可整组移动、排序或删除；组内顺序保持不变，标题章节及列表子项随所属内容一起操作。
+- 新增整组高亮、数量和折叠内容提示；支持一次撤销、移动后保留选区，并在拖动期间文档变化时取消操作。
+- 便签标题栏支持右键打开现有下拉菜单，重命名输入框保留文字编辑右键菜单。
+- 更新编辑器、Markdown 解析器及构建测试依赖，修复已知安全漏洞。
+
 ## v1.10.2 — 2026-11-01
 
 ### English

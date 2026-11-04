@@ -61,6 +61,46 @@ describe("row drag handle", () => {
     vi.restoreAllMocks();
   });
 
+  it.each(["move", "delete", "escape", "change"])("handles a selected group: %s", (action) => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const doc = noteSchema.nodes.doc.create(null, ["A", "B", "C"].map(text =>
+      noteSchema.nodes.paragraph.create(null, noteSchema.text(text))));
+    view = new EditorView(host, {
+      state: EditorState.create({ doc, selection: TextSelection.create(doc, 1, 5), plugins: [rowDragPlugin()] }),
+    });
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(0, 0, 400, 300));
+    vi.spyOn(view.dom, "getBoundingClientRect").mockReturnValue(rect(0, 0, 400, 300));
+    const paragraphs = view.dom.querySelectorAll("p");
+    paragraphs.forEach((p, index) => vi.spyOn(p, "getBoundingClientRect").mockReturnValue(rect(30, 20 + index * 30, 350, 22)));
+    vi.spyOn(view, "posAtCoords").mockImplementation(({ top }) => ({ pos: top > 75 ? 7 : 4, inside: top > 75 ? 6 : 3 }));
+    host.dispatchEvent(dragPointerEvent("pointermove", 55, 1, 30));
+    const handle = host.querySelector<HTMLElement>(".block-drag-handle")!;
+    enableDragHandle(handle);
+    handle.dispatchEvent(new MouseEvent("pointerenter"));
+    const highlight = host.querySelector<HTMLElement>(".block-row-handle-highlight")!;
+    expect(highlight.style.top).toBe("18px");
+    expect(highlight.style.height).toBe("56px");
+    const preview = host.querySelector<HTMLElement>(".block-drag-preview")!;
+    vi.spyOn(preview, "getBoundingClientRect").mockReturnValue(rect(26, 37, 100, 36));
+    handle.dispatchEvent(dragPointerEvent("pointerdown", 55, 1, 30));
+    expect(view.dom.querySelectorAll(".is-row-drag-source")).toHaveLength(2);
+    expect(preview.querySelector(".block-drag-preview-meta")?.textContent).toBe("Move 2 items");
+    expect(host.querySelector(".block-drag-delete-hint-text")?.textContent).toBe("Release to delete 2 items");
+    if (action === "escape") window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    else if (action === "change") view.dispatch(view.state.tr.insertText("x", 8));
+    else {
+      const x = action === "delete" ? 310 : 30;
+      const y = action === "delete" ? 55 : 100;
+      window.dispatchEvent(dragPointerEvent("pointermove", y, 1, x));
+      window.dispatchEvent(dragPointerEvent("pointerup", y, 1, x));
+    }
+    expect(view.state.doc.textContent).toBe({ move: "CAB", delete: "C", escape: "ABC", change: "ABCx" }[action]);
+    expect(view.dom.querySelectorAll(".is-row-drag-source")).toHaveLength(0);
+    expect(preview.classList.contains("visible")).toBe(false);
+    if (action === "escape") expect(view.state.selection.eq(TextSelection.create(doc, 1, 5))).toBe(true);
+  });
+
   it("keeps the handle fixed and highlights only while using it", () => {
     const host = document.createElement("div");
     document.body.append(host);
@@ -391,7 +431,7 @@ describe("row drag handle", () => {
     }));
 
     expect(host.querySelector(".block-drag-preview-text")?.textContent).toBe("章节");
-    expect(host.querySelector(".block-drag-preview-meta")?.textContent).toBe("+4 rows");
+    expect(host.querySelector(".block-drag-preview-meta")?.textContent).toBe("+4 rows\n(includes hidden content)");
   });
 
   it("highlights a list item and its indented children as one block", () => {

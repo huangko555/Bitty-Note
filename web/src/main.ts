@@ -273,6 +273,17 @@ function titleBar(
         event.detail > 0,
       );
     });
+  if (isNoteWindow) {
+    bar.addEventListener("contextmenu", (event) => {
+      if (event.target instanceof Element && event.target.closest(".title-rename-input")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const button = bar.querySelector<HTMLButtonElement>('[data-action="note-menu"]');
+      if (button && button.getAttribute("aria-expanded") !== "true") {
+        showNoteWindowMenu(bar, button, true);
+      }
+    });
+  }
   bar.querySelector('[data-action="close"]')?.addEventListener("click", () => {
     void closeApplication();
   });

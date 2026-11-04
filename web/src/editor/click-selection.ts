@@ -28,6 +28,7 @@ export function recoverClickedTextblockSelection(
       const targetNode = $start.parent;
       if (!targetNode.isTextblock) return;
       const selection = view.state.selection;
+      if (!selection.empty) return;
       if (selection.$from.parent === targetNode && selection.$to.parent === targetNode) return;
 
       view.dispatch(view.state.tr.setSelection(TextSelection.create(

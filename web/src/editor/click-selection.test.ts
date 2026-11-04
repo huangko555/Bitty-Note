@@ -14,6 +14,25 @@ describe("clicked textblock selection recovery", () => {
     document.body.replaceChildren();
   });
 
+  it("preserves a cross-row text selection after the mouse click following selection", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const doc = noteSchema.nodes.doc.create(null, [
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("first")),
+      noteSchema.nodes.paragraph.create(null, noteSchema.text("second")),
+    ]);
+    const selection = TextSelection.create(doc, 2, 11);
+    view = new EditorView(host, { state: EditorState.create({ doc, selection }) });
+    const frames: FrameRequestCallback[] = [];
+    recoverClickedTextblockSelection(view, host.querySelectorAll("p")[1]!, callback => {
+      frames.push(callback);
+      return frames.length;
+    });
+    frames.shift()?.(0);
+    frames.shift()?.(16);
+    expect(view.state.selection.eq(selection)).toBe(true);
+  });
+
   it("moves a stale heading selection into the textblock that was actually clicked", () => {
     const host = document.createElement("div");
     document.body.append(host);

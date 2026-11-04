@@ -1,6 +1,7 @@
 import createLucideElement from "lucide/dist/esm/createElement.mjs";
 import GripVertical from "lucide/dist/esm/icons/grip-vertical.mjs";
 import Trash2 from "lucide/dist/esm/icons/trash-2.mjs";
+import { closeHistory } from "prosemirror-history";
 import { Fragment, type Node as ProseMirrorNode } from "prosemirror-model";
 import {
   Plugin,
@@ -434,7 +435,7 @@ function dispatchMovedDocument(
   if (nextAnchor !== null && nextHead !== null) {
     transaction.setSelection(TextSelection.create(transaction.doc, nextAnchor, nextHead));
   }
-  dispatch(preserveViewportInHistory(transaction.setMeta("rowDrag", true)));
+  dispatch(preserveViewportInHistory(closeHistory(transaction).setMeta("rowDrag", true)));
   return true;
 }
 
@@ -714,6 +715,201 @@ export function moveRowToDocumentEnd(
   );
 }
 
+/** Resolve text selection to independent rows, including complete sections/subtrees. */
+export function selectedDragRows(state: EditorState, grabbedPosition: number): number[] {
+  const { doc, selection } = state;
+  if (selection.empty) return [grabbedPosition];
+  const candidates: number[] = [];
+  doc.descendants((node, position, parent) => {
+    if (!node.isTextblock) return;
+    const start = position + 1;
+    const end = start + node.content.size;
+    if (selection.from > end || selection.to <= start) return;
+    if (parent?.type === noteSchema.nodes.list_item) {
+      const $pos = doc.resolve(position);
+      candidates.push($pos.before($pos.depth));
+    } else if (parent === doc) {
+      candidates.push(position);
+    }
+  });
+  // A handle outside the actual text selection retains single-row behavior.
+  if (!candidates.includes(grabbedPosition)) return [grabbedPosition];
+  return canonicalDragRows(doc, candidates);
+}
+
+function canonicalDragRows(doc: ProseMirrorNode, positions: readonly number[]): number[] {
+  const result: number[] = [];
+  let coveredTo = -1;
+  for (const position of [...new Set(positions)].sort((a, b) => a - b)) {
+    if (position < coveredTo) continue;
+    const node = doc.nodeAt(position);
+    const path = node && findNodePath(doc, node);
+    if (!node || !path || !isDraggableRowAtPath(doc, path)) continue;
+    coveredTo = node.type === noteSchema.nodes.heading
+      ? topLevelNodePosition(doc, headingSectionEndIndex(doc, path[0]!))
+      : position + node.nodeSize;
+    result.push(position);
+  }
+  return result;
+}
+
+function dragRanges(doc: ProseMirrorNode, positions: readonly number[]): DraggedSourceRange[] {
+  return positions.flatMap((position) => {
+    const node = doc.nodeAt(position)!;
+    if (node.type !== noteSchema.nodes.heading) {
+      return [{ from: position, to: position + node.nodeSize }];
+    }
+    const path = findNodePath(doc, node)!;
+    const ranges: DraggedSourceRange[] = [];
+    for (let index = path[0]!; index < headingSectionEndIndex(doc, path[0]!); index += 1) {
+      const from = topLevelNodePosition(doc, index);
+      ranges.push({ from, to: from + doc.child(index).nodeSize });
+    }
+    return ranges;
+  });
+}
+
+/** Remove all sources in one tree traversal; retain a target even if its children change. */
+function extractDragRows(doc: ProseMirrorNode, positions: readonly number[], targetPosition?: number) {
+  const ranges = dragRanges(doc, positions);
+  const starts = new Set(ranges.map((range) => range.from));
+  const entries: { node: ProseMirrorNode; kind: ListKind | null }[] = [];
+  let target: ProseMirrorNode | null = null;
+  const visit = (node: ProseMirrorNode, position: number, parent: ProseMirrorNode | null): ProseMirrorNode | null => {
+    if (starts.has(position)) {
+      entries.push({ node, kind: node.type === noteSchema.nodes.list_item
+        ? listItemKind(parent!, node) : null });
+      return null;
+    }
+    const children: ProseMirrorNode[] = [];
+    let changed = false;
+    node.forEach((child, offset) => {
+      const next = visit(child, position + 1 + offset, node);
+      if (next) children.push(next);
+      if (next !== child) changed = true;
+    });
+    if (changed && children.length === 0 && (
+      node.type === noteSchema.nodes.bullet_list || node.type === noteSchema.nodes.ordered_list
+    )) return null;
+    const next = changed ? copyWithChildren(node, children) : node;
+    if (position === targetPosition) target = next;
+    return next;
+  };
+  return { doc: visit(doc, -1, null)!, entries, target: target as ProseMirrorNode | null };
+}
+
+export function deleteRows(
+  state: EditorState,
+  dispatch: ((transaction: Transaction) => void) | undefined,
+  positions: readonly number[],
+): boolean {
+  const sources = canonicalDragRows(state.doc, positions);
+  if (sources.length === 0) return false;
+  let nextDoc = extractDragRows(state.doc, sources).doc;
+  if (nextDoc.childCount === 0) nextDoc = noteSchema.nodes.doc.create(null, noteSchema.nodes.paragraph.create());
+  return dispatchRowGroup(state, dispatch, nextDoc, false);
+}
+
+function dispatchRowGroup(
+  state: EditorState,
+  dispatch: ((transaction: Transaction) => void) | undefined,
+  nextDoc: ProseMirrorNode,
+  keepSelection: boolean,
+): boolean {
+  nextDoc = normalizeListDocument(nextDoc);
+  if (nextDoc.eq(state.doc)) return false;
+  if (!dispatch) return true;
+  const changed = changedDocumentRange(state.doc, nextDoc);
+  const tr = closeHistory(state.tr).replace(changed.from, changed.previousTo, nextDoc.slice(changed.from, changed.nextTo));
+  if (keepSelection) {
+    const anchor = textPositionFor(tr.doc, state.selection.$anchor.parent, state.selection.$anchor.parentOffset);
+    const head = textPositionFor(tr.doc, state.selection.$head.parent, state.selection.$head.parentOffset);
+    if (anchor !== null && head !== null) tr.setSelection(TextSelection.create(tr.doc, anchor, head));
+  }
+  dispatch(preserveViewportInHistory(tr.setMeta("rowDrag", true)));
+  return true;
+}
+
+/** One extraction and insertion, with the same conversion rules as a single-row drag. */
+export function moveRows(
+  state: EditorState,
+  dispatch: ((transaction: Transaction) => void) | undefined,
+  positions: readonly number[],
+  targetPosition: number | null,
+  side: RowDropSide = "after",
+  expandHeading: ProseMirrorNode | null = null,
+): boolean {
+  const sources = canonicalDragRows(state.doc, positions);
+  if (sources.length === 0) return false;
+  if (sources.length === 1) return targetPosition === null
+    ? moveRowToDocumentEnd(state, dispatch, sources[0]!, expandHeading)
+    : moveRow(state, dispatch, sources[0]!, targetPosition, side, expandHeading);
+  const hasHeading = sources.some((position) => state.doc.nodeAt(position)?.type === noteSchema.nodes.heading);
+  if (targetPosition !== null) {
+    const target = state.doc.nodeAt(targetPosition);
+    const path = target && findNodePath(state.doc, target);
+    if (!target || !path || !isDraggableRowAtPath(state.doc, path)) return false;
+    if (hasHeading && target.type !== noteSchema.nodes.heading) {
+      const owner = headingOwnerIndex(state.doc, path);
+      if (owner !== null) {
+        targetPosition = topLevelNodePosition(state.doc, owner);
+        side = "after";
+      }
+    }
+    if (dragRanges(state.doc, sources).some(({ from, to }) => targetPosition! >= from && targetPosition! < to)) return false;
+  }
+  const extracted = extractDragRows(state.doc, sources, targetPosition ?? undefined);
+  let nextDoc = extracted.doc;
+  const target = extracted.target;
+  const rootNodes = () => extracted.entries.map(({ node, kind }) => rootNodeForSource(node, kind).node);
+  if (targetPosition === null) {
+    nextDoc = insertNodesAtPath(nextDoc, [], nextDoc.childCount, rootNodes());
+  } else {
+    if (!target) return false;
+    const path = findNodePath(nextDoc, target)!;
+    if (hasHeading && target.type === noteSchema.nodes.list_item) {
+      // Chapters remain top-level; split a root list, or use its outer boundary.
+      const listPath = path.slice(0, -1);
+      if (listPath.length === 1) {
+        const list = nodeAtPath(nextDoc, listPath);
+        const index = path[path.length - 1]! + (side === "after" ? 1 : 0);
+        const before: ProseMirrorNode[] = [], after: ProseMirrorNode[] = [];
+        list.forEach((child, _offset, childIndex) => (childIndex < index ? before : after).push(child));
+        nextDoc = replaceNodeAtPathWithNodes(nextDoc, listPath, [
+          ...(before.length ? [copyWithChildren(list, before)] : []), ...rootNodes(),
+          ...(after.length ? [copyWithChildren(list, after)] : []),
+        ]);
+      } else nextDoc = insertNodesAtPath(nextDoc, [], path[0]! + (side === "after" ? 1 : 0), rootNodes());
+    } else if (target.type === noteSchema.nodes.list_item) {
+      const parent = nodeAtPath(nextDoc, path.slice(0, -1));
+      const childIndex = side === "inside" ? lastNestedListIndex(target) : null;
+      const listPath = side === "inside" && childIndex !== null ? [...path, childIndex] : path.slice(0, -1);
+      const list = nodeAtPath(nextDoc, listPath);
+      const index = side === "inside" ? list.childCount : path[path.length - 1]! + (side === "after" ? 1 : 0);
+      const referenceIndex = side === "inside" ? list.childCount - 1 : Math.max(0, index - 1);
+      const kind = side === "inside" && childIndex === null
+        ? extracted.entries[0]!.kind ?? listItemKind(parent, target)
+        : listItemKind(list, list.child(referenceIndex));
+      const items = extracted.entries.map(({ node, kind: sourceKind }) => listItemForKind(node, kind, sourceKind));
+      if (side === "inside" && childIndex === null) {
+        nextDoc = insertNodeAtPath(nextDoc, path, target.childCount, copyWithChildren(listForKind(kind, items[0]!), items));
+      } else nextDoc = insertNodesAtPath(nextDoc, listPath, index, items);
+      if (side === "inside" && target.attrs.collapsed) {
+        const updated = nodeAtPath(nextDoc, path);
+        nextDoc = replaceNodeAtPath(nextDoc, path, updated.type.create({ ...updated.attrs, collapsed: false }, updated.content, updated.marks));
+      }
+    } else {
+      if (side === "inside" && target.type !== noteSchema.nodes.heading) return false;
+      const index = target.type === noteSchema.nodes.heading && (side === "inside" || (hasHeading && side === "after"))
+        ? headingSectionEndIndex(nextDoc, path[0]!) : path[0]! + (side === "after" ? 1 : 0);
+      nextDoc = insertNodesAtPath(nextDoc, [], index, rootNodes());
+      if (side === "inside") nextDoc = expandHeadingInDocument(nextDoc, target);
+    }
+  }
+  if (!hasHeading) nextDoc = expandHeadingInDocument(nextDoc, expandHeading);
+  return dispatchRowGroup(state, dispatch, nextDoc, true);
+}
+
 function rowPositionAt(view: EditorView, documentPosition: number): number | null {
   const position = Math.max(0, Math.min(documentPosition, view.state.doc.content.size));
   const $position = view.state.doc.resolve(position);
@@ -837,6 +1033,12 @@ class RowDragHandleView {
   private hovered: RowDescriptor | null = null;
   private foldHovered: RowDescriptor | null = null;
   private source: RowDescriptor | null = null;
+  private sourcePositions: number[] = [];
+  private sourceDocument: ProseMirrorNode | null = null;
+
+  private get hasHeadingSource(): boolean {
+    return this.sourcePositions.some((position) => this.view.state.doc.nodeAt(position)?.type === noteSchema.nodes.heading);
+  }
   private target: RowDescriptor | null = null;
   private side: RowDropSide = "after";
   private visualAnchor: HTMLElement | null = null;
@@ -929,6 +1131,10 @@ class RowDragHandleView {
   }
 
   update(): void {
+    if (this.sourceDocument && this.sourceDocument !== this.view.state.doc) {
+      this.finishDrag();
+      return;
+    }
     if (this.source) return;
     if (this.foldHovered) {
       if (!this.foldHovered.header.isConnected) {
@@ -1051,6 +1257,8 @@ class RowDragHandleView {
     event.preventDefault();
     event.stopPropagation();
     this.source = this.hovered;
+    this.sourcePositions = selectedDragRows(this.view.state, this.source.position);
+    this.sourceDocument = this.view.state.doc;
     this.activePointerId = event.pointerId;
     this.startX = event.clientX;
     this.startY = event.clientY;
@@ -1172,7 +1380,7 @@ class RowDragHandleView {
     if (
       sourcePath
       && targetPath
-      && this.source.node.type === noteSchema.nodes.heading
+      && this.hasHeadingSource
       && row.node.type !== noteSchema.nodes.heading
     ) {
       const ownerIndex = headingOwnerIndex(this.view.state.doc, targetPath);
@@ -1193,7 +1401,7 @@ class RowDragHandleView {
     const lineHeight = Number.parseFloat(getComputedStyle(row.header).lineHeight) || 21;
     let side: RowDropSide;
     if (
-      this.source.node.type !== noteSchema.nodes.heading
+      !this.hasHeadingSource
       && (row.node.type === noteSchema.nodes.list_item
         || row.node.type === noteSchema.nodes.heading)
     ) {
@@ -1203,7 +1411,7 @@ class RowDragHandleView {
     } else {
       side = event.clientY < headerRect.top + lineHeight / 2 ? "before" : "after";
     }
-    if (this.source.node.type !== noteSchema.nodes.heading && side === "after") {
+    if (!this.hasHeadingSource && side === "after") {
       const firstChild = firstVisibleChildRow(this.view, row);
       if (firstChild) {
         this.positionDropTarget(firstChild, "before", firstChild.header);
@@ -1221,6 +1429,7 @@ class RowDragHandleView {
   };
 
   private readonly onDragEnd = (event: PointerEvent): void => {
+    const sourcePositions = this.sourcePositions;
     const sourcePosition = this.source?.position;
     const sourceNode = this.source?.node ?? null;
     const endTarget = this.endTarget;
@@ -1245,29 +1454,31 @@ class RowDragHandleView {
     this.finishDrag(event.pointerId);
     if (shouldDelete) {
       preserveViewportDuring(this.host, () => {
-        deleteRow(this.view.state, this.view.dispatch, sourcePosition);
+        deleteRows(this.view.state, this.view.dispatch, sourcePositions);
       });
     } else if (shouldMove) {
       const moved = preserveViewportDuring(this.host, () => endTarget
         ? endTarget.terminalRow
-          ? moveRow(
+          ? moveRows(
             this.view.state,
             this.view.dispatch,
-            sourcePosition,
+            sourcePositions,
             endTarget.terminalRow.position,
             "after",
             endTarget.collapsedHeading,
           )
-          : moveRowToDocumentEnd(
+          : moveRows(
             this.view.state,
             this.view.dispatch,
-            sourcePosition,
+            sourcePositions,
+            null,
+            "after",
             endTarget.collapsedHeading,
           )
-        : moveRow(
+        : moveRows(
           this.view.state,
           this.view.dispatch,
-          sourcePosition,
+          sourcePositions,
           targetPosition!,
           side,
         ));
@@ -1340,6 +1551,8 @@ class RowDragHandleView {
       this.activePointerId = null;
       this.restoreEditorFocus = false;
       this.source = null;
+      this.sourcePositions = [];
+      this.sourceDocument = null;
       this.target = null;
       this.visualAnchor = null;
       this.endTarget = null;
@@ -1402,7 +1615,16 @@ class RowDragHandleView {
 
   private showPreview(row: RowDescriptor, clientX: number, clientY: number): void {
     const path = findNodePath(this.view.state.doc, row.node);
-    const count = path ? draggedRowCount(this.view.state.doc, path) : 1;
+    const count = this.sourcePositions.reduce((total, position) => {
+      const sourcePath = findNodePath(this.view.state.doc, this.view.state.doc.nodeAt(position)!);
+      return total + (sourcePath ? draggedRowCount(this.view.state.doc, sourcePath) : 1);
+    }, 0) || (path ? draggedRowCount(this.view.state.doc, path) : 1);
+    const hidden = dragRanges(this.view.state.doc, this.sourcePositions).some(({ from, to }) => {
+      let collapsed = false;
+      this.view.state.doc.nodesBetween(from, to, (node) => { if (node.attrs.collapsed) collapsed = true; });
+      return collapsed;
+    });
+    this.deleteHintText.textContent = count > 1 ? t("releaseToDeleteItems", { count }) : t("releaseToDelete");
     const additionalCount = Math.max(0, count - 1);
     const headerNode = row.node.type === noteSchema.nodes.list_item
       ? row.node.firstChild
@@ -1410,13 +1632,16 @@ class RowDragHandleView {
     const text = headerNode?.textContent.trim() || t("dragPreviewEmpty");
     this.previewText.textContent = text;
     this.previewText.style.width = "";
-    if (row.node.type === noteSchema.nodes.heading && additionalCount > 0) {
+    if (this.sourcePositions.length > 1) {
+      this.previewMeta.textContent = t("dragSelectedItems", { count });
+    } else if (row.node.type === noteSchema.nodes.heading && additionalCount > 0) {
       this.previewMeta.textContent = t("dragPreviewSection", { count: additionalCount });
     } else if (additionalCount > 0) {
       this.previewMeta.textContent = t("dragPreviewItems", { count: additionalCount });
     } else {
       this.previewMeta.textContent = "";
     }
+    if (hidden) this.previewMeta.textContent += `\n${t("dragIncludesHidden")}`;
     this.preview.classList.add("visible");
     this.truncatePreviewText(text);
     this.positionPreview(clientX, clientY);
@@ -1424,22 +1649,7 @@ class RowDragHandleView {
 
   private showDraggedSource(): void {
     if (!this.source) return;
-    const ranges: DraggedSourceRange[] = [{
-      from: this.source.position,
-      to: this.source.position + this.source.node.nodeSize,
-    }];
-    if (this.source.node.type === noteSchema.nodes.heading) {
-      const path = findNodePath(this.view.state.doc, this.source.node);
-      if (path) {
-        const start = path[0]!;
-        const end = headingSectionEndIndex(this.view.state.doc, start);
-        ranges.length = 0;
-        for (let index = start; index < end; index += 1) {
-          const from = topLevelNodePosition(this.view.state.doc, index);
-          ranges.push({ from, to: from + this.view.state.doc.child(index).nodeSize });
-        }
-      }
-    }
+    const ranges = dragRanges(this.view.state.doc, this.sourcePositions);
     this.setDraggedSource(ranges);
   }
 
@@ -1468,7 +1678,11 @@ class RowDragHandleView {
   private positionHighlight(row: RowDescriptor): void {
     this.highlight.classList.remove("is-fold-range");
     const hostRect = this.host.getBoundingClientRect();
-    const blockRect = draggedBlockVerticalRect(this.view, row);
+    const positions = this.source ? this.sourcePositions : selectedDragRows(this.view.state, row.position);
+    const rects = positions.map((position) => rowAtPosition(this.view, position))
+      .filter((entry): entry is RowDescriptor => entry !== null)
+      .map((entry) => draggedBlockVerticalRect(this.view, entry));
+    const blockRect = { top: Math.min(...rects.map((rect) => rect.top)), bottom: Math.max(...rects.map((rect) => rect.bottom)) };
     const left = hostRect.left + FEEDBACK_LEFT_INSET;
     const top = Math.max(hostRect.top, blockRect.top - 2);
     const right = hostRect.right - FEEDBACK_RIGHT_INSET;
@@ -1521,10 +1735,10 @@ class RowDragHandleView {
     }
     if (
       this.source
-      && !moveRow(
+      && !moveRows(
         this.view.state,
         undefined,
-        this.source.position,
+        this.sourcePositions,
         row.position,
         side,
       )
@@ -1554,7 +1768,7 @@ class RowDragHandleView {
       : unshiftedVerticalRect(effectiveVisualAnchor ?? row.header);
     const top = side === "before"
       ? visualRect.top
-      : this.source?.node.type === noteSchema.nodes.heading
+      : this.hasHeadingSource
         && row.node.type === noteSchema.nodes.heading
         ? draggedBlockVerticalRect(this.view, row).bottom
         : visualRect.bottom;
@@ -1597,7 +1811,7 @@ class RowDragHandleView {
     const editorRect = this.view.dom.getBoundingClientRect();
     if (
       this.source
-      && this.source.node.type !== noteSchema.nodes.heading
+      && !this.hasHeadingSource
       && row?.node.type === noteSchema.nodes.list_item
     ) {
       return this.listFeedbackLeft(row);
@@ -1670,18 +1884,20 @@ class RowDragHandleView {
     this.indicator.classList.remove("visible");
     this.insideIndicator.classList.remove("visible");
     const valid = Boolean(this.source && (terminalRow
-      ? moveRow(
+      ? moveRows(
         this.view.state,
         undefined,
-        this.source.position,
+        this.sourcePositions,
         terminalRow.position,
         "after",
         collapsedHeading,
       )
-      : moveRowToDocumentEnd(
+      : moveRows(
         this.view.state,
         undefined,
-        this.source.position,
+        this.sourcePositions,
+        null,
+        "after",
         collapsedHeading,
       )));
     if (!valid) {
@@ -1720,8 +1936,15 @@ class RowDragHandleView {
     clientY: number,
   ): { row: RowDescriptor; desiredLevel: number } | null {
     if (!this.source || this.source.node.type !== noteSchema.nodes.list_item) return null;
-    const sourcePath = findNodePath(this.view.state.doc, this.source.node);
-    if (!sourcePath) return null;
+    const lastSource = this.view.state.doc.nodeAt(this.sourcePositions[this.sourcePositions.length - 1]!)!;
+    const sourcePath = findNodePath(this.view.state.doc, lastSource);
+    if (!sourcePath || lastSource.type !== noteSchema.nodes.list_item) return null;
+    // The special leftward gesture has one indentation origin only for siblings.
+    if (this.sourcePositions.some((position) => {
+      const path = findNodePath(this.view.state.doc, this.view.state.doc.nodeAt(position)!);
+      return !path || path.length !== sourcePath.length
+        || !pathStartsWith(path, sourcePath.slice(0, -1));
+    })) return null;
     const parentList = nodeAtPath(this.view.state.doc, sourcePath.slice(0, -1));
     const sourceIndex = sourcePath[sourcePath.length - 1]!;
     if (sourceIndex !== parentList.childCount - 1) return null;
@@ -1908,9 +2131,12 @@ class RowDragHandleView {
 
 export function rowDragPlugin(): Plugin {
   let draggedSource: DraggedSourceRange[] = [];
+  let draggedDocument: ProseMirrorNode | null = null;
   return new Plugin({
+    appendTransaction: (transactions, _oldState, state) => transactions.some((tr) => tr.docChanged && tr.getMeta("rowDrag"))
+      ? closeHistory(state.tr) : null,
     props: {
-      decorations: (state) => draggedSource.length === 0
+      decorations: (state) => draggedSource.length === 0 || state.doc !== draggedDocument
         ? DecorationSet.empty
         : DecorationSet.create(state.doc, draggedSource.map(({ from, to }) => (
           Decoration.node(from, to, {
@@ -1921,6 +2147,7 @@ export function rowDragPlugin(): Plugin {
     },
     view: (view) => new RowDragHandleView(view, (ranges) => {
       draggedSource = ranges;
+      draggedDocument = view.state.doc;
       view.updateState(view.state);
     }),
   });

@@ -168,6 +168,34 @@ describe("selection visibility", () => {
     expect(toolbar.classList.contains("visible")).toBe(false);
   });
 
+  it("preserves an explicit multi-row selection when a drag handle is pressed with the toolbar hidden", () => {
+    const toolbar = document.createElement("div");
+    const host = document.createElement("div");
+    const editor = document.createElement("div");
+    const control = document.createElement("button");
+    editor.className = "ProseMirror";
+    editor.tabIndex = 0;
+    editor.innerHTML = "<p>First row</p><p>Second row</p>";
+    control.dataset.editorControl = "true";
+    host.append(editor, control);
+    document.body.append(host, toolbar);
+    const coordinator = createSelectionVisibilityCoordinator(toolbar, () => null);
+    host.addEventListener("pointerdown", coordinator.editorPressStarted, true);
+    editor.focus();
+    coordinator.focusChanged(true);
+    const range = document.createRange();
+    range.setStart(editor.firstChild!.firstChild!, 2);
+    range.setEnd(editor.lastChild!.firstChild!, 6);
+    document.getSelection()!.removeAllRanges();
+    document.getSelection()!.addRange(range);
+
+    control.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+
+    expect(document.activeElement).toBe(editor);
+    expect(document.getSelection()!.isCollapsed).toBe(false);
+    expect(toolbar.classList.contains("visible")).toBe(false);
+  });
+
   it("checks the final selection again when it changes after the focus frame", () => {
     const toolbar = document.createElement("div");
     document.body.append(toolbar);

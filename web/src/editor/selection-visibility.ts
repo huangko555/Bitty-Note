@@ -80,7 +80,13 @@ export function createSelectionVisibilityCoordinator(
             activeElement instanceof HTMLElement
             && activeElement.classList.contains("ProseMirror")
           ) {
-            activeElement.blur();
+            const selection = toolbar.ownerDocument.getSelection();
+            const hasSelectedText = selection && !selection.isCollapsed
+              && activeElement.contains(selection.anchorNode)
+              && activeElement.contains(selection.focusNode);
+            // A real text selection belongs to the drag, even if restored-focus
+            // handling has not shown the toolbar yet. Only discard a stale caret.
+            if (!hasSelectedText) activeElement.blur();
           }
         }
         restoredFocus = false;
