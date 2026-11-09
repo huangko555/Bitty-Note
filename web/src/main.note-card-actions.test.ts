@@ -60,18 +60,27 @@ describe("home note card actions", () => {
   const deleteArchivedNote = vi.fn().mockResolvedValue(undefined);
   const listNotes = vi.fn().mockResolvedValue([]);
   const listArchivedNotes = vi.fn().mockResolvedValue([note]);
+  const rememberLastNote = vi.fn().mockResolvedValue(undefined);
+  let listeners: [string, EventListenerOrEventListenerObject, boolean | AddEventListenerOptions | undefined][];
 
   beforeEach(async () => {
     vi.resetModules();
     listNotes.mockReset().mockResolvedValueOnce([note]).mockResolvedValue([]);
     listArchivedNotes.mockReset().mockResolvedValue([note]);
+    rememberLastNote.mockReset().mockResolvedValue(undefined);
+    listeners = [];
+    const addListener = window.addEventListener.bind(window);
+    vi.spyOn(window, "addEventListener").mockImplementation((type, listener, options) => {
+      listeners.push([type, listener, options]);
+      addListener(type, listener, options);
+    });
     document.body.innerHTML = '<div id="app"></div>';
     vi.stubGlobal("ResizeObserver", ResizeObserverStub);
     vi.spyOn(window, "setInterval").mockReturnValue(0);
     const api = {
       bootstrap: vi.fn().mockResolvedValue(bootstrap),
       getAlwaysOnTop: vi.fn().mockResolvedValue(false),
-      rememberLastNote: vi.fn().mockResolvedValue(undefined),
+      rememberLastNote,
       checkUpdate: vi.fn().mockResolvedValue(bootstrap.update_state),
       listNotes,
       listArchivedNotes,
@@ -91,6 +100,7 @@ describe("home note card actions", () => {
   });
 
   afterEach(() => {
+    for (const [type, listener, options] of listeners) window.removeEventListener(type, listener, options);
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     connectApi.mockReset();
@@ -205,6 +215,7 @@ describe("home note card actions", () => {
 
     menu.querySelector<HTMLButtonElement>('[data-action="restore"]')!.click();
     await vi.waitFor(() => expect(restoreArchivedNote).toHaveBeenCalledWith(note.name));
+    await vi.waitFor(() => expect(document.querySelector(".archived-note-card")).not.toBeNull());
 
     document.querySelector(".archived-note-card")!.dispatchEvent(new MouseEvent("contextmenu", {
       bubbles: true,
@@ -240,6 +251,69 @@ describe("home note card actions", () => {
     document.querySelector<HTMLButtonElement>(".note-open")!.click();
 
     await vi.waitFor(() => expect(openNoteWindow).toHaveBeenCalledWith(note.name));
+  });
+
+  it("keeps the latest note list when an older refresh finishes last", async () => {
+    let finishOld!: (value: typeof note[]) => void;
+    let finishNew!: (value: typeof note[]) => void;
+    listNotes.mockReturnValueOnce(new Promise((resolve) => { finishOld = resolve; }));
+    listNotes.mockReturnValueOnce(new Promise((resolve) => { finishNew = resolve; }));
+    const initialCalls = listNotes.mock.calls.length;
+    window.desktopNotesRefreshHome?.();
+    await vi.waitFor(() => expect(listNotes).toHaveBeenCalledTimes(initialCalls + 1));
+    window.desktopNotesRefreshHome?.();
+    await vi.waitFor(() => expect(listNotes).toHaveBeenCalledTimes(initialCalls + 2));
+    const copy = { ...note, name: "副本.md" };
+    finishNew([copy, note]);
+    await vi.waitFor(() => expect(document.querySelectorAll(".note-card")).toHaveLength(2));
+    finishOld([note]);
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    expect(document.querySelectorAll(".note-card")).toHaveLength(2);
+  });
+
+  it("keeps settings open when a previous home refresh finishes", async () => {
+    let finishRefresh!: (value: typeof note[]) => void;
+    listNotes.mockReturnValueOnce(new Promise((resolve) => { finishRefresh = resolve; }));
+    const initialCalls = listNotes.mock.calls.length;
+    window.desktopNotesRefreshHome?.();
+    await vi.waitFor(() => expect(listNotes).toHaveBeenCalledTimes(initialCalls + 1));
+    document.querySelector<HTMLButtonElement>('[data-action="settings"]')!.click();
+    expect(document.querySelector(".settings-page")).not.toBeNull();
+    finishRefresh([note]);
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    expect(document.querySelector(".settings-page")).not.toBeNull();
+  });
+
+  it("keeps the home scroll position when another note changes", async () => {
+    document.querySelector<HTMLElement>(".home-page")!.scrollTop = 150;
+    listNotes.mockResolvedValue([note, otherNote]);
+    window.dispatchEvent(new Event("focus"));
+    await vi.waitFor(() => expect(document.querySelectorAll(".note-card")).toHaveLength(2));
+    expect(document.querySelector<HTMLElement>(".home-page")!.scrollTop).toBe(150);
+  });
+
+  it("shares an in-progress home refresh across repeated focus events", async () => {
+    let finishRefresh!: (value: typeof note[]) => void;
+    listNotes.mockReturnValueOnce(new Promise((resolve) => { finishRefresh = resolve; }));
+    const initialCalls = listNotes.mock.calls.length;
+    window.dispatchEvent(new Event("focus"));
+    window.dispatchEvent(new Event("focus"));
+    expect(listNotes).toHaveBeenCalledTimes(initialCalls + 1);
+    finishRefresh([note]);
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    expect(document.querySelector(".home-page")).not.toBeNull();
+  });
+
+  it("keeps archive navigation when focus returns while the archive is loading", async () => {
+    let finishArchive!: (value: typeof note[]) => void;
+    listArchivedNotes.mockReturnValueOnce(new Promise((resolve) => { finishArchive = resolve; }));
+    listNotes.mockResolvedValue([note, otherNote]);
+    document.querySelector<HTMLButtonElement>('[data-action="show-archive"]')!.click();
+    window.dispatchEvent(new Event("focus"));
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    finishArchive([note]);
+    await vi.waitFor(() => expect(document.querySelector(".archived-note-card")).not.toBeNull());
+    expect(document.querySelector(".home-page")).toBeNull();
   });
 
   it("does not assign a separate action to middle click", () => {

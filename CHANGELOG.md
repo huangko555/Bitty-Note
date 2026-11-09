@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.11.2 — 2026-11-09
+
+### English
+
+- Improved opening and switching between multiple notes by reducing repeated window-title updates.
+- Fixed a freeze during note-window startup recovery and protected notes from conflicting rename, archive, delete, and storage-migration operations while their windows are opening.
+- Preserved the correct window state after renaming and fixed window-position drift on high-DPI displays after restarting.
+- Prevented delayed list refreshes from replacing newer notes or interrupting settings and archive navigation, and retained the home page's scroll position when notes change.
+- Kept the note menu within the minimum window size, with a scrollable Quick open list and an accessible Open Bitty Note home action.
+- Constrained dialogs to the available window size and wrapped long error messages, keeping their action buttons reachable by scrolling.
+
+### 简体中文
+
+- 减少重复的窗口标题更新，改善多便签的打开与切换体验。
+- 修复便签窗口加载异常时的界面卡死，并在窗口创建期间保护便签，避免与重命名、归档、删除及存储迁移操作冲突。
+- 确保重命名后正确保存窗口状态，修复高 DPI 屏幕下重启后窗口位置漂移的问题。
+- 防止迟到的列表刷新覆盖新便签或打断设置页和归档页的切换，并在便签变化时保留主页滚动位置。
+- 修复最小窗口下便签菜单被裁切的问题；快速打开列表支持独立滚动，底部“打开便签主页”入口保持可见。
+- 弹窗按窗口可用尺寸限制大小，长错误文本自动换行，并支持滚动到操作按钮。
+
 ## v1.11.0 — 2026-11-04
 
 ### English

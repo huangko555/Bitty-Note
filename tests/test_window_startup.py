@@ -72,13 +72,13 @@ def test_failed_startup_ignores_a_late_ready_signal(tmp_path):
     store = ConfigStore(tmp_path / "config.json", tmp_path / "notes")
     bridge = DesktopBridge(store, window_role="note", initial_note="Probe.md")
     child = Window()
-    failed = []
-    timer = _show_window_when_ready(child, bridge, lambda: failed.append(True), 30)
+    failed = threading.Event()
+    timer = _show_window_when_ready(child, bridge, failed.set, 30)
     try:
         assert bridge.window_failed("navigation") is True
         bridge.window_ready("Probe.md")
         assert child.shown == 0
-        assert failed == [True]
+        assert failed.wait(1)
         assert bridge.window_failed("navigation") is False
     finally:
         timer.cancel()
@@ -138,12 +138,13 @@ def test_timeout_fails_once_and_cannot_later_show_a_window(tmp_path):
     store = ConfigStore(tmp_path / "config.json", tmp_path / "notes")
     bridge = DesktopBridge(store, window_role="note", initial_note="Probe.md")
     child = Window()
-    failed = []
-    timer = _show_window_when_ready(child, bridge, lambda: failed.append(True), 30)
+    failed = threading.Event()
+    timer = _show_window_when_ready(child, bridge, failed.set, 30)
     timer.function()
     timer.cancel()
     bridge.window_ready("Probe.md")
-    assert failed == [True]
+    assert failed.wait(1)
+    assert bridge.window_failed("timeout") is False
     assert child.shown == 0
 
 
@@ -169,6 +170,7 @@ def test_failed_open_releases_ownership_so_the_same_note_can_retry(tmp_path, mon
     coordinator._main_visible = True
     attempts = []
     timers = []
+    failure_handled = threading.Event()
     monkeypatch.setattr("desktop_notes.window_coordinator.focus_window", lambda window: window.show())
 
     def create(session_id, name, *_bounds):
@@ -178,6 +180,7 @@ def test_failed_open_releases_ownership_so_the_same_note_can_retry(tmp_path, mon
         def failed():
             coordinator.close_session(session_id, forget_note=True)
             coordinator.unregister(session_id)
+            failure_handled.set()
         timers.append(_show_window_when_ready(window, bridge, failed, 30, on_ready=lambda: coordinator.mark_ready(session_id)))
         attempts.append((window, bridge))
 
@@ -186,6 +189,7 @@ def test_failed_open_releases_ownership_so_the_same_note_can_retry(tmp_path, mon
         coordinator.open_auxiliary("Probe.md")
         first_window, first_bridge = attempts[0]
         first_bridge.window_failed("navigation")
+        assert failure_handled.wait(1)
         assert first_window.destroyed == 1
         coordinator.open_auxiliary("Probe.md")
         second_window, second_bridge = attempts[1]
@@ -214,6 +218,129 @@ def test_failed_restored_note_reveals_manager_without_exiting_the_app(tmp_path):
     assert main_window.destroyed == 0
     assert child.destroyed == 1
     assert coordinator.note_name("note") is None
+
+
+@pytest.mark.parametrize("operation", ["rename_note", "archive_note", "trash_note"])
+def test_home_cannot_mutate_a_note_while_its_window_is_being_created(tmp_path, monkeypatch, operation):
+    store = ConfigStore(tmp_path / "config.json", tmp_path / "notes")
+    coordinator = WindowCoordinator(store)
+    coordinator.register(WindowSession("main", "main", Window(), SimpleNamespace()))
+    bridge = DesktopBridge(store, coordinator)
+    bridge.create_note("Pending")
+    creating = threading.Event()
+    finish_creating = threading.Event()
+    errors = []
+    monkeypatch.setattr("desktop_notes.bridge.send_file_to_trash", lambda _path: None)
+
+    def create(session_id, name, *_bounds):
+        creating.set()
+        assert finish_creating.wait(2)
+        coordinator.register(WindowSession(session_id, "note", Window(), SimpleNamespace(), name))
+
+    def open_window():
+        try:
+            bridge.open_note_window("Pending.md")
+        except Exception as error:
+            errors.append(error)
+
+    coordinator.set_auxiliary_factory(create)
+    worker = threading.Thread(target=open_window, daemon=True)
+    worker.start()
+    try:
+        assert creating.wait(1)
+        args = ("Pending.md", "Renamed") if operation == "rename_note" else ("Pending.md",)
+        with pytest.raises(UserVisibleError):
+            getattr(bridge, operation)(*args)
+        assert bridge.open_note("Pending.md")["name"] == "Pending.md"
+    finally:
+        finish_creating.set()
+        worker.join(2)
+    assert not worker.is_alive()
+    assert errors == []
+
+
+@pytest.mark.parametrize("stage", ["webview", "navigation", "renderer"])
+def test_failed_copied_note_does_not_block_the_native_ui_thread(tmp_path, monkeypatch, stage):
+    from desktop_notes import platform_windows
+
+    store = ConfigStore(tmp_path / "config.json", tmp_path / "notes")
+    coordinator = WindowCoordinator(store)
+    ui_available = threading.Event()
+    handler_returned = threading.Event()
+    recovery_finished = threading.Event()
+
+    class MainWindow(Window):
+        def run_js(self, _script):
+            # pywebview waits for ExecuteScriptAsync to finish on the native UI thread.
+            ui_available.wait(2)
+
+    main_window = MainWindow()
+    coordinator.register(WindowSession("main", "main", main_window, SimpleNamespace()))
+    coordinator.register(WindowSession("original", "note", Window(), SimpleNamespace(), "Original.md"))
+    bridge = DesktopBridge(store, coordinator)
+    bridge.create_note("Original")
+    copied = bridge.duplicate_note("Original.md", "Copy")
+    handlers = {}
+    timers = []
+
+    def create(session_id, name, *_bounds):
+        child = Window()
+        control = SimpleNamespace(
+            CoreWebView2=SimpleNamespace(ProcessFailed=Event()),
+            CoreWebView2InitializationCompleted=Event(),
+            NavigationCompleted=Event(),
+        )
+        if stage == "webview":
+            control.CoreWebView2 = None
+        child.native = SimpleNamespace(
+            Controls=[control], InvokeRequired=False, Activated=Event(),
+        )
+        child_bridge = DesktopBridge(
+            store, coordinator, session_id=session_id, window_role="note", initial_note=name,
+        )
+        coordinator.register(WindowSession(
+            session_id, "note", child, child_bridge, name, loading=True,
+        ))
+
+        def failed():
+            try:
+                _handle_auxiliary_load_failure(coordinator, main_window, session_id)
+            finally:
+                recovery_finished.set()
+
+        timers.append(_show_window_when_ready(child, child_bridge, failed, 30))
+        assert platform_windows.install_webview_recovery(child, child_bridge.window_failed)
+        handlers["webview"] = control.CoreWebView2InitializationCompleted
+        handlers["navigation"] = control.NavigationCompleted
+        if control.CoreWebView2 is not None:
+            handlers["renderer"] = control.CoreWebView2.ProcessFailed
+
+    monkeypatch.setattr(platform_windows.sys, "platform", "win32")
+    coordinator.set_auxiliary_factory(create)
+    assert bridge.open_note_window(copied["name"]) == {"status": "opened"}
+
+    def dispatch_native_event():
+        args = SimpleNamespace(
+            IsSuccess=False, ProcessFailedKind="RenderProcessExited", Reason="Crashed",
+        )
+        for handler in handlers[stage].handlers:
+            handler(None, args)
+        handler_returned.set()
+        ui_available.set()
+
+    ui_thread = threading.Thread(target=dispatch_native_event, daemon=True)
+    ui_thread.start()
+    try:
+        assert handler_returned.wait(0.5), "Opening the copied note froze the native UI during startup recovery"
+        assert recovery_finished.wait(1)
+        assert coordinator.note_name("original") == "Original.md"
+        assert main_window.destroyed == 0
+        assert coordinator.open_auxiliary(copied["name"])["status"] == "opened"
+    finally:
+        ui_available.set()
+        ui_thread.join(2)
+        for timer in timers:
+            timer.cancel()
 
 
 def test_startup_update_preference_accepts_malformed_json_objects(tmp_path, monkeypatch):

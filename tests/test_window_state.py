@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
+from types import SimpleNamespace
 
 from desktop_notes.bridge import NoteWindowStateSaver, WindowStateSaver
 from desktop_notes.config import ConfigStore
@@ -167,6 +169,27 @@ def test_hidden_note_is_resized_without_revealing_it(monkeypatch) -> None:
     assert window.resize_calls == []
 
 
+def test_note_bounds_apply_physical_coordinates_before_tracking_starts(monkeypatch) -> None:
+    window = FakeWindow()
+    calls = []
+    saver = FakeStateSaver()
+    saver.flush = lambda: calls.append("flush")
+    monkeypatch.setattr(
+        "desktop_notes.main.move_window_to_physical",
+        lambda _window, x, y: calls.append(("move", x, y)),
+    )
+    monkeypatch.setattr(
+        "desktop_notes.main.resize_window_without_showing",
+        lambda _window, width, height: calls.append(("resize", width, height)),
+    )
+
+    _normalize_note_window_after_show(window, saver, 350, 530, 366, 231)
+
+    assert calls == [("move", 366, 231), ("resize", 350, 530), "flush"]
+    assert window.events.moved.handlers == [saver.schedule]
+    assert window.events.resized.handlers == [saver.schedule]
+
+
 def test_auxiliary_window_stays_hidden_until_its_note_ui_is_ready() -> None:
     shown: list[bool] = []
     failed: list[bool] = []
@@ -276,6 +299,38 @@ def test_open_note_window_position_and_dimensions_are_persisted(
     assert restored.note_window_sizes == {
         "Travel.md": {"width": 460, "height": 680}
     }
+
+
+def test_window_state_save_uses_the_current_name_after_a_concurrent_rename(tmp_path, monkeypatch):
+    store = ConfigStore(tmp_path / "config.json", tmp_path / "notes")
+    coordinator = WindowCoordinator(store)
+    coordinator.register(WindowSession("main", "main", object(), object()))
+    child = object()
+    coordinator.register(WindowSession("note", "note", child, SimpleNamespace(), "Before.md"))
+    coordinator.save_window_state("Before.md", 100, 80, 350, 530)
+    bounds_requested = threading.Event()
+    release_bounds = threading.Event()
+
+    def read_bounds(_window):
+        bounds_requested.set()
+        assert release_bounds.wait(2)
+        return 200, 160, 400, 600
+
+    monkeypatch.setattr("desktop_notes.bridge.window_logical_bounds", read_bounds)
+    saver = NoteWindowStateSaver(child, coordinator, "note")
+    worker = threading.Thread(target=saver.flush, daemon=True)
+    worker.start()
+    try:
+        assert bounds_requested.wait(1)
+        coordinator.rename_note("note", "Before.md", "After", lambda: SimpleNamespace(name="After.md"))
+    finally:
+        release_bounds.set()
+        worker.join(2)
+    assert not worker.is_alive()
+    assert store.config.open_note_windows == {
+        "After.md": {"x": 200, "y": 160, "width": 400, "height": 600},
+    }
+    assert set(store.config.note_window_sizes) == {"After.md"}
 
 
 def test_main_window_ready_restores_windows_for_existing_notes() -> None:

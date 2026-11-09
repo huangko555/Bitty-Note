@@ -72,6 +72,9 @@ let deleteCandidate: string | null = null;
 let deleteTimer: number | null = null;
 let editorPreferenceSave: Promise<void> = Promise.resolve();
 let textHighlightColorSave: Promise<void> = Promise.resolve();
+let pageGeneration = 0;
+let notesRefreshGeneration = 0;
+let refreshingHome = false;
 let systemFonts: string[] = [];
 let overlayScrollbarCleanup: (() => void) | null = null;
 let toolbarInteractionCleanup: (() => void) | null = null;
@@ -759,6 +762,7 @@ function pageShell(
   showUpdateOnBack = true,
   onRename: ((requestedName: string) => Promise<string | null>) | null = null,
 ): HTMLElement {
+  pageGeneration += 1;
   noteWindowMenuCleanup?.();
   noteWindowMenuCleanup = null;
   noteContextMenuCleanup?.();
@@ -852,8 +856,12 @@ function showError(error: unknown): void {
   showToast(errorMessage(error), "warning");
 }
 
-async function refreshNotes(): Promise<void> {
-  notes = await api.listNotes();
+async function refreshNotes(): Promise<boolean> {
+  const request = ++notesRefreshGeneration;
+  const refreshed = await api.listNotes();
+  if (request !== notesRefreshGeneration) return false;
+  notes = refreshed;
+  return true;
 }
 
 function noteListSignature(items: NoteSummary[]): string {
@@ -875,31 +883,42 @@ function isNotePinned(name: string): boolean {
 }
 
 async function refreshHomeOnFocus(): Promise<void> {
+  if (refreshingHome) return;
+  const home = document.querySelector(".home-page");
+  const page = pageGeneration;
+  const previous = noteListSignature(notes);
+  refreshingHome = true;
   try {
-    const refreshed = await api.listNotes();
-    if (!document.querySelector(".home-page")) return;
-    if (noteListSignature(refreshed) === noteListSignature(notes)) return;
-    notes = refreshed;
+    if (!(await refreshNotes())) return;
+    if (page !== pageGeneration || !home?.isConnected) return;
+    if (noteListSignature(notes) === previous) return;
     await renderHome(false);
   } catch (error) {
     showError(error);
+  } finally {
+    refreshingHome = false;
   }
 }
 
 async function renderHome(refresh = true): Promise<void> {
+  const page = ++pageGeneration;
+  const previousHome = document.querySelector<HTMLElement>(".home-page");
   deleteCandidate = null;
   if (deleteTimer !== null) window.clearTimeout(deleteTimer);
   deleteTimer = null;
   noteSession.load(null);
   reportUpdateReady(true);
   await api.rememberLastNote(null);
+  if (page !== pageGeneration) return;
   if (refresh) {
     try {
-      await refreshNotes();
+      if (!(await refreshNotes())) return;
     } catch (error) {
       showError(error);
     }
   }
+  if (page !== pageGeneration) return;
+  const scrollTop = previousHome?.scrollTop ?? 0;
   const shell = pageShell("", null);
   const main = document.createElement("main");
   main.className = "home-page";
@@ -977,8 +996,9 @@ async function renderHome(refresh = true): Promise<void> {
   };
   main.addEventListener("scroll", syncBackToTop, { passive: true });
   backToTop.addEventListener("click", () => main.scrollTo({ top: 0, behavior: "smooth" }));
-  syncBackToTop();
   shell.append(main);
+  main.scrollTop = scrollTop;
+  syncBackToTop();
   attachOverlayScrollbar(main);
 }
 
@@ -986,19 +1006,27 @@ async function renderArchive(): Promise<void> {
   archiveCandidate = null;
   if (archiveTimer !== null) window.clearTimeout(archiveTimer);
   archiveTimer = null;
-  let archivedNotes: NoteSummary[] = [];
-  try {
-    archivedNotes = await api.listArchivedNotes();
-  } catch (error) {
-    showError(error);
-  }
   const shell = pageShell("", renderHome);
+  const page = pageGeneration;
   const main = document.createElement("main");
   main.className = "archive-page";
   main.innerHTML = `
     <div class="archive-heading"><h1>${t("archiveTitle")}</h1></div>
     <div class="note-list" aria-live="polite"></div>`;
   const list = main.querySelector<HTMLElement>(".note-list")!;
+  list.setAttribute("aria-busy", "true");
+  list.innerHTML = `<div class="empty-state" role="status"><p>${t("opening")}</p></div>`;
+  shell.append(main);
+  attachOverlayScrollbar(main);
+  let archivedNotes: NoteSummary[] = [];
+  try {
+    archivedNotes = await api.listArchivedNotes();
+  } catch (error) {
+    showError(error);
+  }
+  if (page !== pageGeneration) return;
+  list.removeAttribute("aria-busy");
+  list.replaceChildren();
   if (archivedNotes.length === 0) {
     main.classList.add("is-empty");
     list.innerHTML = `<div class="empty-state"><p>${t("noArchivedNotes")}</p></div>`;
@@ -1027,8 +1055,6 @@ async function renderArchive(): Promise<void> {
       list.append(item);
     }
   }
-  shell.append(main);
-  attachOverlayScrollbar(main);
 }
 
 async function restoreArchivedNote(name: string): Promise<void> {

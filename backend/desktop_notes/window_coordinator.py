@@ -60,7 +60,7 @@ class WindowCoordinator:
                 self._reservations.pop(key, None)
                 self._note_owners[key] = session.session_id
         if refresh_titles:
-            self.refresh_titles()
+            self.refresh_titles(session.session_id)
 
     def mark_ready(self, session_id: str) -> None:
         with self._lock:
@@ -84,7 +84,6 @@ class WindowCoordinator:
                 and not self._main_visible
             ):
                 close_main = self._main_session_locked()
-        self.refresh_titles()
         if close_main is not None:
             close_main.bridge.allow_close = True
             close_main.window.destroy()
@@ -102,6 +101,8 @@ class WindowCoordinator:
             if owner_id is not None and owner_id != session_id:
                 focus = self._sessions.get(owner_id)
             else:
+                if session.note_name == name:
+                    return True
                 if session.note_name:
                     self._note_owners.pop(self._key(session.note_name), None)
                 session.note_name = name
@@ -109,7 +110,7 @@ class WindowCoordinator:
         if focus is not None:
             self._focus(focus)
             return False
-        self.refresh_titles()
+        self.refresh_titles(session_id)
         return True
 
     def release_note(self, session_id: str) -> None:
@@ -119,7 +120,6 @@ class WindowCoordinator:
                 return
             self._note_owners.pop(self._key(session.note_name), None)
             session.note_name = None
-        self.refresh_titles()
 
     def open_auxiliary(
         self,
@@ -178,7 +178,7 @@ class WindowCoordinator:
                 if restored_bounds is None:
                     width, height = self._saved_size_locked(name)
                     x, y = self._next_position_locked(source_session_id)
-                    position_space = None
+                    position_space = "logical"
                 else:
                     width, height, x, y, position_space = restored_bounds
         if owner_id is not None:
@@ -198,10 +198,11 @@ class WindowCoordinator:
 
     def request_note_rename(self, name: str) -> dict[str, str]:
         with self._lock:
-            owner_id = self._note_owners.get(self._key(name))
+            key = self._key(name)
+            owner_id = self._note_owners.get(key) or self._reservations.get(key)
             owner = self._sessions.get(owner_id) if owner_id is not None else None
         if owner is None:
-            return {"status": "available"}
+            return {"status": "available" if owner_id is None else "focused"}
 
         if owner.loading:
             return {"status": "focused"}
@@ -221,10 +222,12 @@ class WindowCoordinator:
     ) -> Any:
         focus: WindowSession | None = None
         with self._lock:
-            owner_id = self._note_owners.get(self._key(old_name))
-            if owner_id is not None and owner_id != session_id:
+            key = self._key(old_name)
+            owner_id = self._note_owners.get(key) or self._reservations.get(key)
+            busy = owner_id is not None and owner_id != session_id
+            if busy:
                 focus = self._sessions.get(owner_id)
-            if focus is None:
+            else:
                 result = action()
                 new_name = result.name
                 if owner_id == session_id:
@@ -235,32 +238,35 @@ class WindowCoordinator:
                         session.bridge.initial_note = new_name
                     self._note_owners[self._key(new_name)] = session_id
                 self._move_saved_size_locked(old_name, new_name)
-        if focus is not None:
-            self._focus(focus)
+        if busy:
+            if focus is not None:
+                self._focus(focus)
             raise UserVisibleError(text(
                 "Rename it in its open window.",
                 "请在已打开的窗口中重命名。",
             ))
-        self.refresh_titles()
+        self.refresh_titles(session_id)
         self._refresh_main_home()
         return result
 
-    def ensure_note_is_not_open_elsewhere(self, session_id: str, name: str) -> None:
+    def run_note_action(self, session_id: str, name: str, action: Callable[[], Any]) -> Any:
         focus: WindowSession | None = None
         with self._lock:
-            owner_id = self._note_owners.get(self._key(name))
-            if owner_id is not None and owner_id != session_id:
-                focus = self._sessions.get(owner_id)
+            key = self._key(name)
+            owner_id = self._note_owners.get(key) or self._reservations.get(key)
+            if owner_id is None or owner_id == session_id:
+                return action()
+            focus = self._sessions.get(owner_id)
         if focus is not None:
             self._focus(focus)
-            raise UserVisibleError(text(
-                "Close its other window first.",
-                "请先关闭这条记录的其他窗口。",
-            ))
+        raise UserVisibleError(text(
+            "Close its other window first.",
+            "请先关闭这条记录的其他窗口。",
+        ))
 
     def ensure_storage_can_move(self) -> None:
         with self._lock:
-            if not self._auxiliary_sessions_locked():
+            if not self._auxiliary_sessions_locked() and not self._reservations:
                 return
         raise UserVisibleError(text(
             "Close the separate note windows before changing the storage folder.",
@@ -405,9 +411,12 @@ class WindowCoordinator:
             except Exception:
                 pass
 
-    def refresh_titles(self) -> None:
+    def refresh_titles(self, session_id: str | None = None) -> None:
         with self._lock:
-            sessions = list(self._sessions.values())
+            sessions = [
+                session for session in self._sessions.values()
+                if session_id is None or session.session_id == session_id
+            ]
             app_title = text("Bitty", "小记")
             titles = []
             for session in sessions:
@@ -463,6 +472,14 @@ class WindowCoordinator:
                 note_window_sizes=sizes,
                 open_note_windows=windows,
             )
+
+    def save_session_window_state(
+        self, session_id: str, x: int, y: int, width: int, height: int,
+    ) -> None:
+        with self._lock:
+            session = self._sessions.get(session_id)
+            if session is not None and session.note_name is not None:
+                self.save_window_state(session.note_name, x, y, width, height)
 
     def reconcile_saved_sizes(self, existing_names: list[str]) -> None:
         existing = {self._key(name) for name in existing_names}

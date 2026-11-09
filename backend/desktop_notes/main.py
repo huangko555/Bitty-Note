@@ -107,7 +107,11 @@ def _show_window_when_ready(
             stage,
             (time.monotonic() - started) * 1000,
         )
-        on_failure()
+        # WebView2 failures arrive on its native UI thread. Recovery calls
+        # pywebview APIs that wait for that same thread, so let the event return.
+        threading.Thread(
+            target=on_failure, name="bitty-note-startup-failure", daemon=True,
+        ).start()
 
     def cancel() -> None:
         if finish():
@@ -369,10 +373,10 @@ def _normalize_note_window_after_show(
     state_saver: NoteWindowStateSaver,
     width: int,
     height: int,
+    x: int | None = None,
+    y: int | None = None,
 ) -> None:
-    resize_window_without_showing(window, width, height)
-    window.events.moved += state_saver.schedule
-    window.events.resized += state_saver.schedule
+    _normalize_window_after_show(window, state_saver, width, height, x, y)
     state_saver.flush()
 
 
@@ -479,6 +483,8 @@ def main() -> None:
         reveal_on_shown: bool = True,
         already_shown: bool = False,
         unregister_session: str | None = None,
+        target_x: int | None = None,
+        target_y: int | None = None,
     ) -> None:
         shown_initialized = False
 
@@ -504,6 +510,8 @@ def main() -> None:
                     target_state_saver,  # type: ignore[arg-type]
                     target_width,
                     target_height,
+                    target_x,
+                    target_y,
                 )
             if sys.platform == "win32":
                 target_window.native.FormClosing += _allow_system_shutdown
@@ -587,8 +595,10 @@ def main() -> None:
             js_api=javascript_api(note_bridge),
             width=note_width,
             height=note_height,
-            x=note_x,
-            y=note_y,
+            # Bounds have already been converted to physical desktop pixels.
+            # Apply them after creation so pywebview cannot scale them again.
+            x=None,
+            y=None,
             min_size=(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT),
             frameless=True,
             easy_drag=False,
@@ -620,6 +630,8 @@ def main() -> None:
                 track_position=False,
                 already_shown=True,
                 unregister_session=session_id,
+                target_x=note_x,
+                target_y=note_y,
             )
 
             def load_failed() -> None:

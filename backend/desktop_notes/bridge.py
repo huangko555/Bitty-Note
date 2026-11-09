@@ -289,16 +289,22 @@ class DesktopBridge:
         ).to_dict()
 
     def archive_note(self, name: str) -> dict[str, str]:
-        if self.coordinator is not None:
-            self.coordinator.ensure_note_is_not_open_elsewhere(self.session_id, name)
-        archived_name = self._repository.archive_note(name)
+        if self.coordinator is None:
+            archived_name = self._repository.archive_note(name)
+        else:
+            archived_name = self.coordinator.run_note_action(
+                self.session_id, name, lambda: self._repository.archive_note(name),
+            )
         self._remove_pinned_note(name)
         return {"archived_name": archived_name}
 
     def trash_note(self, name: str) -> None:
-        if self.coordinator is not None:
-            self.coordinator.ensure_note_is_not_open_elsewhere(self.session_id, name)
-        self._repository.trash_note(name, send_file_to_trash)
+        if self.coordinator is None:
+            self._repository.trash_note(name, send_file_to_trash)
+        else:
+            self.coordinator.run_note_action(
+                self.session_id, name, lambda: self._repository.trash_note(name, send_file_to_trash),
+            )
         self._remove_pinned_note(name)
 
     def set_note_pinned(self, name: str, pinned: bool) -> dict[str, list[str]]:
@@ -587,11 +593,8 @@ class NoteWindowStateSaver:
             self._save_locked()
 
     def _save_locked(self) -> None:
-        name = self.coordinator.note_name(self.session_id)
-        if name is None:
-            return
         try:
             x, y, width, height = window_logical_bounds(self.window)
-            self.coordinator.save_window_state(name, x, y, width, height)
+            self.coordinator.save_session_window_state(self.session_id, x, y, width, height)
         except Exception:
             pass

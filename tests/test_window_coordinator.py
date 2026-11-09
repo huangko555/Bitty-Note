@@ -127,6 +127,39 @@ def test_opening_the_same_note_focuses_existing_window(tmp_path: Path) -> None:
     assert auxiliary_window.restored == 1
 
 
+def test_opening_notes_does_not_retitle_every_existing_window(tmp_path: Path) -> None:
+    windows, main_window = coordinator(tmp_path)
+    created = []
+
+    def create(session_id, name, *_bounds):
+        child = FakeWindow()
+        created.append(child)
+        windows.register(WindowSession(session_id, "note", child, FakeBridge(), name))
+        assert windows.acquire_note(session_id, name)
+
+    windows.set_auxiliary_factory(create)
+    for index in range(20):
+        windows.open_auxiliary(f"Note {index}.md")
+
+    assert len(main_window.titles) == 1
+    assert [len(child.titles) for child in created] == [1] * 20
+
+
+def test_pending_note_window_blocks_storage_migration(tmp_path: Path) -> None:
+    from desktop_notes.errors import UserVisibleError
+
+    windows, _main = coordinator(tmp_path)
+
+    def create(session_id, name, *_bounds):
+        with pytest.raises(UserVisibleError):
+            windows.ensure_storage_can_move()
+        assert windows.request_note_rename(name) == {"status": "focused"}
+        windows.register(WindowSession(session_id, "note", FakeWindow(), FakeBridge(), name))
+
+    windows.set_auxiliary_factory(create)
+    windows.open_auxiliary("Pending.md")
+
+
 def test_restart_restores_every_open_note_window_with_its_bounds(tmp_path: Path) -> None:
     config_path = tmp_path / "config.json"
     store = ConfigStore(config_path, tmp_path / "notes")
