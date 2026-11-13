@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.11.3 — 2026-11-13
+
+### English
+
+- Fixed text briefly appearing and then reverting or flickering during typing and deletion, including digits and Chinese input. Unified the editor's document-model dependency to prevent runtime conflicts after opening an empty note.
+
+### 简体中文
+
+- 修复输入和删除时文字短暂出现后回退、闪烁或无法编辑的问题，覆盖数字和中文输入；统一编辑器文档模型依赖，避免打开空白便签后触发运行时冲突。
+
 ## v1.11.2 — 2026-11-09
 
 ### English

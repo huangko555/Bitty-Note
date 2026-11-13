@@ -1,6 +1,6 @@
 {
   "name": "bitty",
-  "version": "1.11.2",
+  "version": "1.11.3",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -18,7 +18,7 @@
     "prosemirror-inputrules": "1.5.1",
     "prosemirror-keymap": "1.2.3",
     "prosemirror-markdown": "1.13.5",
-    "prosemirror-model": "1.25.11",
+    "prosemirror-model": "1.25.12",
     "prosemirror-schema-list": "1.5.1",
     "prosemirror-state": "1.4.4",
     "prosemirror-transform": "1.12.0",
