@@ -464,6 +464,17 @@ def test_webview_initialization_success_installs_navigation_and_process_monitori
     assert len(core.ProcessFailed.handlers) == 1
 
 
+def test_webview_waits_for_the_replacement_of_a_cancelled_navigation(monkeypatch):
+    window, _native, control = _fake_webview_window()
+    failures = []
+    monkeypatch.setattr(platform_windows.sys, "platform", "win32")
+    assert platform_windows.install_webview_recovery(window, lambda stage: failures.append(stage) or True)
+    completed = control.NavigationCompleted.handlers[0]
+    completed(control, type("Result", (), {"IsSuccess": False, "WebErrorStatus": "OperationCanceled"})())
+    completed(control, type("Result", (), {"IsSuccess": True, "WebErrorStatus": "Unknown"})())
+    assert failures == []
+
+
 def test_startup_renderer_failure_does_not_reload_a_window_being_closed(monkeypatch):
     window, _native, control = _fake_webview_window()
     failures = []

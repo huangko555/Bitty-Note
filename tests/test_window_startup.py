@@ -220,6 +220,35 @@ def test_failed_restored_note_reveals_manager_without_exiting_the_app(tmp_path):
     assert coordinator.note_name("note") is None
 
 
+def test_failed_note_can_reopen_after_a_window_state_write_error(tmp_path, monkeypatch):
+    store = ConfigStore(tmp_path / "config.json", tmp_path / "notes")
+    coordinator = WindowCoordinator(store)
+    manager = Window()
+    coordinator.register(WindowSession("main", "main", manager, SimpleNamespace()))
+    bridge = DesktopBridge(store, coordinator)
+    original = bridge.create_note("Original")
+    copy = bridge.duplicate_note(original["name"], "Copy")
+    name = bridge.rename_note(copy["name"], "Renamed")["name"]
+
+    child = Window()
+    coordinator.register(WindowSession("failed", "note", child, SimpleNamespace(), name, loading=True))
+    coordinator.save_session_window_state("failed", 100, 80, 350, 530)
+    assert name in store.config.open_note_windows
+
+    def fail_write(_config):
+        raise PermissionError("Temporary sharing violation")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(store, "_write", fail_write)
+        _handle_auxiliary_load_failure(coordinator, manager, "failed")
+
+    assert child.destroyed == 1
+    coordinator.set_auxiliary_factory(lambda session, note, *_bounds: coordinator.register(
+        WindowSession(session, "note", Window(), SimpleNamespace(), note),
+    ))
+    assert bridge.open_note_window(name) == {"status": "opened"}
+
+
 @pytest.mark.parametrize("operation", ["rename_note", "archive_note", "trash_note"])
 def test_home_cannot_mutate_a_note_while_its_window_is_being_created(tmp_path, monkeypatch, operation):
     store = ConfigStore(tmp_path / "config.json", tmp_path / "notes")

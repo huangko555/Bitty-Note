@@ -236,8 +236,13 @@ def install_webview_recovery(
             return
 
         def on_navigation_completed(_sender: object, args: object) -> None:
-            if not bool(getattr(args, "IsSuccess", True)):
-                startup_failed("navigation")
+            if bool(getattr(args, "IsSuccess", True)):
+                return
+            status = _native_enum_name(getattr(args, "WebErrorStatus", "Unknown"))
+            # WebView2 cancels a navigation when another one replaces it.
+            # The startup timeout still handles a window that never becomes ready.
+            if status != "OperationCanceled" and startup_failed("navigation"):
+                logging.error("WebView2 navigation failed: status=%s", status)
 
         def on_process_failed(_sender: object, args: object) -> None:
             kind = _native_enum_name(getattr(args, "ProcessFailedKind", "Unknown"))

@@ -304,7 +304,12 @@ class WindowCoordinator:
                         )
                     )
                     if not preserve_for_restart:
-                        self._remove_open_window_locked(session.note_name)
+                        try:
+                            self._remove_open_window_locked(session.note_name)
+                        except OSError as error:
+                            logging.warning(
+                                "Could not clear saved note window state (%s).", type(error).__name__,
+                            )
             else:
                 self._main_close_request_pending = False
                 if self._auxiliary_sessions_locked() or self._reservations:

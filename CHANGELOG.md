@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.11.4 — 2026-11-20
+
+### English
+
+- Fixed a note-window startup failure when WebView2 cancels an initial navigation and continues loading another page, including when opening copied and renamed notes.
+- Allowed failed note windows to close and release their notes even when saving window state encounters a temporary file-access error, so opening the note can be retried without restarting the app.
+
+### 简体中文
+
+- 修复 WebView2 取消初次导航并继续加载页面时，便签窗口被提前关闭的问题，覆盖复制、改名后打开便签的场景。
+- 窗口状态保存遇到临时文件访问错误时，仍能关闭失败窗口并释放便签，支持直接重试打开。
+
 ## v1.11.3 — 2026-11-13
 
 ### English
