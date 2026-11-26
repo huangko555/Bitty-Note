@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 // @ts-expect-error Node's runtime module is available to Vitest.
 import { readFileSync } from "node:fs";
 
+import { createEditor } from "./editor/editor";
+
 const styles = readFileSync("web/src/styles.css", "utf8");
 
 describe("highlight toolbar visual contract", () => {
@@ -36,5 +38,35 @@ describe("highlight toolbar visual contract", () => {
     expect(styles).toMatch(
       /\.task-list-item\.is-checked\s*>\s*\.task-content\s*>\s*p:first-child\s+mark\.text-highlight\s*{[^}]*background:\s*var\(--text-highlight-checked\)/,
     );
+  });
+});
+
+describe("task completion styles", () => {
+  it("renders each task and its checkmark from that task's own state", () => {
+    const stylesheet = document.createElement("style");
+    stylesheet.textContent = styles;
+    document.head.append(stylesheet);
+    const host = document.body.appendChild(document.createElement("div"));
+    const { controller } = createEditor(host, "- [x] Completed parent\n    - [ ] Pending child\n", {
+      onChange: () => {},
+      onFocusChange: () => {},
+      onSelectionChange: () => {},
+    });
+
+    try {
+      const [parentCheckbox, childCheckbox] = host.querySelectorAll<HTMLInputElement>("[data-task-checkbox]");
+      parentCheckbox!.checked = false;
+      childCheckbox!.checked = true;
+      const [parentText, childText] = host.querySelectorAll(".task-content > p");
+      const [parentMark, childMark] = host.querySelectorAll(".task-check-mark");
+
+      expect(getComputedStyle(parentMark!).stroke).toBe("rgb(255, 255, 255)");
+      expect(getComputedStyle(childMark!).stroke).toBe("rgba(0, 0, 0, 0)");
+      expect(getComputedStyle(parentText!).color).not.toBe(getComputedStyle(childText!).color);
+    } finally {
+      controller.destroy();
+      host.remove();
+      stylesheet.remove();
+    }
   });
 });

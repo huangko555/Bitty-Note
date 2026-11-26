@@ -1006,12 +1006,15 @@ class RichEditor implements EditorController {
           if (!item) return false;
           const position = view.posAtDOM(item, 0) - 1;
           const node = view.state.doc.nodeAt(position);
-          if (node?.type !== noteSchema.nodes.list_item) return false;
+          if (node?.type !== noteSchema.nodes.list_item || typeof node.attrs.checked !== "boolean") return false;
+          const checked = node.attrs.checked;
+          // ProseMirror may reuse this input for another row during the update.
+          target.checked = checked;
           const hadFocus = view.hasFocus();
           view.dispatch(preserveViewportInHistory(
             view.state.tr.setNodeMarkup(position, undefined, {
               ...node.attrs,
-              checked: target.checked,
+              checked: !checked,
             }),
           ));
           if (hadFocus) {

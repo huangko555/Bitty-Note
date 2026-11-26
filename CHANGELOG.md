@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.11.5 — 2026-11-26
+
+### English
+
+- Fixed a display issue where checking or unchecking a task with nested items could also make the next task appear to change.
+- Kept incomplete subtasks at their normal text color when the parent task is completed.
+
+### 简体中文
+
+- 修复勾选或取消勾选带子项的任务时，下方同级任务可能错误显示为已勾选或未勾选的问题。
+- 父任务完成后，未完成的子任务仍以正常文字颜色显示。
+
 ## v1.11.4 — 2026-11-20
 
 ### English

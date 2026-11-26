@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DOMSerializer } from "prosemirror-model";
+import { DOMParser, DOMSerializer } from "prosemirror-model";
 import { EditorState } from "prosemirror-state";
 
 import { parseMarkdown, serializeMarkdown } from "./markdown";
@@ -293,6 +293,20 @@ describe("toolbar Markdown syntax", () => {
     });
     expect(items).toEqual([false, true]);
     expect(highlighted).toEqual(["<kbd>字体"]);
+  });
+
+  it("parses the declared task state when a checkbox's live state differs", () => {
+    const source = "- [ ] Pending\n- [x] Completed\n";
+    const parsed = parseMarkdown(source);
+    if (parsed.mode === "raw") throw new Error(parsed.reason);
+    const container = document.createElement("div");
+    container.append(DOMSerializer.fromSchema(noteSchema).serializeFragment(parsed.doc.content));
+    for (const checkbox of container.querySelectorAll<HTMLInputElement>("[data-task-checkbox]")) {
+      checkbox.checked = !checkbox.checked;
+    }
+
+    const reparsed = DOMParser.fromSchema(noteSchema).parse(container);
+    expect(serializeMarkdown(reparsed)).toBe(source);
   });
 
   it("preserves ordinary line breaks and spacing inside paragraphs and lists", () => {

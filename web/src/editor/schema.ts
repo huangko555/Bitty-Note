@@ -33,7 +33,7 @@ const listItem: NodeSpec = {
     {
       tag: "li.task-list-item",
       getAttrs: (dom) => ({
-        checked: Boolean((dom as HTMLElement).querySelector("input")?.checked),
+        checked: (dom as HTMLElement).querySelector<HTMLInputElement>("input[type=checkbox]")?.defaultChecked ?? false,
         collapsed: (dom as HTMLElement).dataset.collapsed === "true",
       }),
     },

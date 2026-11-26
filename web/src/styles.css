@@ -488,11 +488,11 @@ h1 { margin: 0; font-size: 23px; font-weight: 500; letter-spacing: -.025em; }
 .task-check-box { display: none; }
 .task-check-mark { fill: none; stroke: transparent; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .task-check input:hover + .task-check-icon { border-color: var(--note-state-color); background: var(--control-selected-bg); }
-.task-check input:checked + .task-check-icon { border-color: var(--muted); background: var(--muted); }
-.task-check input:checked + .task-check-icon .task-check-mark { stroke: #fff; }
+.task-list-item.is-checked > .task-check > .task-check-icon { border-color: var(--muted); background: var(--muted); }
+.task-list-item.is-checked > .task-check .task-check-mark { stroke: #fff; }
 .task-content { min-width: 0; }
 .task-list-item > .task-content > p { min-height: 1lh; }
-.task-list-item.is-checked > .task-content, .task-list-item.is-checked > .task-content * { color: var(--muted); }
+.task-list-item.is-checked > .task-content > p, .task-list-item.is-checked > .task-content > p * { color: var(--muted); }
 .task-list-item.is-checked > .task-content > p:first-child { text-decoration-line: line-through; text-decoration-color: currentColor; text-decoration-thickness: 1px; }
 .task-list-item.is-checked > .task-content > p:first-child mark.text-highlight { background: var(--text-highlight-checked); }
 .row-insert-button { display: grid; place-items: center; width: 100%; height: 1.55em; padding: 0; border: 0; border-radius: var(--radius-compact); color: transparent; background: transparent; cursor: pointer; }

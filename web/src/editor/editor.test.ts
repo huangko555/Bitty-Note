@@ -95,6 +95,45 @@ describe("window-level editor history shortcuts", () => {
 });
 
 describe("task checkbox rendering", () => {
+  it.each([false, true])("keeps sibling and child checkboxes in sync when toggling a task from %s", (checked) => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const markdown = (first: boolean, second: boolean): string => [
+      `- [${first ? "x" : " "}] First task`,
+      "    - [x] First child",
+      `- [${second ? "x" : " "}] Second task`,
+      "    - [ ] Second child",
+      "",
+    ].join("\n");
+    const { controller } = createEditor(host, markdown(checked, checked), {
+      onChange: () => {},
+      onFocusChange: () => {},
+      onSelectionChange: () => {},
+    });
+    const checkboxes = () => [...host.querySelectorAll<HTMLInputElement>("[data-task-checkbox]")];
+    const expectTasks = (first: boolean, second: boolean): void => {
+      expect(controller.getMarkdown()).toBe(markdown(first, second));
+      expect(checkboxes().map((checkbox) => checkbox.checked)).toEqual([first, true, second, false]);
+    };
+
+    try {
+      expectTasks(checked, checked);
+      checkboxes()[0]!.click();
+      expectTasks(!checked, checked);
+
+      expect(controller.undo()).toBe(true);
+      expectTasks(checked, checked);
+      expect(controller.redo()).toBe(true);
+      expectTasks(!checked, checked);
+
+      checkboxes()[2]!.click();
+      expectTasks(!checked, !checked);
+    } finally {
+      controller.destroy();
+      host.remove();
+    }
+  });
+
   it("leaves ordinary click positioning to ProseMirror", () => {
     const host = document.createElement("div");
     document.body.append(host);
@@ -635,7 +674,7 @@ describe("task checkbox rendering", () => {
     expect(host.querySelector(".task-list-item")?.classList.contains("is-checked")).toBe(true);
 
     checkbox.click();
-    expect(checkbox.checked).toBe(false);
+    expect(host.querySelector<HTMLInputElement>("[data-task-checkbox]")?.checked).toBe(false);
     expect(host.querySelector(".task-list-item")?.classList.contains("is-checked")).toBe(false);
 
     controller.destroy();
